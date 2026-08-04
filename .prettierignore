@@ -1,0 +1,8 @@
+node_modules
+dist
+build
+.tmp
+coverage
+.strapi
+package-lock.json
+src/admin

@@ -1,8 +1,8 @@
 {
-  "name": "projectes-v-5",
+  "name": "projectes-v5",
   "version": "0.1.0",
   "private": true,
-  "description": "A Strapi application",
+  "description": "Projectes management backend (Strapi v5) — migrated from projectes v3.6.11",
   "scripts": {
     "build": "strapi build",
     "console": "strapi console",
@@ -12,7 +12,14 @@
     "start": "strapi start",
     "strapi": "strapi",
     "upgrade": "npx @strapi/upgrade latest",
-    "upgrade:dry": "npx @strapi/upgrade latest --dry"
+    "upgrade:dry": "npx @strapi/upgrade latest --dry",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@strapi/database": "5.51.1",
@@ -25,7 +32,16 @@
     "react-router-dom": "^6.30.3",
     "styled-components": "^6.0.0"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.9.0",
+    "jest": "^30.4.2",
+    "prettier": "^3.9.6",
+    "sqlite3": "^6.0.1",
+    "supertest": "^7.2.2"
+  },
   "engines": {
     "node": ">=20.0.0 <=26.x.x",
     "npm": ">=6.0.0"

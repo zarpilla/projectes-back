@@ -7,9 +7,7 @@ module.exports = ({ env }) => {
   const client = env('DATABASE_CLIENT', 'sqlite');
 
   if (!isDatabaseClientKind(client)) {
-    throw new Error(
-      `Unsupported DATABASE_CLIENT: ${client}. Use "postgres", "mysql", or "sqlite".`
-    );
+    throw new Error(`Unsupported DATABASE_CLIENT: ${client}. Use "postgres", "mysql", or "sqlite".`);
   }
 
   /** @type {Record<Core.Config.Database.ClientKind, Core.Config.Database['connection']>} */
