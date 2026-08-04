@@ -1,0 +1,213 @@
+'use strict';
+
+const { adaptQuery } = require('../src/services/query-adapter');
+
+describe('query-adapter (v3 → v5)', () => {
+  describe('pagination: _limit / _start', () => {
+    test('_limit:-1 → pagination.limit -1 (return-all)', () => {
+      expect(adaptQuery({ _limit: '-1' }).pagination).toEqual({ limit: -1 });
+    });
+    test('_limit:25 → numeric', () => {
+      expect(adaptQuery({ _limit: '25' }).pagination).toEqual({ limit: 25 });
+    });
+    test('_start offset', () => {
+      expect(adaptQuery({ _start: '50' }).pagination).toEqual({ start: 50 });
+    });
+    test('no limit/start → no pagination key', () => {
+      expect(adaptQuery({}).pagination).toBeUndefined();
+    });
+  });
+
+  describe('sort: _sort', () => {
+    test('field:DESC → [{ field: "desc" }]', () => {
+      expect(adaptQuery({ _sort: 'id:DESC' }).sort).toEqual([{ id: 'desc' }]);
+    });
+    test('field:ASC', () => {
+      expect(adaptQuery({ _sort: 'name:ASC' }).sort).toEqual([{ name: 'asc' }]);
+    });
+    test('bare field → asc', () => {
+      expect(adaptQuery({ _sort: 'created_at' }).sort).toEqual([{ created_at: 'asc' }]);
+    });
+  });
+
+  describe('bare field → eq', () => {
+    test('field=value', () => {
+      expect(adaptQuery({ project_state: '3' }).filters).toEqual({ project_state: 3 });
+    });
+    test('string value preserved', () => {
+      expect(adaptQuery({ name: 'Test' }).filters).toEqual({ name: 'Test' });
+    });
+  });
+
+  describe('flat operators', () => {
+    test('_gte / _lte (date ranges)', () => {
+      expect(adaptQuery({ created_at_gte: '2024-01-01', created_at_lte: '2024-12-31' }).filters).toEqual({
+        created_at: { $gte: '2024-01-01', $lte: '2024-12-31' },
+      });
+    });
+    test('_gt', () => {
+      expect(adaptQuery({ structural_expenses_pct_gt: '0' }).filters).toEqual({
+        structural_expenses_pct: { $gt: 0 },
+      });
+    });
+    test('_null:true → $null', () => {
+      expect(adaptQuery({ vat_paid_date_null: true }).filters).toEqual({
+        vat_paid_date: { $null: true },
+      });
+    });
+    test('_null:false → $notNull', () => {
+      expect(adaptQuery({ owner_null: 'false' }).filters).toEqual({
+        owner: { $notNull: true },
+      });
+    });
+    test('_null:true from string "true"', () => {
+      expect(adaptQuery({ last_status_check_null: 'true' }).filters).toEqual({
+        last_status_check: { $null: true },
+      });
+    });
+    test('_in comma-string → array', () => {
+      expect(adaptQuery({ project_state_in: '1,2,3' }).filters).toEqual({
+        project_state: { $in: [1, 2, 3] },
+      });
+    });
+    test('_in array form', () => {
+      expect(adaptQuery({ id_in: ['1', '2'] }).filters).toEqual({ id: { $in: [1, 2] } });
+    });
+    test('_ne', () => {
+      expect(adaptQuery({ status_ne: 'draft' }).filters).toEqual({ status: { $ne: 'draft' } });
+    });
+  });
+
+  describe('_where (nested form)', () => {
+    test('_where.project_state_in', () => {
+      const r = adaptQuery({ _where: { project_state_in: '1,2,3' } });
+      expect(r.filters).toEqual({ project_state: { $in: [1, 2, 3] } });
+    });
+    test('_where.project_state_eq', () => {
+      const r = adaptQuery({ _where: { project_state_eq: '5' } });
+      expect(r.filters).toEqual({ project_state: 5 });
+    });
+    test('_where.year_eq scalar', () => {
+      expect(adaptQuery({ _where: { year_eq: '2024' } }).filters).toEqual({ year: 2024 });
+    });
+    test('_where._or with _null and _lt (FACe cron shape)', () => {
+      const thirtyMinAgo = '2024-01-01T00:00:00Z';
+      const r = adaptQuery({
+        _where: {
+          _or: [{ last_status_check_null: true }, { last_status_check_lt: thirtyMinAgo }],
+        },
+      });
+      expect(r.filters).toEqual({
+        $or: [{ last_status_check: { $null: true } }, { last_status_check: { $lt: thirtyMinAgo } }],
+      });
+    });
+    test('_where._and', () => {
+      const r = adaptQuery({ _where: { _and: [{ a_eq: '1' }, { b_eq: '2' }] } });
+      expect(r.filters).toEqual({ $and: [{ a: 1 }, { b: 2 }] });
+    });
+  });
+
+  describe('dual form: flat + _where both accepted', () => {
+    test('flat project_state_in works (v3 controllers read both)', () => {
+      expect(adaptQuery({ project_state_in: '1,2,3' }).filters).toEqual({
+        project_state: { $in: [1, 2, 3] },
+      });
+    });
+  });
+
+  describe('published_at_null (Draft & Publish)', () => {
+    test('published_at_null:false → status published', () => {
+      expect(adaptQuery({ published_at_null: false }).status).toBe('published');
+      expect(adaptQuery({ published_at_null: false }).filters.publishedAt).toBeUndefined();
+    });
+    test('published_at_null:true → filters.publishedAt $null', () => {
+      expect(adaptQuery({ published_at_null: true }).filters.publishedAt).toEqual({ $null: true });
+    });
+  });
+
+  describe('_q full-text', () => {
+    test('_q exposed as q', () => {
+      const r = adaptQuery({ _q: 'foo' });
+      expect(r.q).toBe('foo');
+    });
+    test('_q with searchFields → $or of $contains', () => {
+      const r = adaptQuery({ _q: 'foo' }, { searchFields: ['name', 'description'] });
+      expect(r.filters.$or).toEqual([{ name: { $contains: 'foo' } }, { description: { $contains: 'foo' } }]);
+    });
+  });
+
+  describe('populate (2nd positional arg in v3)', () => {
+    test('populate array passed through', () => {
+      const pop = ['leader', 'project_state', 'project_phases.incomes'];
+      expect(adaptQuery({}, { populate: pop }).populate).toBe(pop);
+    });
+    test('empty array populate stays empty (NOT *)', () => {
+      expect(adaptQuery({}, { populate: [] }).populate).toEqual([]);
+    });
+    test('no populate passed → undefined', () => {
+      expect(adaptQuery({}).populate).toBeUndefined();
+    });
+  });
+
+  describe('combined real-world queries', () => {
+    test('project findWithBasicInfo shape', () => {
+      const r = adaptQuery({
+        published_at_null: false,
+        project_state_in: '1,2,3',
+        structural_expenses_pct_gt: '0',
+        _limit: '-1',
+      });
+      expect(r.status).toBe('published');
+      expect(r.pagination).toEqual({ limit: -1 });
+      expect(r.filters).toEqual({
+        project_state: { $in: [1, 2, 3] },
+        structural_expenses_pct: { $gt: 0 },
+      });
+    });
+
+    test('incidences.infoAll shape (year range + sort)', () => {
+      const r = adaptQuery({
+        year: '2024',
+        created_at_gte: '2024-01-01',
+        created_at_lte: '2024-12-31',
+        _limit: '-1',
+        _sort: 'id:DESC',
+      });
+      expect(r.pagination).toEqual({ limit: -1 });
+      expect(r.sort).toEqual([{ id: 'desc' }]);
+      expect(r.filters).toEqual({
+        year: 2024,
+        created_at: { $gte: '2024-01-01', $lte: '2024-12-31' },
+      });
+    });
+
+    test('contacts withorders shape (_limit -1 + date range + populate)', () => {
+      const r = adaptQuery(
+        { _limit: '-1', estimated_delivery_date_gte: '2024-06-01' },
+        { populate: ['contact'] },
+      );
+      expect(r.pagination).toEqual({ limit: -1 });
+      expect(r.populate).toEqual(['contact']);
+      expect(r.filters).toEqual({ estimated_delivery_date: { $gte: '2024-06-01' } });
+    });
+  });
+
+  describe('edge cases', () => {
+    test('empty query', () => {
+      const r = adaptQuery({});
+      expect(r.filters).toEqual({});
+      expect(r.pagination).toBeUndefined();
+      expect(r.sort).toBeUndefined();
+    });
+    test('null/undefined query', () => {
+      expect(adaptQuery(null).filters).toEqual({});
+      expect(adaptQuery(undefined).filters).toEqual({});
+    });
+    test('float coercion', () => {
+      expect(adaptQuery({ amount_gt: '1.5' }).filters).toEqual({ amount: { $gt: 1.5 } });
+    });
+    test('_eq produces scalar form (v5 accepts field: value as $eq)', () => {
+      expect(adaptQuery({ name_eq: 'hello' }).filters).toEqual({ name: 'hello' });
+    });
+  });
+});
