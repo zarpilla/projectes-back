@@ -1,0 +1,37 @@
+{
+  "kind": "collectionType",
+  "collectionName": "pickups",
+  "info": {
+    "singularName": "pickups",
+    "pluralName": "pickupses",
+    "displayName": "Pickups"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "pickup": {
+      "type": "boolean"
+    },
+    "allowed_users": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "plugin::users-permissions.user"
+    },
+    "message": {
+      "type": "text"
+    },
+    "city": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::city.city"
+    },
+    "alias": {
+      "type": "string"
+    }
+  }
+}

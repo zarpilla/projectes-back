@@ -1,0 +1,20 @@
+{
+  "kind": "singleType",
+  "collectionName": "home_menus",
+  "info": {
+    "singularName": "home-menu",
+    "pluralName": "home-menus",
+    "displayName": "HomeMenu"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "homegroup": {
+      "type": "component",
+      "repeatable": true,
+      "component": "homegroup.homegroup"
+    }
+  }
+}

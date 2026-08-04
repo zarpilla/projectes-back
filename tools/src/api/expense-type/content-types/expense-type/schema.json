@@ -1,0 +1,21 @@
+{
+  "kind": "collectionType",
+  "collectionName": "expense_types",
+  "info": {
+    "singularName": "expense type",
+    "pluralName": "expense types",
+    "displayName": "Expense Types"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "vat_pct": {
+      "type": "decimal"
+    }
+  }
+}

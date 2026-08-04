@@ -1,0 +1,15 @@
+{
+  "collectionName": "components_permissions_application_permissions",
+  "info": {
+    "singularName": "application permission",
+    "pluralName": "application permissions",
+    "displayName": "Application Permission"
+  },
+  "options": {},
+  "attributes": {
+    "permission": {
+      "type": "enumeration",
+      "enum": ["projects", "orders", "orders_admin", "orders_delivery", "hours", "admin"]
+    }
+  }
+}

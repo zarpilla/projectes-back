@@ -1,0 +1,103 @@
+{
+  "kind": "collectionType",
+  "collectionName": "diets",
+  "info": {
+    "singularName": "diet",
+    "pluralName": "diets",
+    "displayName": "Diets"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "number": {
+      "type": "integer"
+    },
+    "emitted": {
+      "type": "date"
+    },
+    "paybefore": {
+      "type": "date"
+    },
+    "contact": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::contacts.contacts"
+    },
+    "total_base": {
+      "type": "decimal"
+    },
+    "total_vat": {
+      "type": "decimal"
+    },
+    "total_irpf": {
+      "type": "decimal"
+    },
+    "total": {
+      "type": "decimal"
+    },
+    "comments": {
+      "type": "richtext"
+    },
+    "paid": {
+      "type": "boolean",
+      "default": false
+    },
+    "paid_date": {
+      "type": "date"
+    },
+    "sent": {
+      "type": "boolean",
+      "default": false
+    },
+    "sent_date": {
+      "type": "date"
+    },
+    "code": {
+      "type": "string",
+      "required": false,
+      "unique": false
+    },
+    "serial": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::serie.serie"
+    },
+    "updatable": {
+      "type": "boolean"
+    },
+    "updatable_admin": {
+      "type": "boolean",
+      "default": false
+    },
+    "documents": {
+      "type": "media",
+      "relation": "oneToMany",
+      "allowedTypes": ["images", "files", "videos"]
+    },
+    "payment_method": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::payment-method.payment-method"
+    },
+    "contact_invoice_number": {
+      "type": "string"
+    },
+    "lines": {
+      "type": "component",
+      "repeatable": true,
+      "component": "invoice-line.ticket-line"
+    },
+    "project": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project.project"
+    },
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    }
+  }
+}

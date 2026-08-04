@@ -1,0 +1,29 @@
+{
+  "kind": "collectionType",
+  "collectionName": "serials",
+  "info": {
+    "singularName": "serial",
+    "pluralName": "serials",
+    "displayName": "Serials"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "leadingZeros": {
+      "type": "integer"
+    },
+    "emitted_invoice_number": {
+      "type": "integer",
+      "default": 0
+    },
+    "rectificative": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

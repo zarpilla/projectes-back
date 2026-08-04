@@ -1,0 +1,35 @@
+{
+  "kind": "collectionType",
+  "collectionName": "payment_methods",
+  "info": {
+    "singularName": "payment method",
+    "pluralName": "payment methods",
+    "displayName": "Payment Methods"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "richtext"
+    },
+    "invoice_text": {
+      "type": "text"
+    },
+    "nameTreasury": {
+      "type": "string"
+    },
+    "bank_account": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::bank-accounts.bank-accounts"
+    },
+    "default": {
+      "type": "boolean"
+    }
+  }
+}

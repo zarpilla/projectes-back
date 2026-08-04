@@ -1,0 +1,176 @@
+{
+  "kind": "collectionType",
+  "collectionName": "emitted_invoices",
+  "info": {
+    "singularName": "emitted-invoice",
+    "pluralName": "emitted-invoices",
+    "displayName": "Emitted Invoices"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "number": {
+      "type": "integer"
+    },
+    "emitted": {
+      "type": "date"
+    },
+    "paybefore": {
+      "type": "date"
+    },
+    "contact": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::contacts.contacts"
+    },
+    "lines": {
+      "type": "component",
+      "repeatable": true,
+      "component": "invoice-line.invoice-line"
+    },
+    "total_base": {
+      "type": "decimal"
+    },
+    "total_vat": {
+      "type": "decimal"
+    },
+    "total_irpf": {
+      "type": "decimal"
+    },
+    "total": {
+      "type": "decimal"
+    },
+    "comments": {
+      "type": "richtext"
+    },
+    "paid": {
+      "type": "boolean",
+      "default": false
+    },
+    "paid_date": {
+      "type": "date"
+    },
+    "sent": {
+      "type": "boolean",
+      "default": false
+    },
+    "sent_date": {
+      "type": "date"
+    },
+    "code": {
+      "type": "string",
+      "required": false,
+      "unique": false
+    },
+    "serial": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::serie.serie"
+    },
+    "updatable": {
+      "type": "boolean"
+    },
+    "updatable_admin": {
+      "type": "boolean",
+      "default": false
+    },
+    "documents": {
+      "type": "media",
+      "relation": "oneToMany",
+      "allowedTypes": ["images", "files", "videos"]
+    },
+    "payment_method": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::payment-method.payment-method"
+    },
+    "contact_invoice_number": {
+      "type": "string"
+    },
+    "project": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project.project"
+    },
+    "pdf": {
+      "type": "string"
+    },
+    "projects": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::project.project",
+      "inversedBy": "linked_emitted_invoices"
+    },
+    "vat_paid_date": {
+      "type": "datetime"
+    },
+    "deductible_vat_pct": {
+      "type": "decimal"
+    },
+    "estimated_payment": {
+      "type": "date"
+    },
+    "state": {
+      "type": "enumeration",
+      "enum": ["draft", "real"]
+    },
+    "user_draft": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "user_real": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "user_last": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "verifactu": {
+      "type": "boolean",
+      "default": false
+    },
+    "qr": {
+      "type": "text"
+    },
+    "comments_internal": {
+      "type": "richtext"
+    },
+    "bank_account": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::bank-accounts.bank-accounts"
+    },
+    "contact_info": {
+      "type": "component",
+      "repeatable": false,
+      "component": "contact.contact-data"
+    },
+    "face": {
+      "type": "boolean"
+    },
+    "rectified_invoice": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::emitted-invoice.emitted-invoice"
+    },
+    "rectification_reason_code": {
+      "type": "string"
+    },
+    "rectification_reason": {
+      "type": "text"
+    },
+    "rectification_method_code": {
+      "type": "string",
+      "default": "01"
+    },
+    "document_concept": {
+      "type": "string"
+    }
+  }
+}

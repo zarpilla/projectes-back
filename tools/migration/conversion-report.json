@@ -1,0 +1,138 @@
+{
+  "components": {
+    "total": 26,
+    "converted": 26,
+    "flags": []
+  },
+  "contentTypes": {
+    "total": 75,
+    "converted": 75,
+    "flags": [
+      {
+        "ct": "activity-type",
+        "attr": "projects",
+        "reason": "manyToMany-owner",
+        "relation": "manyToMany",
+        "via": "global_activity_types",
+        "dominant": true
+      },
+      {
+        "ct": "contacts",
+        "attr": "collection_points",
+        "reason": "self-relation",
+        "relation": "oneToMany",
+        "via": null,
+        "dominant": false
+      },
+      {
+        "ct": "emitted-invoice",
+        "attr": "projects",
+        "reason": "manyToMany-owner",
+        "relation": "manyToMany",
+        "via": "linked_emitted_invoices",
+        "dominant": true
+      },
+      {
+        "ct": "emitted-invoice",
+        "attr": "rectified_invoice",
+        "reason": "self-relation",
+        "relation": "oneToOne",
+        "via": null,
+        "dominant": false
+      },
+      {
+        "ct": "orders",
+        "attr": "collection_orders",
+        "reason": "self-relation",
+        "relation": "oneToMany",
+        "via": "collection_order",
+        "dominant": false
+      },
+      {
+        "ct": "orders",
+        "attr": "collection_order",
+        "reason": "self-relation",
+        "relation": "manyToOne",
+        "via": "collection_orders",
+        "dominant": false
+      },
+      {
+        "ct": "project",
+        "attr": "strategies",
+        "reason": "manyToMany-owner",
+        "relation": "manyToMany",
+        "via": "projects",
+        "dominant": true
+      },
+      {
+        "ct": "project",
+        "attr": "intercooperations",
+        "reason": "manyToMany-owner",
+        "relation": "manyToMany",
+        "via": "projectes",
+        "dominant": true
+      },
+      {
+        "ct": "project",
+        "attr": "clients",
+        "reason": "manyToMany-owner",
+        "relation": "manyToMany",
+        "via": "projects",
+        "dominant": true
+      },
+      {
+        "ct": "project",
+        "attr": "mother",
+        "reason": "self-relation",
+        "relation": "oneToOne",
+        "via": null,
+        "dominant": false
+      },
+      {
+        "ct": "received-expense",
+        "attr": "projects",
+        "reason": "manyToMany-owner",
+        "relation": "manyToMany",
+        "via": "linked_received_expenses",
+        "dominant": true
+      },
+      {
+        "ct": "received-income",
+        "attr": "projects",
+        "reason": "manyToMany-owner",
+        "relation": "manyToMany",
+        "via": "linked_received_incomes",
+        "dominant": true
+      },
+      {
+        "ct": "received-invoice",
+        "attr": "projects",
+        "reason": "manyToMany-owner",
+        "relation": "manyToMany",
+        "via": "linked_received_invoices",
+        "dominant": true
+      },
+      {
+        "ct": "route-rate",
+        "attr": "routes",
+        "reason": "manyToMany-owner",
+        "relation": "manyToMany",
+        "via": "route_rates",
+        "dominant": true
+      },
+      {
+        "ct": "task",
+        "attr": "users_permissions_users",
+        "reason": "manyToMany-owner",
+        "relation": "manyToMany",
+        "via": "tasks",
+        "dominant": true
+      }
+    ]
+  },
+  "errors": [],
+  "userExtension": {
+    "converted": true,
+    "flags": []
+  }
+}

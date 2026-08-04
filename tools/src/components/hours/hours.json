@@ -1,0 +1,52 @@
+{
+  "collectionName": "components_hours_hours",
+  "info": {
+    "singularName": "hours",
+    "pluralName": "hours",
+    "displayName": "hours"
+  },
+  "options": {},
+  "attributes": {
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "quantity": {
+      "type": "decimal"
+    },
+    "comment": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "decimal"
+    },
+    "total_amount": {
+      "type": "decimal"
+    },
+    "year": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "year"
+    },
+    "month": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "month"
+    },
+    "from": {
+      "type": "date"
+    },
+    "to": {
+      "type": "date"
+    },
+    "monthly_quantity": {
+      "type": "decimal"
+    },
+    "quantity_type": {
+      "type": "enumeration",
+      "default": "total",
+      "enum": ["total", "week", "month"]
+    }
+  }
+}

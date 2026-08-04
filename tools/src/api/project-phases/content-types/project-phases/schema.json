@@ -1,0 +1,36 @@
+{
+  "kind": "collectionType",
+  "collectionName": "project_phases",
+  "info": {
+    "singularName": "projectphase",
+    "pluralName": "projectphases",
+    "displayName": "ProjectPhases"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "incomes": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::phase-income.phase-income",
+      "mappedBy": "project_phase"
+    },
+    "expenses": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::phase-expense.phase-expense",
+      "mappedBy": "project_phase"
+    },
+    "project": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project.project",
+      "mappedBy": "project_phases"
+    }
+  }
+}

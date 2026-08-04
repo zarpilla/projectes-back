@@ -1,0 +1,80 @@
+{
+  "kind": "collectionType",
+  "collectionName": "payrolls",
+  "info": {
+    "singularName": "payroll",
+    "pluralName": "payrolls",
+    "displayName": "Payroll"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "year": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::year.year"
+    },
+    "month": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::month.month"
+    },
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "emitted": {
+      "type": "date"
+    },
+    "paid": {
+      "type": "boolean"
+    },
+    "paid_date": {
+      "type": "date"
+    },
+    "total_base": {
+      "type": "decimal"
+    },
+    "total_vat": {
+      "type": "decimal"
+    },
+    "total_irpf": {
+      "type": "decimal"
+    },
+    "total": {
+      "type": "decimal"
+    },
+    "net_base": {
+      "type": "decimal"
+    },
+    "net_date": {
+      "type": "date"
+    },
+    "irpf_base": {
+      "type": "decimal"
+    },
+    "irpf_date": {
+      "type": "date"
+    },
+    "ss_base": {
+      "type": "decimal"
+    },
+    "ss_date": {
+      "type": "date"
+    },
+    "other_base": {
+      "type": "decimal"
+    },
+    "other_date": {
+      "type": "date"
+    },
+    "bank_account": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::bank-accounts.bank-accounts"
+    }
+  }
+}

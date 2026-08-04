@@ -1,0 +1,22 @@
+{
+  "collectionName": "components_orders_incidence_responses",
+  "info": {
+    "singularName": "IncidenceResponse",
+    "pluralName": "IncidenceResponse",
+    "displayName": "IncidenceResponse"
+  },
+  "options": {},
+  "attributes": {
+    "text": {
+      "type": "text"
+    },
+    "user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "response_date": {
+      "type": "datetime"
+    }
+  }
+}

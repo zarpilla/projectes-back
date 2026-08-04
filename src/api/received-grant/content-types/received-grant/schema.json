@@ -1,0 +1,89 @@
+{
+  "kind": "collectionType",
+  "collectionName": "received_grants",
+  "info": {
+    "singularName": "received-grant",
+    "pluralName": "received-grants",
+    "displayName": "Received Grants"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "number": {
+      "type": "integer"
+    },
+    "emitted": {
+      "type": "date"
+    },
+    "contact": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::contacts.contacts"
+    },
+    "total_base": {
+      "type": "decimal"
+    },
+    "total_vat": {
+      "type": "decimal"
+    },
+    "total_irpf": {
+      "type": "decimal"
+    },
+    "total": {
+      "type": "decimal"
+    },
+    "comments": {
+      "type": "richtext"
+    },
+    "paid": {
+      "type": "boolean",
+      "default": false
+    },
+    "paid_date": {
+      "type": "date"
+    },
+    "code": {
+      "type": "string",
+      "required": false,
+      "unique": false
+    },
+    "serial": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::serie.serie"
+    },
+    "updatable": {
+      "type": "boolean"
+    },
+    "updatable_admin": {
+      "type": "boolean",
+      "default": false
+    },
+    "documents": {
+      "type": "media",
+      "relation": "oneToMany",
+      "allowedTypes": ["images", "files", "videos"]
+    },
+    "payment_method": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::payment-method.payment-method"
+    },
+    "contact_grant_number": {
+      "type": "string"
+    },
+    "project": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project.project"
+    },
+    "convocatory": {
+      "type": "string"
+    },
+    "department": {
+      "type": "string"
+    }
+  }
+}

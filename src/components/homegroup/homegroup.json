@@ -1,0 +1,19 @@
+{
+  "collectionName": "components_homegroup_homegroups",
+  "info": {
+    "singularName": "homegroup",
+    "pluralName": "homegroups",
+    "displayName": "homegroup"
+  },
+  "options": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "items": {
+      "type": "component",
+      "repeatable": true,
+      "component": "homeitem.home-item"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "kind": "collectionType",
+  "collectionName": "dedication_types",
+  "info": {
+    "singularName": "dedication-type",
+    "pluralName": "dedication-types",
+    "displayName": "Dedication Types"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    }
+  }
+}

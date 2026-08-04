@@ -1,0 +1,18 @@
+{
+  "kind": "collectionType",
+  "collectionName": "vat_types",
+  "info": {
+    "singularName": "vattype",
+    "pluralName": "vattypes",
+    "displayName": "VatType"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "value": {
+      "type": "integer"
+    }
+  }
+}

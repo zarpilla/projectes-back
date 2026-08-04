@@ -1,0 +1,67 @@
+{
+  "collectionName": "components_expense_expenses",
+  "info": {
+    "singularName": "expense",
+    "pluralName": "expenses",
+    "displayName": "Expense"
+  },
+  "options": {},
+  "attributes": {
+    "concept": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "decimal"
+    },
+    "amount": {
+      "type": "decimal"
+    },
+    "total_amount": {
+      "type": "decimal"
+    },
+    "expense_type": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::expense-type.expense-type"
+    },
+    "date": {
+      "type": "date"
+    },
+    "paid": {
+      "type": "boolean"
+    },
+    "invoice": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::received-invoice.received-invoice"
+    },
+    "provider": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::contacts.contacts"
+    },
+    "ticket": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::ticket.ticket"
+    },
+    "grant": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::emitted-grant.emitted-grant"
+    },
+    "diet": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::diet.diet"
+    },
+    "expense": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::received-expense.received-expense"
+    },
+    "date_estimate_document": {
+      "type": "date"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "kind": "collectionType",
+  "collectionName": "activity_types",
+  "info": {
+    "singularName": "activity type",
+    "pluralName": "activity types",
+    "displayName": "Activity Types"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "project": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project.project",
+      "mappedBy": "activity_types"
+    },
+    "global": {
+      "type": "boolean",
+      "default": false
+    },
+    "projects": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::project.project",
+      "inversedBy": "global_activity_types"
+    }
+  }
+}

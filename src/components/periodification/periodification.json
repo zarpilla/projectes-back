@@ -1,0 +1,26 @@
+{
+  "collectionName": "components_periodification_periodifications",
+  "info": {
+    "singularName": "periodification",
+    "pluralName": "periodifications",
+    "displayName": "periodification"
+  },
+  "options": {},
+  "attributes": {
+    "year": {
+      "type": "string"
+    },
+    "incomes": {
+      "type": "decimal"
+    },
+    "expenses": {
+      "type": "decimal"
+    },
+    "real_incomes": {
+      "type": "decimal"
+    },
+    "real_expenses": {
+      "type": "decimal"
+    }
+  }
+}

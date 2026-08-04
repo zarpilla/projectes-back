@@ -1,0 +1,31 @@
+{
+  "kind": "collectionType",
+  "collectionName": "project_scopes",
+  "info": {
+    "singularName": "scope",
+    "pluralName": "scopes",
+    "displayName": "Scopes"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "code": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "short_name": {
+      "type": "string"
+    },
+    "group": {
+      "type": "string"
+    },
+    "disabled": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

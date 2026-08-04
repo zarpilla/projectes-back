@@ -1,0 +1,77 @@
+{
+  "kind": "collectionType",
+  "collectionName": "phase_expenses",
+  "info": {
+    "singularName": "phase-expense",
+    "pluralName": "phase-expenses",
+    "displayName": "PhaseExpense"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "concept": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "decimal"
+    },
+    "amount": {
+      "type": "decimal"
+    },
+    "total_amount": {
+      "type": "decimal"
+    },
+    "expense_type": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::expense-type.expense-type"
+    },
+    "date": {
+      "type": "date"
+    },
+    "paid": {
+      "type": "boolean"
+    },
+    "invoice": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::received-invoice.received-invoice"
+    },
+    "provider": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::contacts.contacts"
+    },
+    "expense": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::received-expense.received-expense"
+    },
+    "date_estimate_document": {
+      "type": "date"
+    },
+    "project_phase": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project-phases.project-phases"
+    },
+    "project_original_phase": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project-original-phases.project-original-phases"
+    },
+    "bank_account": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::bank-accounts.bank-accounts"
+    },
+    "warning": {
+      "type": "boolean"
+    },
+    "vat_pct": {
+      "type": "integer"
+    }
+  }
+}

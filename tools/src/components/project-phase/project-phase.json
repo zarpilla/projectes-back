@@ -1,0 +1,24 @@
+{
+  "collectionName": "components_project_phase_project_phases",
+  "info": {
+    "singularName": "ProjectPhase",
+    "pluralName": "ProjectPhase",
+    "displayName": "ProjectPhase"
+  },
+  "options": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "incomes": {
+      "type": "component",
+      "repeatable": true,
+      "component": "budget-line.budget-line"
+    },
+    "expenses": {
+      "type": "component",
+      "repeatable": true,
+      "component": "expense.expense"
+    }
+  }
+}

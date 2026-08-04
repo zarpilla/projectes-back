@@ -1,0 +1,20 @@
+{
+  "collectionName": "components_homeitem_home_items",
+  "info": {
+    "singularName": "homeitem",
+    "pluralName": "homeitems",
+    "displayName": "homeItem"
+  },
+  "options": {},
+  "attributes": {
+    "text": {
+      "type": "string"
+    },
+    "open": {
+      "type": "string"
+    },
+    "navigate": {
+      "type": "string"
+    }
+  }
+}

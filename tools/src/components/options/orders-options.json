@@ -1,0 +1,18 @@
+{
+  "collectionName": "components_options_orders_options",
+  "info": {
+    "singularName": "orders_options",
+    "pluralName": "orders_options",
+    "displayName": "orders_options"
+  },
+  "options": {},
+  "attributes": {
+    "multidelivery_discount": {
+      "type": "decimal"
+    },
+    "next_day_limit_hour": {
+      "type": "integer",
+      "default": 14
+    }
+  }
+}

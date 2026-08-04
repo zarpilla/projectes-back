@@ -1,0 +1,39 @@
+{
+  "collectionName": "components_task_task_checklists",
+  "info": {
+    "singularName": "TaskChecklist",
+    "pluralName": "TaskChecklist",
+    "displayName": "TaskChecklist"
+  },
+  "options": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "done": {
+      "type": "boolean",
+      "default": false
+    },
+    "due_date": {
+      "type": "date"
+    },
+    "users": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "plugin::users-permissions.user"
+    },
+    "user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "created": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "created_date": {
+      "type": "datetime"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "kind": "collectionType",
+  "collectionName": "startup_scripts",
+  "info": {
+    "singularName": "startup-scripts",
+    "pluralName": "startup-scriptses",
+    "displayName": "Startup Scripts"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "start": {
+      "type": "datetime"
+    },
+    "end": {
+      "type": "datetime"
+    }
+  }
+}

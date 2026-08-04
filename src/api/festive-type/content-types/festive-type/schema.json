@@ -1,0 +1,25 @@
+{
+  "kind": "collectionType",
+  "collectionName": "festive_types",
+  "info": {
+    "singularName": "festive-type",
+    "pluralName": "festive-types",
+    "displayName": "Festive Type"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "personal": {
+      "type": "boolean",
+      "default": false
+    },
+    "max": {
+      "type": "integer"
+    }
+  }
+}

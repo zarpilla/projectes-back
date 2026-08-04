@@ -1,0 +1,41 @@
+{
+  "kind": "collectionType",
+  "collectionName": "treasuries",
+  "info": {
+    "singularName": "treasury annotation",
+    "pluralName": "treasury annotations",
+    "displayName": "Treasury Annotations"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "comment": {
+      "type": "string"
+    },
+    "total": {
+      "type": "decimal"
+    },
+    "date": {
+      "type": "date"
+    },
+    "project": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project.project",
+      "mappedBy": "treasury_annotations"
+    },
+    "balance": {
+      "type": "decimal"
+    },
+    "bank_account": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::bank-accounts.bank-accounts"
+    },
+    "is_real_balance": {
+      "type": "boolean"
+    }
+  }
+}

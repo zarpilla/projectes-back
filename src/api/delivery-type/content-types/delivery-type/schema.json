@@ -1,0 +1,21 @@
+{
+  "kind": "collectionType",
+  "collectionName": "delivery_types",
+  "info": {
+    "singularName": "delivery-type",
+    "pluralName": "delivery-types",
+    "displayName": "DeliveryType"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "refrigerated": {
+      "type": "boolean"
+    }
+  }
+}

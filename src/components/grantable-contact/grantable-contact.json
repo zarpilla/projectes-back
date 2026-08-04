@@ -1,0 +1,19 @@
+{
+  "collectionName": "components_grantable_contact_grantable_contacts",
+  "info": {
+    "singularName": "grantable_contact",
+    "pluralName": "grantable_contacts",
+    "displayName": "grantable_contact"
+  },
+  "options": {},
+  "attributes": {
+    "contact": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::contacts.contacts"
+    },
+    "amount": {
+      "type": "decimal"
+    }
+  }
+}

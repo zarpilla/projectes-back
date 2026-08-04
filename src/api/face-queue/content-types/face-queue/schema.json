@@ -1,0 +1,53 @@
+{
+  "kind": "collectionType",
+  "collectionName": "face_queues",
+  "info": {
+    "singularName": "face-queue",
+    "pluralName": "face-queues",
+    "displayName": "Face Queue"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "emitted_invoice": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::emitted-invoice.emitted-invoice"
+    },
+    "mode": {
+      "type": "enumeration",
+      "enum": ["test", "real"]
+    },
+    "request_url": {
+      "type": "string"
+    },
+    "request_body": {
+      "type": "text"
+    },
+    "response_body": {
+      "type": "text"
+    },
+    "response_code": {
+      "type": "integer"
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": ["pending", "registered", "delivered", "rejected", "error"]
+    },
+    "invoice": {
+      "type": "json"
+    },
+    "registration_number": {
+      "type": "string"
+    },
+    "last_status_check": {
+      "type": "datetime"
+    },
+    "attempts": {
+      "type": "integer",
+      "default": 0
+    }
+  }
+}

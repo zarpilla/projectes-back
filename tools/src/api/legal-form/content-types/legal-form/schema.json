@@ -1,0 +1,18 @@
+{
+  "kind": "collectionType",
+  "collectionName": "legal_forms",
+  "info": {
+    "singularName": "legal form",
+    "pluralName": "legal forms",
+    "displayName": "Legal Forms"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "kind": "collectionType",
+  "collectionName": "income_types",
+  "info": {
+    "singularName": "income type",
+    "pluralName": "income types",
+    "displayName": "Income Types"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "vat_pct": {
+      "type": "decimal"
+    }
+  }
+}

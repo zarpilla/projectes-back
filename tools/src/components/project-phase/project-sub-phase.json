@@ -1,0 +1,14 @@
+{
+  "collectionName": "components_project_phase_project_sub_phases",
+  "info": {
+    "singularName": "ProjectSubPhase",
+    "pluralName": "ProjectSubPhase",
+    "displayName": "ProjectSubPhase"
+  },
+  "options": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    }
+  }
+}

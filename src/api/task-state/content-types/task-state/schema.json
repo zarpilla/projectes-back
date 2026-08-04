@@ -1,0 +1,21 @@
+{
+  "kind": "collectionType",
+  "collectionName": "task_states",
+  "info": {
+    "singularName": "task-state",
+    "pluralName": "task-states",
+    "displayName": "Task State"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "order": {
+      "type": "integer"
+    }
+  }
+}

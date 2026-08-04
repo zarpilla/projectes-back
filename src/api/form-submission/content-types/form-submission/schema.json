@@ -1,0 +1,29 @@
+{
+  "kind": "collectionType",
+  "collectionName": "form_submissions",
+  "info": {
+    "singularName": "form-submission",
+    "pluralName": "form-submissions",
+    "displayName": "FormSubmission"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "message": {
+      "type": "text"
+    },
+    "user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    }
+  }
+}

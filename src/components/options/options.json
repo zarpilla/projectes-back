@@ -1,0 +1,38 @@
+{
+  "collectionName": "components_options_options",
+  "info": {
+    "singularName": "options",
+    "pluralName": "optionses",
+    "displayName": "Options"
+  },
+  "options": {},
+  "attributes": {
+    "structuralExpenses": {
+      "type": "boolean"
+    },
+    "treasury": {
+      "type": "boolean"
+    },
+    "userHasCostByHour": {
+      "type": "boolean"
+    },
+    "showEstimatedHoursInPhases": {
+      "type": "boolean",
+      "default": false
+    },
+    "deductible_vat_pct": {
+      "type": "decimal",
+      "default": 100
+    },
+    "showTasksInGantt": {
+      "type": "boolean",
+      "default": true
+    },
+    "show_forecast": {
+      "type": "boolean"
+    },
+    "orders": {
+      "type": "boolean"
+    }
+  }
+}

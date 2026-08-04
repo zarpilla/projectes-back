@@ -1,0 +1,63 @@
+{
+  "kind": "singleType",
+  "collectionName": "verifactus",
+  "info": {
+    "singularName": "verifactu",
+    "pluralName": "verifactus",
+    "displayName": "Verifactu"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "mode": {
+      "type": "enumeration",
+      "enum": ["no", "test", "real"]
+    },
+    "certificate": {
+      "type": "media",
+      "relation": "oneToOne",
+      "allowedTypes": ["files"]
+    },
+    "certificate_password": {
+      "type": "password"
+    },
+    "software_developerName": {
+      "type": "string"
+    },
+    "software_developerIrsId": {
+      "type": "string"
+    },
+    "software_name": {
+      "type": "string"
+    },
+    "software_id": {
+      "type": "string"
+    },
+    "software_version": {
+      "type": "string"
+    },
+    "software_number": {
+      "type": "string"
+    },
+    "software_useOnlyVerifactu": {
+      "type": "boolean"
+    },
+    "software_useMulti": {
+      "type": "boolean"
+    },
+    "software_useCurrentMulti": {
+      "type": "boolean"
+    },
+    "software_address": {
+      "type": "string"
+    },
+    "software_date": {
+      "type": "string"
+    },
+    "software_location": {
+      "type": "string"
+    }
+  }
+}

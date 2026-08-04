@@ -1,0 +1,55 @@
+{
+  "kind": "collectionType",
+  "collectionName": "daily_dedications",
+  "info": {
+    "singularName": "calendar",
+    "pluralName": "calendars",
+    "displayName": "Calendars"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "from": {
+      "type": "date"
+    },
+    "to": {
+      "type": "date"
+    },
+    "hours": {
+      "type": "decimal"
+    },
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user",
+      "mappedBy": "daily_dedications"
+    },
+    "costByHour": {
+      "type": "decimal"
+    },
+    "monthly_salary": {
+      "type": "decimal"
+    },
+    "scheme": {
+      "type": "enumeration",
+      "enum": ["autonoma", "general"]
+    },
+    "quota": {
+      "type": "decimal"
+    },
+    "pct_irpf": {
+      "type": "decimal"
+    },
+    "pct_other": {
+      "type": "decimal"
+    },
+    "pct_quota": {
+      "type": "decimal"
+    },
+    "hoursperday": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "kind": "collectionType",
+  "collectionName": "activities",
+  "info": {
+    "singularName": "activity",
+    "pluralName": "activities",
+    "displayName": "Activities"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "description": {
+      "type": "string"
+    },
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "project": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project.project"
+    },
+    "hours": {
+      "type": "decimal"
+    },
+    "date": {
+      "type": "date"
+    },
+    "activity_type": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::activity-type.activity-type"
+    },
+    "invoiced": {
+      "type": "boolean",
+      "default": false
+    },
+    "dedication_type": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::dedication-type.dedication-type"
+    },
+    "invoice_hours_price": {
+      "type": "decimal"
+    },
+    "cost_by_hour": {
+      "type": "decimal"
+    },
+    "task": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::task.task"
+    },
+    "uid_ical": {
+      "type": "string"
+    }
+  }
+}

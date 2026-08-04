@@ -1,0 +1,41 @@
+{
+  "collectionName": "components_options_quotes",
+  "info": {
+    "singularName": "quotes",
+    "pluralName": "quoteses",
+    "displayName": "quotes"
+  },
+  "options": {},
+  "attributes": {
+    "autonoma_pct_quota": {
+      "type": "decimal"
+    },
+    "autonoma_quota": {
+      "type": "decimal"
+    },
+    "autonoma_pct_irpf": {
+      "type": "decimal"
+    },
+    "autonoma_pct_other": {
+      "type": "decimal"
+    },
+    "general_pct_quota": {
+      "type": "decimal"
+    },
+    "general_quota": {
+      "type": "decimal"
+    },
+    "general_pct_irpf": {
+      "type": "decimal"
+    },
+    "general_pct_other": {
+      "type": "decimal"
+    },
+    "diet_amount_total": {
+      "type": "decimal"
+    },
+    "diet_amount_without_irpf": {
+      "type": "decimal"
+    }
+  }
+}

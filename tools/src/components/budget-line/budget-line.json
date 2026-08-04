@@ -1,0 +1,65 @@
+{
+  "collectionName": "components_budget_line_budget_lines",
+  "info": {
+    "singularName": "BudgetLine",
+    "pluralName": "BudgetLine",
+    "displayName": "BudgetLine"
+  },
+  "options": {},
+  "attributes": {
+    "concept": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "decimal"
+    },
+    "amount": {
+      "type": "decimal"
+    },
+    "total_amount": {
+      "type": "decimal"
+    },
+    "date": {
+      "type": "date"
+    },
+    "paid": {
+      "type": "boolean"
+    },
+    "client": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "contacts"
+    },
+    "invoice": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "emitted-invoice"
+    },
+    "grant": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "received-grant"
+    },
+    "estimated_hours": {
+      "type": "component",
+      "repeatable": true,
+      "component": "hours.hours"
+    },
+    "total_estimated_hours": {
+      "type": "decimal"
+    },
+    "income_type": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "income-type"
+    },
+    "income": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "received-income"
+    },
+    "date_estimate_document": {
+      "type": "date"
+    }
+  }
+}

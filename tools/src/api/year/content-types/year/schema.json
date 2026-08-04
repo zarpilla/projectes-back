@@ -1,0 +1,24 @@
+{
+  "kind": "collectionType",
+  "collectionName": "years",
+  "info": {
+    "singularName": "year",
+    "pluralName": "years",
+    "displayName": "Years"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "year": {
+      "type": "integer"
+    },
+    "working_hours": {
+      "type": "decimal"
+    },
+    "deductible_vat_pct": {
+      "type": "decimal"
+    }
+  }
+}

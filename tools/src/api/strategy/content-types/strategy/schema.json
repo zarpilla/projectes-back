@@ -1,0 +1,35 @@
+{
+  "kind": "collectionType",
+  "collectionName": "strategies",
+  "info": {
+    "singularName": "strategie",
+    "pluralName": "strategies",
+    "displayName": "Strategies"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "code": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "richtext"
+    },
+    "projects": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::project.project",
+      "mappedBy": "strategies"
+    },
+    "code_name": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "kind": "collectionType",
+  "collectionName": "treasury_validations",
+  "info": {
+    "singularName": "treasury validation",
+    "pluralName": "treasury validations",
+    "displayName": "Treasury Validation",
+    "description": "Track validated treasury movements"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "entity_type": {
+      "type": "enumeration",
+      "required": true,
+      "enum": [
+        "emitted-invoices",
+        "received-invoices",
+        "received-incomes",
+        "received-expenses",
+        "payrolls",
+        "treasuries"
+      ]
+    },
+    "entity_id": {
+      "type": "integer",
+      "required": true
+    },
+    "sub_type": {
+      "type": "enumeration",
+      "enum": ["irpf", "ss", "other"]
+    },
+    "validated_by": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "notes": {
+      "type": "text"
+    }
+  }
+}

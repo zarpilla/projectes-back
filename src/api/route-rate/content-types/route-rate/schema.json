@@ -1,0 +1,74 @@
+{
+  "kind": "collectionType",
+  "collectionName": "route_rates",
+  "info": {
+    "singularName": "route-rate",
+    "pluralName": "route-rates",
+    "displayName": "RouteRate"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "delivery_type": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::delivery-type.delivery-type"
+    },
+    "pickup": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::pickups.pickups"
+    },
+    "less15": {
+      "type": "decimal"
+    },
+    "less30": {
+      "type": "decimal"
+    },
+    "additional30": {
+      "type": "decimal"
+    },
+    "routes": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::route.route",
+      "inversedBy": "route_rates"
+    },
+    "less10": {
+      "type": "decimal"
+    },
+    "from10to20": {
+      "type": "decimal"
+    },
+    "from20to30": {
+      "type": "decimal"
+    },
+    "from30to40": {
+      "type": "decimal"
+    },
+    "from40to50": {
+      "type": "decimal"
+    },
+    "from50to60": {
+      "type": "decimal"
+    },
+    "additional60": {
+      "type": "decimal"
+    },
+    "ratev2": {
+      "type": "boolean",
+      "default": true
+    },
+    "more10": {
+      "type": "decimal"
+    },
+    "pickup_point": {
+      "type": "decimal"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "collectionName": "components_contact_contact_data",
+  "info": {
+    "singularName": "ContactData",
+    "pluralName": "ContactData",
+    "displayName": "ContactData"
+  },
+  "options": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "nif": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "postcode": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "country": {
+      "type": "string"
+    }
+  }
+}

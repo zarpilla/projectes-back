@@ -1,0 +1,175 @@
+{
+  "kind": "singleType",
+  "collectionName": "us",
+  "info": {
+    "singularName": "me",
+    "pluralName": "mes",
+    "displayName": "me"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "nif": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "email": {
+      "type": "email"
+    },
+    "address": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "postcode": {
+      "type": "string"
+    },
+    "country": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "logo": {
+      "type": "media",
+      "relation": "oneToOne",
+      "allowedTypes": ["images"]
+    },
+    "quote_footer": {
+      "type": "text"
+    },
+    "invoice_footer": {
+      "type": "text"
+    },
+    "options": {
+      "type": "component",
+      "repeatable": false,
+      "component": "options.options"
+    },
+    "quotes": {
+      "type": "component",
+      "repeatable": false,
+      "component": "options.quotes"
+    },
+    "ical": {
+      "type": "string"
+    },
+    "invoice_email": {
+      "type": "string"
+    },
+    "invoice_subject": {
+      "type": "string"
+    },
+    "invoice_template": {
+      "type": "text"
+    },
+    "ccc": {
+      "type": "string"
+    },
+    "order_footer": {
+      "type": "text"
+    },
+    "contact_form_text": {
+      "type": "richtext"
+    },
+    "contact_form_thankyou": {
+      "type": "richtext"
+    },
+    "contact_form_email": {
+      "type": "string"
+    },
+    "orders_options": {
+      "type": "component",
+      "repeatable": false,
+      "component": "options.orders-options"
+    },
+    "verifactu": {
+      "type": "enumeration",
+      "enum": ["no", "test", "real"]
+    },
+    "certificate_pwd": {
+      "type": "password"
+    },
+    "bank_account_payroll": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::bank-accounts.bank-accounts"
+    },
+    "bank_account_ss": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::bank-accounts.bank-accounts"
+    },
+    "bank_account_irpf": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::bank-accounts.bank-accounts"
+    },
+    "bank_account_default": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::bank-accounts.bank-accounts"
+    },
+    "bank_account_vat": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::bank-accounts.bank-accounts"
+    },
+    "google_credentials": {
+      "type": "media",
+      "relation": "oneToOne",
+      "allowedTypes": ["files"]
+    },
+    "face": {
+      "type": "enumeration",
+      "enum": ["no", "test", "real"]
+    },
+    "face_certificate": {
+      "type": "media",
+      "relation": "oneToOne",
+      "allowedTypes": ["files"]
+    },
+    "face_certificate_password": {
+      "type": "password"
+    },
+    "face_test_endpoint": {
+      "type": "string"
+    },
+    "face_real_endpoint": {
+      "type": "string"
+    },
+    "face_invoice_format": {
+      "type": "enumeration",
+      "default": "facturae",
+      "enum": ["ubl", "facturae"]
+    },
+    "front_url": {
+      "type": "string"
+    },
+    "pdf_invoice_parser": {
+      "type": "boolean",
+      "default": false
+    },
+    "dir3_api_url": {
+      "type": "string"
+    },
+    "dir3_api_token": {
+      "type": "password"
+    },
+    "invoice_parser_api_url": {
+      "type": "string"
+    },
+    "invoice_parser_api_token": {
+      "type": "password"
+    }
+  }
+}

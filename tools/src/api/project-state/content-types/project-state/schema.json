@@ -1,0 +1,25 @@
+{
+  "kind": "collectionType",
+  "collectionName": "project_states",
+  "info": {
+    "singularName": "project state",
+    "pluralName": "project states",
+    "displayName": "Project States"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "can_assign_activities": {
+      "type": "boolean"
+    },
+    "can_assign_documents": {
+      "type": "boolean"
+    }
+  }
+}

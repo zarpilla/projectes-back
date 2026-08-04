@@ -1,0 +1,35 @@
+{
+  "kind": "collectionType",
+  "collectionName": "project_original_phases",
+  "info": {
+    "singularName": "project-original-phases",
+    "pluralName": "project-original-phaseses",
+    "displayName": "ProjectOriginalPhases"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "incomes": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::phase-income.phase-income",
+      "mappedBy": "project_original_phase"
+    },
+    "expenses": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::phase-expense.phase-expense",
+      "mappedBy": "project_original_phase"
+    },
+    "project": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project.project"
+    }
+  }
+}

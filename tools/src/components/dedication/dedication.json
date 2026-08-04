@@ -1,0 +1,33 @@
+{
+  "collectionName": "components_dedication_dedications",
+  "info": {
+    "singularName": "dedication",
+    "pluralName": "dedication",
+    "displayName": "dedication"
+  },
+  "options": {},
+  "attributes": {
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "date": {
+      "type": "date"
+    },
+    "hours": {
+      "type": "decimal"
+    },
+    "comment": {
+      "type": "string"
+    },
+    "dedication_type": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "dedication-type"
+    },
+    "costbyhour": {
+      "type": "decimal"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "kind": "collectionType",
+  "collectionName": "time_counters",
+  "info": {
+    "singularName": "time counter",
+    "pluralName": "time counters",
+    "displayName": "Time Counter"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "start": {
+      "type": "datetime"
+    },
+    "project": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::project.project"
+    },
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "description": {
+      "type": "string"
+    }
+  }
+}

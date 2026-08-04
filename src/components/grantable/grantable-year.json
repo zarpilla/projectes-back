@@ -1,0 +1,31 @@
+{
+  "collectionName": "components_grantable_grantable_years",
+  "info": {
+    "singularName": "grantable_year",
+    "pluralName": "grantable_years",
+    "displayName": "Grantable_year"
+  },
+  "options": {},
+  "attributes": {
+    "year": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::year.year"
+    },
+    "grantable_amount_total": {
+      "type": "decimal"
+    },
+    "grantable_amount": {
+      "type": "decimal"
+    },
+    "grantable_structural_expenses_justify_invoices": {
+      "type": "decimal"
+    },
+    "grantable_structural_expenses": {
+      "type": "decimal"
+    },
+    "grantable_cofinancing": {
+      "type": "decimal"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "kind": "collectionType",
+  "collectionName": "orders_trackings",
+  "info": {
+    "singularName": "orders-tracking",
+    "pluralName": "orders-trackings",
+    "displayName": "OrdersTracking"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "order_id": {
+      "type": "integer"
+    },
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "admin_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "admin::user"
+    },
+    "order_status": {
+      "type": "string"
+    }
+  }
+}

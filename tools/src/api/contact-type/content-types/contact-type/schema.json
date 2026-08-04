@@ -1,0 +1,18 @@
+{
+  "kind": "collectionType",
+  "collectionName": "contact_types",
+  "info": {
+    "singularName": "contact type",
+    "pluralName": "contact types",
+    "displayName": "Contact Type"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    }
+  }
+}

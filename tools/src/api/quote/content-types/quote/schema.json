@@ -1,0 +1,92 @@
+{
+  "kind": "collectionType",
+  "collectionName": "quotes",
+  "info": {
+    "singularName": "quote",
+    "pluralName": "quotes",
+    "displayName": "Quotes"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "serial": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::serie.serie"
+    },
+    "number": {
+      "type": "integer"
+    },
+    "contact": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::contacts.contacts"
+    },
+    "lines": {
+      "type": "component",
+      "repeatable": true,
+      "component": "invoice-line.invoice-line"
+    },
+    "total_base": {
+      "type": "decimal"
+    },
+    "total_vat": {
+      "type": "decimal"
+    },
+    "total_irpf": {
+      "type": "decimal"
+    },
+    "total": {
+      "type": "decimal"
+    },
+    "sent": {
+      "type": "boolean",
+      "default": false
+    },
+    "sent_date": {
+      "type": "date"
+    },
+    "code": {
+      "type": "string"
+    },
+    "comments": {
+      "type": "richtext"
+    },
+    "accepted": {
+      "type": "boolean",
+      "default": false
+    },
+    "accepted_date": {
+      "type": "date"
+    },
+    "pdf": {
+      "type": "string"
+    },
+    "emitted": {
+      "type": "date"
+    },
+    "project": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project.project",
+      "mappedBy": "quotes"
+    },
+    "proforma": {
+      "type": "boolean",
+      "default": false
+    },
+    "comments_internal": {
+      "type": "richtext"
+    },
+    "contact_info": {
+      "type": "component",
+      "repeatable": false,
+      "component": "contact.contact-data"
+    },
+    "document_concept": {
+      "type": "string"
+    }
+  }
+}

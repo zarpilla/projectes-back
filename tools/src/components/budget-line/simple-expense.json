@@ -1,0 +1,34 @@
+{
+  "collectionName": "components_budget_line_simple_expenses",
+  "info": {
+    "singularName": "SimpleExpense",
+    "pluralName": "SimpleExpense",
+    "displayName": "SimpleExpense"
+  },
+  "options": {},
+  "attributes": {
+    "concept": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "decimal"
+    },
+    "amount": {
+      "type": "decimal"
+    },
+    "total_amount": {
+      "type": "decimal"
+    },
+    "expense_type": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "expense-type"
+    },
+    "date": {
+      "type": "date"
+    },
+    "date_estimate_document": {
+      "type": "date"
+    }
+  }
+}
