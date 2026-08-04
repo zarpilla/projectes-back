@@ -1,0 +1,57 @@
+/**
+ * PM2 ecosystem template for projectes-v5 (Strapi v5).
+ *
+ * Ported from the v3 scripts/templates/pm2-app.config.js.template. Differences vs v3:
+ *   - cwd points at the v5 project (../projectes-v5 in the instance dir)
+ *   - adds ENCRYPTION_KEY (v5 requirement — used for encrypted admin/transfer tokens)
+ *   - keeps the structured Pino logging env vars (Loki/Grafana) — v5 still uses Pino
+ *
+ * One PM2 process per tenant; ~16 instances share a single MySQL server
+ * (max_connections 151), hence the DATABASE_POOL_MAX cap.
+ */
+module.exports = {
+  apps: [
+    {
+      name: 'strapi-projectes-v5-{{INSTANCE_NAME}}',
+      cwd: '{{INSTANCE_PATH}}/projectes-v5',
+      script: 'npm',
+      args: 'start',
+      env: {
+        HOST: '127.0.0.1',
+        PORT: '{{BACKEND_PORT}}',
+        NODE_ENV: 'production',
+        URL: 'https://{{DOMAIN}}',
+        // --- Structured logging for centralized collection (Loki/Grafana) ---
+        // PRETTY_PRINT=false emits one JSON object per line (level/time/msg/err).
+        STRAPI_LOG_PRETTY_PRINT: 'false',
+        STRAPI_LOG_TIMESTAMP: 'true',
+        STRAPI_LOG_LEVEL: process.env.STRAPI_LOG_LEVEL || 'info',
+        // --- Database (shared MySQL, per-process pool cap) ---
+        DATABASE_CLIENT: 'mysql',
+        DATABASE_HOST: '127.0.0.1',
+        DATABASE_PORT: '3306',
+        DATABASE_NAME: '{{DB_NAME}}',
+        DATABASE_USERNAME: '{{DB_USER}}',
+        DATABASE_PASSWORD: '{{DB_PASSWORD}}',
+        DATABASE_SSL: false,
+        DATABASE_POOL_MIN: '0',
+        DATABASE_POOL_MAX: '8', // 16 instances x 8 = 128 < MySQL max_connections (151)
+        // --- v5 secrets ---
+        APP_KEYS: '{{APP_KEY_1}},{{APP_KEY_2}},{{APP_KEY_3}}',
+        API_TOKEN_SALT: '{{API_TOKEN_SALT}}',
+        ADMIN_JWT_SECRET: '{{ADMIN_JWT_SECRET}}',
+        TRANSFER_TOKEN_SALT: '{{TRANSFER_TOKEN_SALT}}',
+        JWT_SECRET: '{{JWT_SECRET}}',
+        ENCRYPTION_KEY: '{{ENCRYPTION_KEY}}', // v5-only (not in v3)
+        // --- Email (nodemailer/SMTP in production) ---
+        EMAIL_PROVIDER: 'nodemailer',
+        EMAIL_FROM: '{{EMAIL_FROM}}',
+        TASK_EMAIL_TO: '{{TASK_EMAIL_TO}}',
+        SMTP_HOST: '{{SMTP_HOST}}',
+        SMTP_PORT: '{{SMTP_PORT}}',
+        SMTP_USER: '{{SMTP_USER}}',
+        SMTP_PASS: '{{SMTP_PASS}}',
+      },
+    },
+  ],
+};
