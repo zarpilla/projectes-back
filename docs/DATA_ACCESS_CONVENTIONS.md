@@ -42,15 +42,20 @@ or where you need `where`-style filters without the Document Service wrapper.
 
 ### 3. `strapi.db.connection` (Knex) — last resort: lifecycle bypass / raw SQL
 
+**IMPORTANT: all raw SQL must go through the `src/services/raw-sql.js` helper**,
+which enforces parameter binding and closes the v3 SQL-injection hole (R11).
+Never call `strapi.db.connection.raw()` directly with string interpolation.
+
 ```js
+const { rawExecute, bulkUpdate } = require('../../services/raw-sql');
 // Parameter-bound raw SQL (NEVER string-interpolate)
-await strapi.db.connection.raw('UPDATE orders SET emitted_invoice = ?, status = ? WHERE id IN (?)', [
+await rawExecute(strapi, 'UPDATE orders SET emitted_invoice = ?, status = ? WHERE id IN (?)', [
   invoiceId,
   'invoiced',
   orderId,
 ]);
-// Knex query builder (skips Strapi lifecycles — used intentionally for stored-totals refresh)
-await strapi.db.connection('projects').where({ id }).update({ dirty: false });
+// Knex query builder bulk update (skips lifecycles — stored-totals refresh)
+await bulkUpdate(strapi, 'projects', { id }, { dirty: false });
 ```
 
 Use ONLY when you must bypass lifecycles (bulk invoice/order status updates,
