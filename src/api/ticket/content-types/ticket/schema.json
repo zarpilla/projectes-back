@@ -23,7 +23,7 @@
     "contact": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::contacts.contacts"
+      "target": "api::contact.contact"
     },
     "total_base": {
       "type": "decimal"

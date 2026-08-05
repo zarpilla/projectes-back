@@ -42,10 +42,11 @@ const DST_COMPONENTS = path.join(V5_ROOT, 'src/components');
 const DST_API = path.join(V5_ROOT, 'src/api');
 const DST_EXT_UP = path.join(V5_ROOT, 'src/extensions/users-permissions/content-types/user');
 
-// v3 singular model name (file/dir name) → v5 UID for app content types.
-// v3 stores relations as the api folder name (e.g. "emitted-invoice"), which is already singular.
+// v5 UID for an app content type, using the SINGULAR folder/key form.
+// The ct passed in may be a v3 folder (singular or plural); normalize via ctSingular.
 function ctUid(ct) {
-  return `api::${ct}.${ct}`;
+  const s = ctSingular(ct);
+  return `api::${s}.${s}`;
 }
 
 // Build an index of all content-type schemas keyed by their v3 relation-target name.
@@ -296,7 +297,24 @@ function pluralize(word) {
   return word + 's';
 }
 
-function convertInfo(v3info, ctName, isComponent) {
+// Singularize a single (last) path segment. Conservative — only handles clear plurals.
+function singularizeWord(word) {
+  if (/ies$/.test(word) && word.length > 3) return word.slice(0, -3) + 'y';
+  if (/ses$|xes$|zes$|ches$|shes$/.test(word)) return word.slice(0, -2);
+  if (/s$/.test(word) && !/ss$/.test(word)) return word.slice(0, -1);
+  return word;
+}
+
+// Normalize a v3 api folder (which may be plural) to the v5 singular folder/key.
+// Only the LAST hyphen-segment is singularized: "bank-accounts" -> "bank-account",
+// "orders-imports" -> "orders-import" (already-singular first segment kept).
+function ctSingular(folder) {
+  const parts = folder.split('-');
+  parts[parts.length - 1] = singularizeWord(parts[parts.length - 1]);
+  return parts.join('-');
+}
+
+function convertInfo(v3info, ctName, isComponent, pluralOverride) {
   const name = v3info.name || ctName;
   const lower = name.toLowerCase();
   let singular;
@@ -308,7 +326,16 @@ function convertInfo(v3info, ctName, isComponent) {
   } else {
     // For content types, singularName MUST equal the ct key (api folder name).
     singular = ctName.toLowerCase();
-    plural = pluralize(singular);
+    // pluralName comes from the v3 REST route prefix (e.g. /orders -> "orders"),
+    // so the frontend URLs are preserved. Fall back to pluralize() if no routes.
+    plural = pluralOverride || pluralize(singular);
+  }
+  // v5 requires pluralName to be unique across ALL content types (incl. single-types)
+  // and distinct from singularName. If the derived plural equals the singular (happens
+  // for single-types like "config", "me", "verifactu", "home-menu" whose folder is
+  // already singular), append a suffix so they don't collide with themselves or others.
+  if (plural === singular) {
+    plural = singular + '-setting';
   }
   const info = {
     singularName: singular,
@@ -319,15 +346,33 @@ function convertInfo(v3info, ctName, isComponent) {
   return info;
 }
 
+// Derive the v5 pluralName from the v3 routes.json: take the leading path segment of
+// the first collection route (e.g. "/orders/:id" -> "orders"). Returns null if no routes.
+function pluralFromV3Routes(ct) {
+  const p = path.join(V3_ROOT, 'api', ct, 'config', 'routes.json');
+  if (!fs.existsSync(p)) return null;
+  try {
+    const routes = require(p).routes || [];
+    for (const r of routes) {
+      if (!r.path) continue;
+      const seg = r.path.replace(/^\/+/, '').split('/')[0];
+      if (seg && !seg.startsWith(':')) return seg;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 // ── options → top-level + pluginOptions ──────────────────────────────────────
 // v3: options: { increments, timestamps, draftAndPublish }
 // v5: draftAndPublish is top-level; timestamps/increments are implicit (drop).
-function convertContentType(v3schema, ctName, ctx) {
+function convertContentType(v3schema, ctName, ctx, pluralOverride) {
   const flags = [];
   const v5 = {
     kind: v3schema.kind === 'singleType' ? 'singleType' : 'collectionType',
     collectionName: v3schema.collectionName,
-    info: convertInfo(v3schema.info || {}, ctName, false),
+    info: convertInfo(v3schema.info || {}, ctName, false, pluralOverride),
     options: {},
     pluginOptions: v3schema.pluginOptions || {},
     attributes: {},
@@ -387,16 +432,20 @@ function main() {
   }
 
   // 2. Content types
+  // v5 requires: folder name == singularName, and pluralName must be unique.
+  // The v3 api folder may be plural (e.g. "bank-accounts"); we normalize to the
+  // singular folder/key ("bank-account") and keep the v3 route prefix as pluralName.
   for (const [ct, { schema }] of Object.entries(contentTypes)) {
-    const outDir = path.join(DST_API, ct, 'content-types', ct);
+    const singular = ctSingular(ct);
+    const outDir = path.join(DST_API, singular, 'content-types', singular);
     const outFile = path.join(outDir, 'schema.json');
     try {
-      const { schema: v5, flags } = convertContentType(schema, ct, ctx);
+      const { schema: v5, flags } = convertContentType(schema, singular, ctx, pluralFromV3Routes(ct));
       fs.mkdirSync(outDir, { recursive: true });
       fs.writeFileSync(outFile, JSON.stringify(v5, null, 2) + '\n');
       report.contentTypes.total++;
       report.contentTypes.converted++;
-      for (const fl of flags) report.contentTypes.flags.push({ ct, ...fl });
+      for (const fl of flags) report.contentTypes.flags.push({ ct: singular, ...fl });
     } catch (e) {
       report.errors.push({ file: ct, error: e.message });
     }

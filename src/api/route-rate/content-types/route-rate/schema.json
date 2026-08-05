@@ -22,7 +22,7 @@
     "pickup": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::pickups.pickups"
+      "target": "api::pickup.pickup"
     },
     "less15": {
       "type": "decimal"

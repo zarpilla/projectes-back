@@ -58,7 +58,7 @@
     "pickup": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::pickups.pickups"
+      "target": "api::pickup.pickup"
     },
     "volume_discount_number_of_orders": {
       "type": "integer"
@@ -69,7 +69,7 @@
     "transfer_pickup": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::pickups.pickups"
+      "target": "api::pickup.pickup"
     },
     "is_transfer_route": {
       "type": "boolean"

@@ -42,7 +42,7 @@
     "provider": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::contacts.contacts"
+      "target": "api::contact.contact"
     },
     "expense": {
       "type": "relation",
@@ -54,18 +54,20 @@
     },
     "project_phase": {
       "type": "relation",
-      "relation": "manyToOne",
-      "target": "api::project-phases.project-phases"
+      "relation": "oneToOne",
+      "target": "api::project-phas.project-phas",
+      "mappedBy": "expenses"
     },
     "project_original_phase": {
       "type": "relation",
-      "relation": "manyToOne",
-      "target": "api::project-original-phases.project-original-phases"
+      "relation": "oneToOne",
+      "target": "api::project-original-phas.project-original-phas",
+      "mappedBy": "expenses"
     },
     "bank_account": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::bank-accounts.bank-accounts"
+      "target": "api::bank-account.bank-account"
     },
     "warning": {
       "type": "boolean"

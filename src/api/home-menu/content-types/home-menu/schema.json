@@ -3,7 +3,7 @@
   "collectionName": "home_menus",
   "info": {
     "singularName": "home-menu",
-    "pluralName": "home-menus",
+    "pluralName": "home-menu-setting",
     "displayName": "HomeMenu"
   },
   "options": {

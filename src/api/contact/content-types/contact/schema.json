@@ -1,0 +1,163 @@
+{
+  "kind": "collectionType",
+  "collectionName": "contacts",
+  "info": {
+    "singularName": "contact",
+    "pluralName": "contacts",
+    "displayName": "Contacts"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "nif": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "email": {
+      "type": "email"
+    },
+    "address": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "postcode": {
+      "type": "string"
+    },
+    "country": {
+      "type": "string"
+    },
+    "projects": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::project.project",
+      "mappedBy": "clients"
+    },
+    "is_client": {
+      "type": "boolean"
+    },
+    "is_provider": {
+      "type": "boolean"
+    },
+    "legal_form": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::legal-form.legal-form"
+    },
+    "sector": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::sector.sector"
+    },
+    "contact_person": {
+      "type": "string"
+    },
+    "contact_phone": {
+      "type": "string"
+    },
+    "website": {
+      "type": "string"
+    },
+    "contact_email": {
+      "type": "email"
+    },
+    "projectes": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::project.project",
+      "mappedBy": "intercooperations"
+    },
+    "externalId": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "contact_types": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::contact-type.contact-type"
+    },
+    "externalId2": {
+      "type": "string"
+    },
+    "users_permissions_user": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "owner": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "time_slot_1_ini": {
+      "type": "decimal"
+    },
+    "time_slot_1_end": {
+      "type": "decimal"
+    },
+    "time_slot_2_ini": {
+      "type": "decimal"
+    },
+    "time_slot_2_end": {
+      "type": "decimal"
+    },
+    "trade_name": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "text"
+    },
+    "partner_amount": {
+      "type": "decimal"
+    },
+    "partner_amount_date": {
+      "type": "date"
+    },
+    "followup_date": {
+      "type": "date"
+    },
+    "multiowner": {
+      "type": "boolean"
+    },
+    "multidelivery": {
+      "type": "boolean"
+    },
+    "pickup_discount": {
+      "type": "decimal"
+    },
+    "pickup_point": {
+      "type": "boolean"
+    },
+    "notes_delivery": {
+      "type": "text"
+    },
+    "collection_points": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::contact.contact"
+    },
+    "face_dir3_oc": {
+      "type": "string"
+    },
+    "face_dir3_og": {
+      "type": "string"
+    },
+    "face_dir3_ut": {
+      "type": "string"
+    },
+    "face": {
+      "type": "boolean"
+    }
+  }
+}

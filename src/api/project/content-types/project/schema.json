@@ -43,7 +43,7 @@
     "intercooperations": {
       "type": "relation",
       "relation": "manyToMany",
-      "target": "api::contacts.contacts",
+      "target": "api::contact.contact",
       "inversedBy": "projectes"
     },
     "total_estimated_hours": {
@@ -109,7 +109,7 @@
     "clients": {
       "type": "relation",
       "relation": "manyToMany",
-      "target": "api::contacts.contacts",
+      "target": "api::contact.contact",
       "inversedBy": "projects"
     },
     "activities": {
@@ -227,7 +227,7 @@
     "region": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::regions.regions"
+      "target": "api::region.region"
     },
     "purpose": {
       "type": "richtext"
@@ -324,7 +324,7 @@
     "grantable_leader": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::contacts.contacts"
+      "target": "api::contact.contact"
     },
     "grantable_contacts": {
       "type": "component",
@@ -334,13 +334,13 @@
     "project_original_phases": {
       "type": "relation",
       "relation": "oneToMany",
-      "target": "api::project-original-phases.project-original-phases",
+      "target": "api::project-original-phas.project-original-phas",
       "mappedBy": "project"
     },
     "project_phases": {
       "type": "relation",
       "relation": "oneToMany",
-      "target": "api::project-phases.project-phases",
+      "target": "api::project-phas.project-phas",
       "mappedBy": "project"
     },
     "grantable_structural_expenses_justify_invoices": {

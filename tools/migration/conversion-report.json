@@ -17,7 +17,7 @@
         "dominant": true
       },
       {
-        "ct": "contacts",
+        "ct": "contact",
         "attr": "collection_points",
         "reason": "self-relation",
         "relation": "oneToMany",
@@ -41,7 +41,7 @@
         "dominant": false
       },
       {
-        "ct": "orders",
+        "ct": "order",
         "attr": "collection_orders",
         "reason": "self-relation",
         "relation": "oneToMany",
@@ -49,10 +49,10 @@
         "dominant": false
       },
       {
-        "ct": "orders",
+        "ct": "order",
         "attr": "collection_order",
         "reason": "self-relation",
-        "relation": "manyToOne",
+        "relation": "oneToOne",
         "via": "collection_orders",
         "dominant": false
       },

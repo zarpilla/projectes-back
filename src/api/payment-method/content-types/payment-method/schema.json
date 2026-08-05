@@ -26,7 +26,7 @@
     "bank_account": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::bank-accounts.bank-accounts"
+      "target": "api::bank-account.bank-account"
     },
     "default": {
       "type": "boolean"

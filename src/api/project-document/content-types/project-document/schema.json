@@ -1,0 +1,39 @@
+{
+  "kind": "collectionType",
+  "collectionName": "project_documents",
+  "info": {
+    "singularName": "project-document",
+    "pluralName": "project-documents",
+    "displayName": "Project Documents"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "project": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::project.project"
+    },
+    "received_invoice": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::received-invoice.received-invoice"
+    },
+    "received_expense": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::received-expense.received-expense"
+    },
+    "phaseId": {
+      "type": "integer"
+    },
+    "subphaseId": {
+      "type": "integer"
+    },
+    "expenseId": {
+      "type": "integer"
+    }
+  }
+}

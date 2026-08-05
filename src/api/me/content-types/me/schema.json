@@ -3,7 +3,7 @@
   "collectionName": "us",
   "info": {
     "singularName": "me",
-    "pluralName": "mes",
+    "pluralName": "me-setting",
     "displayName": "me"
   },
   "options": {
@@ -102,27 +102,27 @@
     "bank_account_payroll": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::bank-accounts.bank-accounts"
+      "target": "api::bank-account.bank-account"
     },
     "bank_account_ss": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::bank-accounts.bank-accounts"
+      "target": "api::bank-account.bank-account"
     },
     "bank_account_irpf": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::bank-accounts.bank-accounts"
+      "target": "api::bank-account.bank-account"
     },
     "bank_account_default": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::bank-accounts.bank-accounts"
+      "target": "api::bank-account.bank-account"
     },
     "bank_account_vat": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::bank-accounts.bank-accounts"
+      "target": "api::bank-account.bank-account"
     },
     "google_credentials": {
       "type": "media",

@@ -31,7 +31,7 @@
     "bank_account": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::bank-accounts.bank-accounts"
+      "target": "api::bank-account.bank-account"
     },
     "is_real_balance": {
       "type": "boolean"

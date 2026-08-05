@@ -10,7 +10,7 @@
     "contact": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::contacts.contacts"
+      "target": "api::contact.contact"
     },
     "amount": {
       "type": "decimal"

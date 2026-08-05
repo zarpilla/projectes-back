@@ -3,7 +3,7 @@
   "collectionName": "configs",
   "info": {
     "singularName": "config",
-    "pluralName": "configs",
+    "pluralName": "config-setting",
     "displayName": "config"
   },
   "options": {

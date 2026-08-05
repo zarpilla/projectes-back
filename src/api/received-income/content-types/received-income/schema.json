@@ -23,7 +23,7 @@
     "contact": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::contacts.contacts"
+      "target": "api::contact.contact"
     },
     "total_base": {
       "type": "decimal"
@@ -120,7 +120,7 @@
     "bank_account": {
       "type": "relation",
       "relation": "oneToOne",
-      "target": "api::bank-accounts.bank-accounts"
+      "target": "api::bank-account.bank-account"
     },
     "contact_info": {
       "type": "component",
