@@ -70,10 +70,16 @@ function loadV3Routes(ct) {
 }
 
 // Convert a v3 policy reference to its v5 equivalent.
+// Returns null if the policy should be dropped (handled differently in v5).
 function convertPolicy(pol, ct) {
   if (pol === 'global::isAdmin') return 'global::isAdmin';
-  if (pol === 'plugins::users-permissions.isAuthenticated') {
-    return 'users-permissions.isAuthenticated';
+  // v3 `plugins::users-permissions.isAuthenticated` has no v5 policy equivalent —
+  // v5 core content-api routes are auth-gated by default via createCoreRouter,
+  // and custom routes declare auth via `config.auth`. Drop the policy here.
+  if (pol === 'plugins::users-permissions.isAuthenticated') return null;
+  if (pol.startsWith('plugins::')) {
+    // other plugin policies: v5 uses `plugin::` prefix
+    return pol.replace('plugins::', 'plugin::');
   }
   return pol; // pass through anything else for manual review
 }
@@ -118,9 +124,10 @@ function generateCoreRouter(ct, v3Routes) {
     if (!CORE_ACTIONS.has(action)) continue;
     const policies = r.config && r.config.policies;
     if (Array.isArray(policies) && policies.length) {
-      corePolicies[action] = {
-        policies: policies.map((p) => `'${convertPolicy(p, ct)}'`).join(', '),
-      };
+      const converted = policies.map((p) => convertPolicy(p, ct)).filter((p) => p !== null);
+      if (converted.length) {
+        corePolicies[action] = { policies: converted.map((p) => `'${p}'`).join(', ') };
+      }
     }
   }
   const configArg =
@@ -159,10 +166,18 @@ function generateCustomRoutes(singular, v3ct, v3Routes, plural) {
       // strip the leading "/<plural>" from v3 path to get the relative suffix,
       // but keep it if it doesn't match (safer). v5 will namespace under /api/<plural>.
       const v5Path = relativizePath(r.path, plural);
-      const policies = (r.config && r.config.policies ? r.config.policies : [])
-        .map((p) => `'${convertPolicy(p, singular)}'`)
-        .join(', ');
-      const config = policies ? `, config: { policies: [${policies}] }` : '';
+      const policyArr = (r.config && r.config.policies ? r.config.policies : [])
+        .map((p) => convertPolicy(p, singular))
+        .filter((p) => p !== null);
+      // v3 isAuthenticated policy -> v5 auth on the route; other policies kept.
+      const hadAuth = ((r.config && r.config.policies) || []).some(
+        (p) => p === 'plugins::users-permissions.isAuthenticated',
+      );
+      const policyStr = policyArr.map((p) => `'${p}'`).join(', ');
+      const configParts = [];
+      if (hadAuth) configParts.push('auth: {}');
+      if (policyStr) configParts.push(`policies: [${policyStr}]`);
+      const config = configParts.length ? `, config: { ${configParts.join(', ')} }` : '';
       return `    {
       method: '${r.method}',
       path: '${v5Path}',
