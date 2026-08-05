@@ -1,20 +1,32 @@
 'use strict';
+/* global strapi */
 
 /**
- * received-expense controller (v5). Core CRUD inherited; custom methods stubbed until Phase 4.
+ * received-expense controller (v5). Ported from v3 api/received-expense/controllers/received-expense.js.
+ * Custom endpoints: findBasic, upload (delegates to the shared invoice-parser proxy —
+ * same Z.ai pipeline as received-invoice).
  */
 const { createCoreController } = require('@strapi/strapi').factories;
+const { adaptQuery } = require('../../../services/query-adapter');
+const { proxyUpload } = require('../../../services/invoice-parser-proxy');
 
 module.exports = createCoreController('api::received-expense.received-expense', ({ strapi }) => ({
-  // Default core actions (find/findOne/create/update/delete) are inherited.
-  // TODO(P4): port received-expense.findBasic from v3 api/received-expense/controllers/received-expense.js
   async findBasic(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'received-expense.findBasic not yet ported (Phase 4)' };
+    const opts = adaptQuery(ctx.query);
+    return strapi.db.query('api::received-expense.received-expense').findMany({
+      where: opts.filters || {},
+      populate: { contact: true, projects: true, document_type: true },
+      limit: opts.pagination?.limit,
+      offset: opts.pagination?.start,
+      orderBy: opts.sort,
+    });
   },
-  // TODO(P4): port received-expense.upload from v3 api/received-expense/controllers/received-expense.js
+
+  /**
+   * POST /api/received-expenses/upload
+   * Parses the uploaded PDF via the Z.ai invoice-parser (shared with received-invoice).
+   */
   async upload(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'received-expense.upload not yet ported (Phase 4)' };
+    return proxyUpload(strapi, ctx);
   },
 }));
