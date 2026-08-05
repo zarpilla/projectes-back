@@ -6,4 +6,10 @@
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 
-module.exports = createCoreRouter('api::contact-type.contact-type');
+module.exports = createCoreRouter('api::contact-type.contact-type', {
+  config: {
+    create: { policies: ['global::isAdmin'] },
+    update: { policies: ['global::isAdmin'] },
+    delete: { policies: ['global::isAdmin'] },
+  },
+});

@@ -6,4 +6,10 @@
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 
-module.exports = createCoreRouter('api::user-festive.user-festive');
+module.exports = createCoreRouter('api::user-festive.user-festive', {
+  config: {
+    create: { policies: ['global::isAdmin'] },
+    update: { policies: ['global::isAdmin'] },
+    delete: { policies: ['global::isAdmin'] },
+  },
+});

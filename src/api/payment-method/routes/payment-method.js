@@ -6,4 +6,10 @@
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 
-module.exports = createCoreRouter('api::payment-method.payment-method');
+module.exports = createCoreRouter('api::payment-method.payment-method', {
+  config: {
+    create: { policies: ['global::isAdmin'] },
+    update: { policies: ['global::isAdmin'] },
+    delete: { policies: ['global::isAdmin'] },
+  },
+});

@@ -6,4 +6,10 @@
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 
-module.exports = createCoreRouter('api::year.year');
+module.exports = createCoreRouter('api::year.year', {
+  config: {
+    create: { policies: ['global::isAdmin'] },
+    update: { policies: ['global::isAdmin'] },
+    delete: { policies: ['global::isAdmin'] },
+  },
+});

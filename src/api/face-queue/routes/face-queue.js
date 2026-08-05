@@ -6,4 +6,9 @@
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 
-module.exports = createCoreRouter('api::face-queue.face-queue');
+module.exports = createCoreRouter('api::face-queue.face-queue', {
+  config: {
+    update: { policies: ['global::isAdmin'] },
+    delete: { policies: ['global::isAdmin'] },
+  },
+});

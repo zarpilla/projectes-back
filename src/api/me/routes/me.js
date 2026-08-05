@@ -6,4 +6,9 @@
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 
-module.exports = createCoreRouter('api::me.me');
+module.exports = createCoreRouter('api::me.me', {
+  config: {
+    update: { policies: ['global::isAdmin'] },
+    delete: { policies: ['global::isAdmin'] },
+  },
+});

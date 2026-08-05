@@ -6,4 +6,9 @@
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 
-module.exports = createCoreRouter('api::verifactu-chain.verifactu-chain');
+module.exports = createCoreRouter('api::verifactu-chain.verifactu-chain', {
+  config: {
+    update: { policies: ['global::isAdmin'] },
+    delete: { policies: ['global::isAdmin'] },
+  },
+});

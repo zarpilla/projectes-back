@@ -109,7 +109,27 @@ module.exports = createCoreService('api::${ct}.${ct}', ({ strapi }) => ({
 `;
 }
 
-function generateCoreRouter(ct) {
+function generateCoreRouter(ct, v3Routes) {
+  // Collect v3 policies on CORE actions (find/findOne/create/update/delete/count)
+  // so admin-gated writes are preserved (e.g. verifactu PUT/DELETE -> global::isAdmin).
+  const corePolicies = {};
+  for (const r of v3Routes) {
+    const action = (r.handler || '').split('.')[1];
+    if (!CORE_ACTIONS.has(action)) continue;
+    const policies = r.config && r.config.policies;
+    if (Array.isArray(policies) && policies.length) {
+      corePolicies[action] = {
+        policies: policies.map((p) => `'${convertPolicy(p, ct)}'`).join(', '),
+      };
+    }
+  }
+  const configArg =
+    Object.keys(corePolicies).length === 0
+      ? ''
+      : `, {\n  config: {\n${Object.entries(corePolicies)
+          .map(([a, c]) => `    ${a}: { policies: [${c.policies}] },`)
+          .join('\n')}\n  },\n}`;
+
   return `'use strict';
 
 /**
@@ -118,7 +138,7 @@ function generateCoreRouter(ct) {
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 
-module.exports = createCoreRouter('api::${ct}.${ct}');
+module.exports = createCoreRouter('api::${ct}.${ct}'${configArg});
 `;
 }
 
@@ -250,8 +270,8 @@ function main() {
     fs.writeFileSync(path.join(dirs.services, `${singular}.js`), generateService(singular));
     report.services++;
 
-    // core router
-    fs.writeFileSync(path.join(dirs.routes, `${singular}.js`), generateCoreRouter(singular));
+    // core router (with v3 core-route policies preserved, e.g. isAdmin-gated writes)
+    fs.writeFileSync(path.join(dirs.routes, `${singular}.js`), generateCoreRouter(singular, v3Routes));
     report.coreRouters++;
 
     // custom routes (if any)
