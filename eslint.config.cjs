@@ -35,6 +35,7 @@ module.exports = [
       'src/admin/**',
       '.strapi/**',
       'database/migrations/**',
+      'utils/**', // vendored PDF utilities (microinvoice) — copied verbatim from v3
     ],
   },
 ];
