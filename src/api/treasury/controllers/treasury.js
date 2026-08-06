@@ -3,9 +3,7 @@
 
 const moment = require('moment');
 const _ = require('lodash');
-// TODO(P4.8): projectFinancials is ported in Phase 4.8. Until then this is a stub
-// returning an empty forecast so the treasury controller loads and the route works.
-const buildEstimatedForecastByYear = () => ({});
+const { buildEstimatedForecastByYear } = require('../../project/services/projectFinancials');
 const zeroPad = (num, places) => String(num).padStart(places, '0');
 
 /**
@@ -82,40 +80,30 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       .query('api::treasury.treasury')
       .findMany({ populate: { bank_account: true, project: true }, limit: -1 });
 
-    const emitted = await strapi.db
-      .query('api::emitted-invoice.emitted-invoice')
-      .findMany({
-        populate: { bank_account: true, project: true, projects: true, contact: true },
-        limit: -1,
-      });
+    const emitted = await strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
+      populate: { bank_account: true, project: true, projects: true, contact: true },
+      limit: -1,
+    });
 
-    const received = await strapi.db
-      .query('api::received-invoice.received-invoice')
-      .findMany({
-        populate: { bank_account: true, project: true, projects: true, contact: true },
-        limit: -1,
-      });
+    const received = await strapi.db.query('api::received-invoice.received-invoice').findMany({
+      populate: { bank_account: true, project: true, projects: true, contact: true },
+      limit: -1,
+    });
 
-    const receivedIncomes = await strapi.db
-      .query('api::received-income.received-income')
-      .findMany({
-        populate: { bank_account: true, project: true, projects: true, contact: true, document_type: true },
-        limit: -1,
-      });
+    const receivedIncomes = await strapi.db.query('api::received-income.received-income').findMany({
+      populate: { bank_account: true, project: true, projects: true, contact: true, document_type: true },
+      limit: -1,
+    });
 
-    const receivedExpenses = await strapi.db
-      .query('api::received-expense.received-expense')
-      .findMany({
-        populate: { bank_account: true, project: true, projects: true, contact: true, document_type: true },
-        limit: -1,
-      });
+    const receivedExpenses = await strapi.db.query('api::received-expense.received-expense').findMany({
+      populate: { bank_account: true, project: true, projects: true, contact: true, document_type: true },
+      limit: -1,
+    });
 
-    const payrolls = await strapi.db
-      .query('api::payroll.payroll')
-      .findMany({
-        populate: { bank_account: true, year: true, month: true, users_permissions_user: true },
-        limit: -1,
-      });
+    const payrolls = await strapi.db.query('api::payroll.payroll').findMany({
+      populate: { bank_account: true, year: true, month: true, users_permissions_user: true },
+      limit: -1,
+    });
 
     // Fetch ALL projects (we'll filter in JavaScript)
     const allProjectsRaw = await strapi.db.query('api::project.project').findMany({
