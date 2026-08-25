@@ -12,15 +12,32 @@
  *   face retry-pending  -> strapi.service('api::face-queue.face-queue').retryPending()
  */
 
+/* global strapi */ // strapi injected at runtime for the taskEmailDigest helper.
+
 const STUB = (label) => async () => {
   // eslint-disable-next-line no-console
   console.log(`[cron] ${label}: stub — handler not yet ported (Phase 4/5/8)`);
 };
 
+// Daily task digest — delegates to the ported task controller's email action.
+// The action reads all data itself; ctx is unused for input.
+async function taskEmailDigest() {
+  try {
+    await strapi.controller('api::task.task').email({ state: { user: null }, query: {} });
+  } catch (e) {
+    strapi.log.error(`[cron] task.email failed: ${e && e.message}`);
+  }
+}
+
 module.exports = {
-  // Every day at 3am — daily task digest email (ported in Phase 4.9).
+  // Every day at 3am — daily task digest email (controller ported in P4.9).
   '0 3 * * *': {
-    task: ({ strapi }) => STUB('task.email'),
+    task: ({ strapi }) => taskEmailDigest(),
+  },
+  // Drain the stored-totals refresh queue every 2 minutes (P4.10 redesign:
+  // DB-backed via projects.dirty — PM2-safe across all instances).
+  '*/2 * * * *': {
+    task: ({ strapi }) => require('./src/api/project/services/totalsRefreshScheduler').processDirty(),
   },
   // Check FACe invoice status every 30 minutes (ported in Phase 8.1).
   '*/30 * * * *': {

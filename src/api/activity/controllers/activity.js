@@ -18,9 +18,7 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptQuery } = require('../../../services/query-adapter');
-
-// TODO(P4.10): replace with the DB-backed totals-refresh scheduler.
-const scheduleRefresh = () => {};
+const { scheduleRefresh } = require('../../project/services/totalsRefreshScheduler');
 
 module.exports = createCoreController('api::activity.activity', ({ strapi }) => ({
   /**
