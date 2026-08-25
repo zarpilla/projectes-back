@@ -1,20 +1,44 @@
 'use strict';
 
 /**
- * activity-type controller (v5). Core CRUD inherited; custom methods stubbed until Phase 4.
+ * activity-type controller (v5). Ported from v3 api/activity-type/controllers/activity-type.js.
+ * Core CRUD is inherited from createCoreController.
  */
 const { createCoreController } = require('@strapi/strapi').factories;
 
 module.exports = createCoreController('api::activity-type.activity-type', ({ strapi }) => ({
-  // Default core actions (find/findOne/create/update/delete) are inherited.
-  // TODO(P4): port activity-type.getBasic from v3 api/activity-type/controllers/activity-type.js
+  /**
+   * GET /api/activity-types/basic
+   * Slim projection (id, name, global) of all activity types.
+   */
   async getBasic(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'activity-type.getBasic not yet ported (Phase 4)' };
+    return strapi.db.query('api::activity-type.activity-type').findMany({
+      select: ['id', 'name', 'global'],
+      limit: -1,
+    });
   },
-  // TODO(P4): port activity-type.updateGlobal from v3 api/activity-type/controllers/activity-type.js
+
+  /**
+   * GET /api/activity-types/global
+   * Backfill: migrates the legacy singular `project` relation into `projects`.
+   * The ETL (Phase 7) performs this on fresh v5 data; kept for API parity.
+   */
   async updateGlobal(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'activity-type.updateGlobal not yet ported (Phase 4)' };
+    const acTypes = await strapi.db.query('api::activity-type.activity-type').findMany({
+      populate: { project: true, projects: true },
+      limit: -1,
+    });
+
+    let updated = 0;
+    for (const ac of acTypes) {
+      if (ac.project && ac.project.id) {
+        await strapi.db.query('api::activity-type.activity-type').update({
+          where: { id: ac.id },
+          data: { projects: [ac.project.id] },
+        });
+        updated++;
+      }
+    }
+    return { migrated: updated, total: acTypes.length };
   },
 }));

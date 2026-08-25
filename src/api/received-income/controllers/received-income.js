@@ -1,15 +1,23 @@
 'use strict';
 
 /**
- * received-income controller (v5). Core CRUD inherited; custom methods stubbed until Phase 4.
+ * received-income controller (v5). Ported from v3 api/received-income/controllers.
  */
 const { createCoreController } = require('@strapi/strapi').factories;
+const { adaptQuery } = require('../../../services/query-adapter');
 
 module.exports = createCoreController('api::received-income.received-income', ({ strapi }) => ({
-  // Default core actions (find/findOne/create/update/delete) are inherited.
-  // TODO(P4): port received-income.findBasic from v3 api/received-income/controllers/received-income.js
+  /**
+   * GET /api/received-incomes/basic
+   */
   async findBasic(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'received-income.findBasic not yet ported (Phase 4)' };
+    const opts = adaptQuery(ctx.query);
+    return strapi.db.query('api::received-income.received-income').findMany({
+      where: opts.filters || {},
+      populate: { contact: true, projects: true, document_type: true },
+      limit: opts.pagination?.limit,
+      offset: opts.pagination?.start,
+      orderBy: opts.sort,
+    });
   },
 }));
