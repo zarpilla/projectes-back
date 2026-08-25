@@ -1,0 +1,68 @@
+'use strict';
+/* global strapi */
+
+/**
+ * daily-dedication lifecycles (v5). Ported from v3 api/daily-dedication/models/daily-dedication.js.
+ * Validates no overlapping dedication periods; back-propagates cost_by_hour to activities.
+ */
+const service = require('../../../project/services/project');
+
+module.exports = {
+  async beforeCreate(event) {
+    const data = event.data;
+    const dedications = await strapi.db
+      .query('api::daily-dedication.daily-dedication')
+      .findMany({ where: { users_permissions_user: data.users_permissions_user }, limit: -1 });
+
+    const invalids = dedications.filter(
+      (d) => (data.to >= d.from && data.to <= d.to) || (data.from <= d.to && data.to >= d.from),
+    );
+    if (invalids.length) {
+      console.error('daily-dedication overlaps', invalids);
+      throw new Error('daily-dedication overlaps');
+    }
+    service.setDailyDedicationsDirty(true);
+    await updateActivitiesPrice(data);
+  },
+
+  async beforeUpdate(event) {
+    const data = event.data;
+    const id = event.params.where.id;
+    const dedications = await strapi.db
+      .query('api::daily-dedication.daily-dedication')
+      .findMany({ where: { users_permissions_user: data.users_permissions_user }, limit: -1 });
+    const others = dedications.filter((d) => String(d.id) !== String(id));
+
+    const invalids = others.filter(
+      (d) => (data.to >= d.from && data.to <= d.to) || (data.from <= d.to && data.to >= d.from),
+    );
+    if (invalids.length) {
+      console.error('daily-dedication overlaps', invalids);
+      throw new Error('daily-dedication overlaps');
+    }
+    service.setDailyDedicationsDirty(true);
+    await updateActivitiesPrice(data);
+  },
+
+  async beforeDelete() {
+    service.setDailyDedicationsDirty(true);
+  },
+};
+
+// Back-propagate cost_by_hour to the user's activities in the date range.
+async function updateActivitiesPrice(data) {
+  const activities = await strapi.db.query('api::activity.activity').findMany({
+    where: {
+      users_permissions_user: data.users_permissions_user,
+      date: { $gte: data.from, $lte: data.to },
+    },
+    limit: -1,
+  });
+  for (const ap of activities) {
+    if (ap.cost_by_hour !== data.costByHour && data.costByHour !== null) {
+      await strapi.db
+        .query('api::activity.activity')
+        .update({ where: { id: ap.id }, data: { cost_by_hour: data.costByHour } });
+    }
+  }
+}

@@ -7,15 +7,17 @@
  */
 const moment = require('moment');
 const { createCoreController } = require('@strapi/strapi').factories;
+const { setCurrentUserId } = require('../utils/updater');
 
 module.exports = createCoreController('api::incidence.incidence', ({ strapi }) => ({
   /**
-   * PUT /api/incidences/:id — adds current user id for lifecycle tracking.
+   * PUT /api/incidences/:id — passes the current user id to the lifecycle
+   * (used to decide notification recipients) via the module-level setter,
+   * since v5 lifecycles don't receive ctx.
    */
   async update(ctx) {
-    const { id } = ctx.params;
     if (ctx.state.user) {
-      ctx.params.id_user = ctx.state.user.id;
+      setCurrentUserId(ctx.state.user.id);
     }
     // Delegate to the core update with the enriched params.
     return super.update(ctx);
