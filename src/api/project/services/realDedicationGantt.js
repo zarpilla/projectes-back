@@ -3,7 +3,6 @@
 
 const moment = require('moment');
 const _ = require('lodash');
-const { sanitizeEntity } = require('strapi-utils');
 const { dailyHoursForFirstMatch, capacityForMonth, capacityForWeek } = require('./ganttCapacity');
 
 // Catalan short month names so the period labels are independent of the
@@ -70,9 +69,7 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
       ],
     });
 
-  const activities = activitiesCollection.map((entity) =>
-    sanitizeEntity(entity, { model: strapi.models.activity }),
-  );
+  const activities = activitiesCollection.map((entity) => entity);
 
   // 1b) Festives for the target year, with festive_type and user. Used to
   //     zero festive days out of each cell's expected capacity, mirroring

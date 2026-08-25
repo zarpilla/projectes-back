@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * project-phas service (v5). Core service methods provided by createCoreService.
+ * project-original-phase service (v5). Core service methods provided by createCoreService.
  */
 const { createCoreService } = require('@strapi/strapi').factories;
 
-module.exports = createCoreService('api::project-phas.project-phas', ({ strapi }) => ({
+module.exports = createCoreService('api::project-original-phase.project-original-phase', ({ strapi }) => ({
   // Default core service methods are inherited.
   // Add custom service logic here as it is ported in Phase 4.
 }));

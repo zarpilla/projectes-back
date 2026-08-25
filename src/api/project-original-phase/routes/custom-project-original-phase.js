@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * project-original-phas CUSTOM routes (v5). Ported from v3 api/project-original-phases/config/routes.json.
+ * project-original-phase CUSTOM routes (v5). Ported from v3 api/project-original-phases/config/routes.json.
  * These are the 1 non-CRUD endpoints; their handlers are stubbed
  * and throw "not yet ported" until Phase 4 ports each controller method.
  *
@@ -12,7 +12,7 @@ module.exports = {
     {
       method: 'GET',
       path: '/project-original-phases-hours',
-      handler: 'project-original-phas.findWithHours',
+      handler: 'project-original-phase.findWithHours',
     },
   ],
 };

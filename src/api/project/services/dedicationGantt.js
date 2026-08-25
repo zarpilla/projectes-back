@@ -3,7 +3,6 @@
 
 const moment = require('moment');
 const _ = require('lodash');
-const { sanitizeEntity } = require('strapi-utils');
 const { capacityForMonth, capacityForWeek } = require('./ganttCapacity');
 
 // Catalan short month names so the period labels are independent of the
@@ -135,7 +134,7 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
     .fetchAll({ withRelated });
 
   const projectList = projectsCollection
-    .map((entity) => sanitizeEntity(entity, { model: strapi.models.project }))
+    .map((entity) => entity)
     .filter((p) => p.published_at !== '' && p.published_at !== null);
 
   // 2) Users (leaders) with their daily dedications.

@@ -2,7 +2,7 @@
   "kind": "collectionType",
   "collectionName": "project_original_phases",
   "info": {
-    "singularName": "project-original-phas",
+    "singularName": "project-original-phase",
     "pluralName": "project-original-phases",
     "displayName": "ProjectOriginalPhases"
   },

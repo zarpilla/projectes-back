@@ -1,12 +1,12 @@
 'use strict';
 
 /**
- * project-phas controller (v5). Core CRUD is provided by createCoreController.
+ * project-phase controller (v5). Core CRUD is provided by createCoreController.
  * Custom methods ported in Phase 4 are added below as needed.
  */
 const { createCoreController } = require('@strapi/strapi').factories;
 
-module.exports = createCoreController('api::project-phas.project-phas', ({ strapi }) => ({
+module.exports = createCoreController('api::project-phase.project-phase', ({ strapi }) => ({
   // Default core actions (find/findOne/create/update/delete) are inherited.
   // Add custom controller methods here as they are ported in Phase 4.
 }));

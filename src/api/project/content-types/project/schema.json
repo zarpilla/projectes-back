@@ -334,13 +334,13 @@
     "project_original_phases": {
       "type": "relation",
       "relation": "oneToMany",
-      "target": "api::project-original-phas.project-original-phas",
+      "target": "api::project-original-phase.project-original-phase",
       "mappedBy": "project"
     },
     "project_phases": {
       "type": "relation",
       "relation": "oneToMany",
-      "target": "api::project-phas.project-phas",
+      "target": "api::project-phase.project-phase",
       "mappedBy": "project"
     },
     "grantable_structural_expenses_justify_invoices": {

@@ -1,100 +1,1821 @@
 'use strict';
+/* global strapi */
+const { createCoreController } = require('@strapi/strapi').factories;
+const _ = require('lodash');
+const moment = require('moment');
+const { getDailyDedications, getFestives } = require('../services/project');
+const {
+  buildProjectRows,
+  aggregateRowsByYear,
+  buildSingleProjectActivitiesMap,
+  calculateEstimatedTotals,
+  getProjectDefaultYear,
+} = require('../services/projectFinancials');
 
 /**
- * project controller (v5). Core CRUD inherited; custom methods stubbed until Phase 4.
+ * Read the documentation (https://strapi.io/documentation/v3.x/concepts/controllers.html#core-controllers)
+ * to customize this controller
  */
-const { createCoreController } = require('@strapi/strapi').factories;
+
+const doProjectInfoCalculations = async (data, id) => {
+  if (!id || !data) {
+    return;
+  }
+
+  const dailyDedications = await getDailyDedications();
+  const festives = await getFestives();
+
+  const me = await strapi.documents('api::me.me').findFirst();
+  const fallback_deductible_vat_pct =
+    me.options && me.options.deductible_vat_pct ? me.options.deductible_vat_pct : 100.0;
+  const yearEntities = await strapi.db.query('api::year.year').findMany({ limit: -1 });
+  const deductibleVatPctByYear = new Map(
+    (yearEntities || [])
+      .filter((y) => y && y.year)
+      .map((y) => [String(y.year), parseFloat(y.deductible_vat_pct || 100)]),
+  );
+
+  if (!data.activities) {
+    data.activities = await strapi.query('activity').find({ project: id, _limit: -1 });
+  }
+
+  // Build the same shared engine context the pivot uses, scoped to a
+  // single project. This is the cornerstone of the refactor: the form's
+  // RESUM FINANCER and the pivot endpoint now derive their numbers from
+  // the exact same row stream, so they cannot drift apart again.
+  const activitiesByProject = buildSingleProjectActivitiesMap(data.id, data.activities);
+  const financialsCtx = {
+    dailyDedications,
+    festives,
+    deductibleVatPctByYear,
+    fallback_deductible_vat_pct,
+    activitiesByProject,
+  };
+
+  const rows = await buildProjectRows(data, financialsCtx);
+
+  data.allByYear = aggregateRowsByYear(rows);
+
+  // Sum project-level totals from the year buckets so the totals always
+  // match what the user sees per year.
+  data.total_original_incomes = _.sumBy(data.allByYear, 'total_original_incomes') || 0;
+  data.total_original_expenses = _.sumBy(data.allByYear, 'total_original_expenses') || 0;
+  data.total_original_hours = _.sumBy(data.allByYear, 'total_original_hours') || 0;
+  data.total_original_hours_price = _.sumBy(data.allByYear, 'total_original_hours_price') || 0;
+  data.total_original_expenses_vat = _.sumBy(data.allByYear, 'total_original_expenses_vat') || 0;
+
+  data.total_estimated_incomes = _.sumBy(data.allByYear, 'total_estimated_incomes') || 0;
+  data.total_estimated_expenses = _.sumBy(data.allByYear, 'total_estimated_expenses') || 0;
+  data.total_estimated_hours = _.sumBy(data.allByYear, 'total_estimated_hours') || 0;
+  data.total_estimated_hours_price = _.sumBy(data.allByYear, 'total_estimated_hours_price') || 0;
+  data.total_estimated_expenses_vat = _.sumBy(data.allByYear, 'total_estimated_expenses_vat') || 0;
+
+  data.total_real_incomes = _.sumBy(data.allByYear, 'total_real_incomes') || 0;
+  data.total_real_expenses = _.sumBy(data.allByYear, 'total_real_expenses') || 0;
+  data.total_real_hours = _.sumBy(data.allByYear, 'total_real_hours') || 0;
+  data.total_real_hours_price = _.sumBy(data.allByYear, 'total_real_hours_price') || 0;
+  data.total_real_expenses_vat = _.sumBy(data.allByYear, 'total_real_expenses_vat') || 0;
+
+  // Three-dimensional balances
+  data.original_incomes_expenses =
+    data.total_original_incomes -
+    data.total_original_expenses -
+    data.total_original_hours_price -
+    data.total_original_expenses_vat;
+
+  data.estimated_incomes_expenses =
+    data.total_estimated_incomes -
+    data.total_estimated_expenses -
+    data.total_estimated_hours_price -
+    data.total_estimated_expenses_vat;
+
+  data.total_real_incomes_expenses =
+    data.total_real_incomes -
+    data.total_real_expenses -
+    data.total_real_hours_price -
+    data.total_real_expenses_vat;
+
+  // Backwards compatibility (estimated dimension is the default)
+  data.total_incomes = data.total_estimated_incomes;
+  data.total_expenses = data.total_estimated_expenses;
+  data.total_expenses_vat = data.total_estimated_expenses_vat;
+  data.total_expenses_hours = data.total_estimated_hours;
+
+  // Handle structural expenses if applicable
+  if (data.structural_expenses === true) {
+    const indirects = await strapi
+      .query('project')
+      .find({ structural_expenses_pct_gt: 0, published_at_null: false });
+
+    const indirectIncomesOriginal = _.sumBy(
+      indirects.map((i) => ({
+        indirect: (i.structural_expenses_pct / 100) * (i.total_original_incomes || i.total_incomes || 0),
+      })),
+      'indirect',
+    );
+
+    const indirectIncomesEstimated = _.sumBy(
+      indirects.map((i) => ({
+        indirect: (i.structural_expenses_pct / 100) * (i.total_estimated_incomes || i.total_incomes || 0),
+      })),
+      'indirect',
+    );
+
+    const indirectIncomesReal = _.sumBy(
+      indirects.map((i) => ({
+        indirect: (i.structural_expenses_pct / 100) * (i.total_real_incomes || 0),
+      })),
+      'indirect',
+    );
+
+    data.total_original_incomes += indirectIncomesOriginal;
+    data.original_incomes_expenses += indirectIncomesOriginal;
+
+    data.total_estimated_incomes += indirectIncomesEstimated;
+    data.estimated_incomes_expenses += indirectIncomesEstimated;
+
+    data.total_real_incomes += indirectIncomesReal;
+    data.total_real_incomes_expenses += indirectIncomesReal;
+
+    // Update backwards compatibility fields
+    data.total_incomes += indirectIncomesEstimated;
+  }
+
+  // Backwards compatibility fields
+  data.balance =
+    data.total_estimated_incomes - data.total_estimated_expenses - data.total_estimated_hours_price;
+  data.estimated_balance =
+    data.total_estimated_incomes - data.total_estimated_expenses - data.total_estimated_hours_price;
+  data.incomes_expenses =
+    data.total_estimated_incomes -
+    data.total_estimated_expenses -
+    data.total_estimated_hours_price -
+    data.total_estimated_expenses_vat;
+
+  if (!data.leader || !data.leader.id) {
+    delete data.leader;
+  }
+
+  // Calculate is_mother: true if there are any projects with this project as their mother
+  const childProjects = await strapi.query('project').count({ mother: id });
+  data.is_mother = childProjects > 0;
+
+  return data;
+};
+
+let projectsQueue = [];
 
 module.exports = createCoreController('api::project.project', ({ strapi }) => ({
-  // Default core actions (find/findOne/create/update/delete) are inherited.
-  // TODO(P4): port project.findWithBasicInfo from v3 api/project/controllers/project.js
-  async findWithBasicInfo(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.findWithBasicInfo not yet ported (Phase 4)' };
+  async calculateProject(data, id) {
+    return await doProjectInfoCalculations(data, id);
   },
-  // TODO(P4): port project.findEstimatedTotalsByDay from v3 api/project/controllers/project.js
-  async findEstimatedTotalsByDay(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.findEstimatedTotalsByDay not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.verifyStoredTotals from v3 api/project/controllers/project.js
-  async verifyStoredTotals(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.verifyStoredTotals not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.refreshStoredTotals from v3 api/project/controllers/project.js
-  async refreshStoredTotals(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.refreshStoredTotals not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.findNames from v3 api/project/controllers/project.js
-  async findNames(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.findNames not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.reset from v3 api/project/controllers/project.js
-  async reset(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.reset not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.findWithPhases from v3 api/project/controllers/project.js
-  async findWithPhases(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.findWithPhases not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.findWithPhasesBoth from v3 api/project/controllers/project.js
-  async findWithPhasesBoth(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.findWithPhasesBoth not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.findDedications from v3 api/project/controllers/project.js
-  async findDedications(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.findDedications not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.findRealDedications from v3 api/project/controllers/project.js
-  async findRealDedications(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.findRealDedications not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.findWithEconomicDetail from v3 api/project/controllers/project.js
-  async findWithEconomicDetail(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.findWithEconomicDetail not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.updatePhases from v3 api/project/controllers/project.js
-  async updatePhases(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.updatePhases not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.findChildren from v3 api/project/controllers/project.js
-  async findChildren(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.findChildren not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.findOneExtended from v3 api/project/controllers/project.js
-  async findOneExtended(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.findOneExtended not yet ported (Phase 4)' };
-  },
-  // TODO(P4): port project.calculateProject2 from v3 api/project/controllers/project.js
   async calculateProject2(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.calculateProject2 not yet ported (Phase 4)' };
+    const id = ctx.params.id;
+
+    const dataPhases = await strapi
+      .query('project')
+      .findOne({ id: id }, [
+        'project_phases',
+        'project_phases.incomes',
+        'project_phases.incomes.estimated_hours',
+        'project_phases.incomes.income_type',
+        'project_phases.incomes.estimated_hours.users_permissions_user',
+        'project_phases.incomes.invoice',
+        'project_phases.incomes.income',
+        'project_phases.expenses',
+        'project_phases.expenses.expense_type',
+        'project_phases.expenses.invoice',
+        'project_phases.expenses.expense',
+        'project_original_phases',
+        'project_original_phases.incomes',
+        'project_original_phases.incomes.estimated_hours',
+        'project_original_phases.incomes.income_type',
+        'project_original_phases.incomes.estimated_hours.users_permissions_user',
+        'project_original_phases.incomes.invoice',
+        'project_original_phases.incomes.income',
+        'project_original_phases.expenses',
+        'project_original_phases.expenses.expense_type',
+        'project_original_phases.expenses.invoice',
+        'project_original_phases.expenses.expense',
+      ]);
+
+    const moreData = await doProjectInfoCalculations(dataPhases, id);
+
+    // Return both yearly breakdown and project-level totals
+    // This ensures frontend displays exactly what backend calculated
+    return {
+      allByYear: moreData.allByYear,
+      totals: {
+        // Original dimension
+        total_original_incomes: moreData.total_original_incomes,
+        total_original_expenses: moreData.total_original_expenses,
+        total_original_hours: moreData.total_original_hours,
+        total_original_hours_price: moreData.total_original_hours_price,
+        total_original_expenses_vat: moreData.total_original_expenses_vat,
+        original_incomes_expenses: moreData.original_incomes_expenses,
+
+        // Estimated dimension
+        total_estimated_incomes: moreData.total_estimated_incomes,
+        total_estimated_expenses: moreData.total_estimated_expenses,
+        total_estimated_hours: moreData.total_estimated_hours,
+        total_estimated_hours_price: moreData.total_estimated_hours_price,
+        total_estimated_expenses_vat: moreData.total_estimated_expenses_vat,
+        estimated_incomes_expenses: moreData.estimated_incomes_expenses,
+
+        // Real dimension
+        total_real_incomes: moreData.total_real_incomes,
+        total_real_expenses: moreData.total_real_expenses,
+        total_real_hours: moreData.total_real_hours,
+        total_real_hours_price: moreData.total_real_hours_price,
+        total_real_expenses_vat: moreData.total_real_expenses_vat,
+        total_real_incomes_expenses: moreData.total_real_incomes_expenses,
+      },
+    };
   },
-  // TODO(P4): port project.createPhasesForAllProjects from v3 api/project/controllers/project.js
-  async createPhasesForAllProjects(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.createPhasesForAllProjects not yet ported (Phase 4)' };
+  async reset() {
+    // await strapi.db.query('api::project.project').delete({ _limit: -1 });
+    // await strapi.db.query('api::activity.activity').delete({ _limit: -1 });
+    // await strapi.db.query('api::activity-type.activity-type').delete({ _limit: -1 });
+    // await strapi.db.query('api::daily-dedication.daily-dedication').delete({ _limit: -1 });
+    // await strapi.db.query('api::contact.contact').delete({ _limit: -1 });
+    // await strapi.db.query('api::emitted-invoice.emitted-invoice').delete({ _limit: -1 });
+    // await strapi.db.query('api::festive.festive').delete({ _limit: -1, users_permissions_user_ne: null});
+    // await strapi.db.query('api::kanban-view.kanban-view').delete({ _limit: -1 });
+    // await strapi.db.query('api::payroll.payroll').delete({ _limit: -1 });
+    // await strapi.db.query('api::quote.quote').delete({ _limit: -1 });
+    // await strapi.db.query('api::received-expense.received-expense').delete({ _limit: -1 });
+    // await strapi.db.query('api::received-income.received-income').delete({ _limit: -1 });
+    // await strapi.db.query('api::received-invoice.received-invoice').delete({ _limit: -1 });
+    // await strapi.db.query('api::project-scope.project-scope').delete({ _limit: -1 });
+    // await strapi.db.query('api::serie.serie').delete({ _limit: -1 });
+    // await strapi.db.query('api::task.task').delete({ _limit: -1 });
+    // await strapi.db.query('api::time-counter.time-counter').delete({ _limit: -1 });
+    // await strapi.db.query('api::treasury.treasury').delete({ _limit: -1 });
+    // //// await strapi.db.query('api::year.year').delete({ _limit: -1 });
+
+    // comment activity beforeDelete
+    // delete users-permissions_user manually
+    // to fill: year, festive
+
+    return [];
   },
-  // TODO(P4): port project.payExpense from v3 api/project/controllers/project.js
-  async payExpense(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.payExpense not yet ported (Phase 4)' };
+  // async updateDirtyProject(id) {
+  //   const project = await strapi.db.query('api::project.project').findOne({ where: { id: id } });
+
+  //   const data = await doProjectInfoCalculations(project, id);
+
+  //   // data._internal = true;
+  //   data.dirty = false;
+
+  //   return data;
+  // },
+  async findWithBasicInfo(ctx) {
+    // Calling the default core action
+    let projects;
+
+    // only published
+    ctx.query.published_at_null = false;
+    if (ctx.query._q) {
+      projects = await strapi
+        .query('project')
+        .findMany(ctx.query, [
+          'leader',
+          'project_scope',
+          'project_likelihood',
+          'project_state',
+          'project_type',
+          'clients',
+          'activity_types',
+          'global_activity_types',
+        ]);
+    } else {
+      projects = await strapi
+        .query('project')
+        .findMany(ctx.query, [
+          'leader',
+          'project_scope',
+          'project_likelihood',
+          'project_state',
+          'project_type',
+          'clients',
+          'activity_types',
+          'global_activity_types',
+        ]);
+    }
+
+    // Removing some info
+    const newArray = projects
+      .map(
+        ({
+          phases,
+          activities,
+          emitted_invoices,
+          received_invoices,
+          tickets,
+          diets,
+          emitted_grants,
+          received_grants,
+          quotes,
+          original_phases,
+          incomes,
+          expenses,
+          strategies,
+          estimated_hours,
+          intercooperations,
+          received_expenses,
+          received_incomes,
+          treasury_annotations,
+          linked_emitted_invoices,
+          linked_received_expenses,
+          linked_received_incomes,
+          linked_received_invoices,
+          ...item
+        }) => item,
+      )
+      .map((p) => {
+        return {
+          ...p,
+          clients: p.clients
+            ? p.clients.map((c) => {
+                return { id: c.id, name: c.name };
+              })
+            : null,
+        };
+      });
+
+    return newArray.map((entity) => entity);
   },
-  // TODO(P4): port project.payIncome from v3 api/project/controllers/project.js
-  async payIncome(ctx) {
-    ctx.status = 501;
-    ctx.body = { error: 'project.payIncome not yet ported (Phase 4)' };
+
+  async findNames(ctx) {
+    // Calling the default core action
+    let projects;
+
+    // only published
+    ctx.query.published_at_null = false;
+    if (ctx.query._q) {
+      projects = await strapi.db.query('api::project.project').findMany(ctx.query);
+    } else {
+      projects = await strapi.db.query('api::project.project').findMany(ctx.query);
+    }
+
+    // Removing some info
+    const newArray = projects.map((p) => {
+      return {
+        id: p.id,
+        name: p.name,
+      };
+    });
+
+    return newArray.map((entity) => entity);
+  },
+
+  async findWithPhases(ctx) {
+    // Calling the default core action
+    let projects;
+    const { published_at_null, _limit, activities, hoursType, ...where } = ctx.query;
+
+    // project_state_in is optional: when omitted, no state filter is applied
+    // and all published projects are returned. Accept either
+    // _where[project_state_in]=1,2,3 or project_state_in=1,2,3 (same shape the
+    // dedications endpoints use).
+    const project_state_in = (where._where && where._where.project_state_in) || where.project_state_in;
+
+    // Determine which phase type to use based on hoursType parameter
+    const phaseType = hoursType === 'previstes' ? 'project_phases' : 'project_original_phases';
+
+    const withRelated = [
+      phaseType,
+      `${phaseType}.incomes`,
+      `${phaseType}.incomes.estimated_hours`,
+      `${phaseType}.incomes.estimated_hours.users_permissions_user`,
+    ];
+
+    if (activities) {
+      withRelated.push('activities');
+    }
+
+    if (ctx.query._q) {
+      projects = await strapi.query('project').model.fetchAll({ withRelated: [phaseType] });
+    } else {
+      // Normalize the (optional) state filter into an array of integer ids.
+      const stateIds = project_state_in
+        ? String(project_state_in)
+            .split(',')
+            .map((s) => parseInt(s.trim(), 10))
+            .filter((n) => !isNaN(n))
+        : [];
+
+      projects = await strapi
+        .query('project')
+        .model.query((qb) => {
+          qb.select('id', 'name', 'published_at');
+          if (stateIds.length) {
+            qb.where('project_state', 'in', stateIds);
+          }
+        })
+        .fetchAll({
+          withRelated: withRelated,
+        });
+    }
+
+    return projects.map((entity) => entity).filter((p) => p.published_at !== '' && p.published_at !== null);
+  },
+
+  // Variant of findWithPhases used by the "Previsió/Execució dedicació" pivot
+  // (DedicationEstPivot.vue), which shows "Hores previstes" (planned, from
+  // project_phases) and "Hores originals" (from project_original_phases) side
+  // by side. Unlike findWithPhases, it eagerly loads BOTH phase collections
+  // (with the full incomes -> estimated_hours -> users_permissions_user
+  // nesting) so both measures can be computed from a single request.
+  //   _where[project_state_in]=1,2,3   (optional, comma-separated)
+  //   activities=true                  (optional, also load activities)
+  async findWithPhasesBoth(ctx) {
+    let projects;
+    const { published_at_null, _limit, activities, hoursType, ...where } = ctx.query;
+
+    const project_state_in = (where._where && where._where.project_state_in) || where.project_state_in;
+
+    const withRelated = [
+      'project_phases',
+      'project_phases.incomes',
+      'project_phases.incomes.estimated_hours',
+      'project_phases.incomes.estimated_hours.users_permissions_user',
+      'project_original_phases',
+      'project_original_phases.incomes',
+      'project_original_phases.incomes.estimated_hours',
+      'project_original_phases.incomes.estimated_hours.users_permissions_user',
+    ];
+
+    if (activities) {
+      withRelated.push('activities');
+    }
+
+    if (ctx.query._q) {
+      projects = await strapi
+        .query('project')
+        .model.fetchAll({ withRelated: ['project_phases', 'project_original_phases'] });
+    } else {
+      const stateIds = project_state_in
+        ? String(project_state_in)
+            .split(',')
+            .map((s) => parseInt(s.trim(), 10))
+            .filter((n) => !isNaN(n))
+        : [];
+
+      projects = await strapi
+        .query('project')
+        .model.query((qb) => {
+          qb.select('id', 'name', 'published_at');
+          if (stateIds.length) {
+            qb.where('project_state', 'in', stateIds);
+          }
+        })
+        .fetchAll({
+          withRelated: withRelated,
+        });
+    }
+
+    return projects.map((entity) => entity).filter((p) => p.published_at !== '' && p.published_at !== null);
+  },
+
+  // precomputed cells) plus the per-day dedications rows used by the Excel
+  // export. Moves the expensive per-day expansion + re-aggregation previously
+  // done client-side (DedicationGantt.vue / DedicationGanttChart.vue) to the
+  // server. Query params mirror /projects/phases:
+  //   _where[project_state_in]=1,2,3   (required, comma-separated)
+  //   hoursType=previstes|original      (default previstes)
+  //   year=2026                         (default current year)
+  //   view=month|week                   (default month)
+  async findDedications(ctx) {
+    const { buildDedicationGantt } = require('../services/dedicationGantt');
+
+    const hoursType = ctx.query.hoursType || 'previstes';
+    const view = ctx.query.view === 'week' ? 'week' : 'month';
+    const year = ctx.query.year ? parseInt(ctx.query.year, 10) : null;
+
+    let projectStateIds = [];
+    const raw = (ctx.query._where && ctx.query._where.project_state_in) || ctx.query.project_state_in;
+    if (raw) {
+      projectStateIds = String(raw)
+        .split(',')
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => !isNaN(n));
+    }
+
+    if (!projectStateIds.length) {
+      return ctx.badRequest('project_state_in is required');
+    }
+
+    return await buildDedicationGantt({
+      projectStateIds,
+      hoursType,
+      year,
+      view,
+    });
+  },
+
+  // Real (done) counterpart of findDedications: aggregates logged `activity`
+  // hours instead of estimated hours. Same { leaders, periods, cells,
+  // dedications } contract so the client reuses DedicationGanttChart.vue.
+  //   _where[project_state_in]=1,2,3   (required, comma-separated)
+  //   year=2026                         (default current year)
+  //   view=month|week                   (default month)
+  async findRealDedications(ctx) {
+    const { buildRealDedicationGantt } = require('../services/realDedicationGantt');
+
+    const view = ctx.query.view === 'week' ? 'week' : 'month';
+    const year = ctx.query.year ? parseInt(ctx.query.year, 10) : null;
+
+    let projectStateIds = [];
+    const raw = (ctx.query._where && ctx.query._where.project_state_in) || ctx.query.project_state_in;
+    if (raw) {
+      projectStateIds = String(raw)
+        .split(',')
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => !isNaN(n));
+    }
+
+    if (!projectStateIds.length) {
+      return ctx.badRequest('project_state_in is required');
+    }
+
+    return await buildRealDedicationGantt({
+      projectStateIds,
+      year,
+      view,
+    });
+  },
+
+  async findWithEconomicDetail(ctx) {
+    // Calling the default core action
+
+    // only published
+    // ctx.query.published_at_null = false;
+
+    const start = +new Date();
+
+    const { query, paid, document } = ctx.query;
+    // ctx.query = { _limit: -1 }
+
+    const promises = [];
+
+    //console.log('query', query, year)
+    const year = ctx.query && ctx.query._where && ctx.query._where.year_eq ? ctx.query._where.year_eq : null;
+
+    if (ctx.query._q) {
+      promises.push(strapi.db.query('api::project.project').findMany(ctx.query));
+    } else {
+      const projectQuery = { _limit: -1, published_at_null: false };
+
+      // Handle project_state filtering
+      if (ctx.query && ctx.query._where) {
+        if (ctx.query._where.project_state_eq) {
+          projectQuery.project_state = ctx.query._where.project_state_eq;
+        } else if (ctx.query._where.project_state_in) {
+          // Convert comma-separated string to array of integers for Strapi _in filter
+          const stateIds =
+            typeof ctx.query._where.project_state_in === 'string'
+              ? ctx.query._where.project_state_in.split(',').map((s) => parseInt(s))
+              : ctx.query._where.project_state_in;
+          projectQuery.project_state_in = stateIds;
+        }
+      }
+
+      // TODO check why this filter removes some projects that have activities in the given year
+      // if (year) {
+      //   projectQuery.activities = { date: { gte: `${year}-01-01`, lte: `${year}-12-31` } };
+      // }
+
+      promises.push(
+        strapi
+          .query('project')
+          .find({ ...projectQuery }, [
+            'project_state',
+            'activities',
+            'project_scope',
+            'project_likelihood',
+            'project_type',
+            'leader',
+            'project_phases',
+            'project_phases.incomes',
+            'project_phases.incomes.estimated_hours',
+            'project_phases.incomes.income_type',
+            'project_phases.incomes.estimated_hours.users_permissions_user',
+            'project_phases.incomes.invoice',
+            'project_phases.incomes.income',
+            'project_phases.expenses',
+            'project_phases.expenses.expense_type',
+            'project_phases.expenses.invoice',
+            'project_phases.expenses.expense',
+            'project_original_phases',
+            'project_original_phases.incomes',
+            'project_original_phases.incomes.estimated_hours',
+            'project_original_phases.incomes.income_type',
+            'project_original_phases.incomes.estimated_hours.users_permissions_user',
+            'project_original_phases.incomes.invoice',
+            'project_original_phases.incomes.income',
+            'project_original_phases.expenses',
+            'project_original_phases.expenses.expense_type',
+            'project_original_phases.expenses.invoice',
+            'project_original_phases.expenses.expense',
+          ]),
+      );
+    }
+
+    promises.push(strapi.db.query('api::daily-dedication.daily-dedication').findMany({ limit: -1 }));
+
+    promises.push(strapi.db.query('api::festive.festive').findMany({ limit: -1 }));
+
+    const results = await Promise.all(promises);
+
+    let projects = results[0];
+    //const activities = results[1];
+    const dailyDedications = results[1];
+    const festives = results[2];
+
+    //projects = projects.filter((p) => p.published_at !== null);
+
+    // Filter out mother projects to avoid double-counting (children are already included)
+    projects = projects.filter((p) => !p.is_mother);
+
+    // console.log('projects', projects[0].activities ? projects[0].activities[0] : 0)
+    const activities = _.flatten(
+      projects.map((p) => {
+        return p.activities ? p.activities : [];
+      }),
+    );
+
+    // projects.forEach((p) => {
+    //   p.activities.forEach((a) => {
+    //     if (!year || (a.date && a.date.substring(0, 4) === year.toString())) {
+    //       activities.push(a);
+    //     }
+    //   });
+    // });
+
+    let response;
+
+    const activitiesPYM = activities
+      .filter((a) => a.date && a.project)
+      .map((a) => {
+        return {
+          ...a,
+          pym: `${a.project}.${moment(a.date, 'YYYY-MM-DD').year()}.${moment(a.date, 'YYYY-MM-DD').month()}`,
+        };
+      });
+    const groupedActivities = _(activitiesPYM)
+      .groupBy('pym')
+      .map((rows, id) => {
+        return {
+          projectId: parseInt(id.split('.')[0]),
+          year: parseInt(id.split('.')[1]),
+          month: parseInt(id.split('.')[2]) + 1,
+          cost: _.sumBy(rows, (r) => r.hours * r.cost_by_hour),
+          hours: _.sumBy(rows, 'hours'),
+        };
+      });
+
+    const groupedActivitiesObj = JSON.parse(JSON.stringify(groupedActivities));
+
+    // Create a Map for faster activity lookup by projectId
+    const activitiesByProject = new Map();
+    groupedActivitiesObj.forEach((activity) => {
+      if (!activitiesByProject.has(activity.projectId)) {
+        activitiesByProject.set(activity.projectId, []);
+      }
+      activitiesByProject.get(activity.projectId).push(activity);
+    });
+
+    const me = await strapi.documents('api::me.me').findFirst();
+    const fallback_deductible_vat_pct =
+      me.options && me.options.deductible_vat_pct ? me.options.deductible_vat_pct : 100.0;
+    const yearEntities = await strapi.db.query('api::year.year').findMany({ limit: -1 });
+    const deductibleVatPctByYear = new Map(
+      (yearEntities || [])
+        .filter((y) => y && y.year)
+        .map((y) => [String(y.year), parseFloat(y.deductible_vat_pct || 100)]),
+    );
+
+    // Shared context handed to the projectFinancials engine for every project.
+    const financialsCtx = {
+      dailyDedications,
+      festives,
+      deductibleVatPctByYear,
+      fallback_deductible_vat_pct,
+      activitiesByProject,
+    };
+
+    // Delegate all per-project row construction to the shared engine so
+    // the pivot view cannot drift from the form's RESUM FINANCER.
+    const projectResponses = await Promise.all(projects.map((p) => buildProjectRows(p, financialsCtx)));
+
+    // Flatten all project responses into a single array
+    response = _.flatten(projectResponses);
+
+    if (year) {
+      response = response.filter((r) => r.year === year);
+    }
+
+    if (ctx.query && ctx.query._where && ctx.query._where.year_eq) {
+      response = response.filter((r) => r.year.toString() === ctx.query._where.year_eq.toString());
+    }
+
+    if (paid != null) {
+      response = response.filter((r) => r.paid === (paid === 'true'));
+    }
+
+    const returnData = _.sortBy(response, ['year', 'month', 'name']);
+
+    // Removing some info
+    // const newArray = projects.map(({ phases, activities, emitted_invoices, received_invoices, tickets, diets, emitted_grants, received_grants, quotes, original_phases, incomes, expenses, strategies, estimated_hours, intercooperations, clients, received_expenses, received_incomes, ...item }) => item)
+    return returnData;
+  },
+
+  // Read-only diagnostic: compares the persisted total_* columns on `project`
+  // against what projectFinancials would compute right now. Used to validate
+  // the upcoming switch to refreshStoredTotals before wiring lifecycle hooks.
+  //
+  // Query params:
+  //   ?ids=1,2,3        comma-separated project ids (max 200)
+  //   ?limit=50         when ids is omitted, sample this many published projects
+  //   ?onlyDiffs=true   trim the report to projects with a difference
+  //   ?epsilon=0.01     tolerance per field (default 0.01)
+  async verifyStoredTotals(ctx) {
+    const { verifyStoredTotals } = require('../services/projectFinancials');
+
+    const epsilon = ctx.query.epsilon ? parseFloat(ctx.query.epsilon) : 0.01;
+    const onlyDiffs = ctx.query.onlyDiffs === 'true';
+
+    let ids;
+    if (ctx.query.ids) {
+      ids = String(ctx.query.ids)
+        .split(',')
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => n > 0)
+        .slice(0, 200);
+    } else {
+      const limit = Math.min(parseInt(ctx.query.limit, 10) || 20, 200);
+      const sample = await strapi
+        .query('project')
+        .find({ _limit: limit, published_at_null: false, _sort: 'id:desc' });
+      ids = sample.map((p) => p.id);
+    }
+
+    const result = await verifyStoredTotals(ids, epsilon);
+    if (onlyDiffs) {
+      result.report = result.report.filter((r) => r.error || !r.ok);
+    }
+    return result;
+  },
+
+  // Targeted refresh of the persisted total_* columns on `project`.
+  // Bypasses lifecycles (uses raw knex). Modes:
+  //   ?id=240               refresh a single project
+  //   ?ids=1,2,3            refresh a list (max 500)
+  //   ?all=true             refresh every published project (sequential)
+  //   ?all=true&limit=N     ditto, capped at N (handy for staged rollouts)
+  //   add &dryRun=true      run verifyStoredTotals instead of writing
+  async refreshStoredTotals(ctx) {
+    const {
+      refreshStoredTotals,
+      refreshAllStoredTotals,
+      verifyStoredTotals,
+    } = require('../services/projectFinancials');
+
+    const dryRun = ctx.query.dryRun === 'true';
+
+    // Single id
+    if (ctx.query.id) {
+      const id = parseInt(ctx.query.id, 10);
+      if (!(id > 0)) return ctx.badRequest('invalid id');
+      if (dryRun) {
+        return await verifyStoredTotals([id]);
+      }
+      const picked = await refreshStoredTotals(id);
+      if (!picked) return ctx.notFound('project not found');
+      return { id, written: picked };
+    }
+
+    // Explicit id list
+    if (ctx.query.ids) {
+      const ids = String(ctx.query.ids)
+        .split(',')
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => n > 0)
+        .slice(0, 500);
+      if (!ids.length) return ctx.badRequest('no valid ids');
+      if (dryRun) {
+        return await verifyStoredTotals(ids);
+      }
+      let processed = 0;
+      const failed = [];
+      for (const id of ids) {
+        try {
+          await refreshStoredTotals(id);
+          processed++;
+        } catch (e) {
+          failed.push({ id, error: e && e.message });
+        }
+      }
+      return { total: ids.length, processed, failed };
+    }
+
+    // Bulk: every project
+    if (ctx.query.all === 'true') {
+      const limit = ctx.query.limit ? parseInt(ctx.query.limit, 10) : undefined;
+      if (dryRun) {
+        // For dry-run on `all`, just delegate to verifier with a sensible cap.
+        const cap = Math.min(limit || 100, 500);
+        const projects = await strapi
+          .query('project')
+          .find({ _limit: cap, published_at_null: false, _sort: 'id:desc' });
+        return await verifyStoredTotals(projects.map((p) => p.id));
+      }
+      return await refreshAllStoredTotals({ limit });
+    }
+
+    return ctx.badRequest('provide ?id=, ?ids= or ?all=true');
+  },
+
+  async findEstimatedTotalsByDay(ctx) {
+    ctx.query.published_at_null = false;
+    const { year, ...query } = ctx.query;
+
+    const promises = [];
+    if (query._q) {
+      promises.push(
+        strapi
+          .query('project')
+          .findMany(query, [
+            'project_original_phases',
+            'project_original_phases.incomes',
+            'project_original_phases.incomes.estimated_hours',
+            'project_original_phases.incomes.estimated_hours.users_permissions_user',
+          ]),
+      );
+    } else {
+      promises.push(
+        strapi
+          .query('project')
+          .find(query, [
+            'project_original_phases',
+            'project_original_phases.incomes',
+            'project_original_phases.incomes.estimated_hours',
+            'project_original_phases.incomes.estimated_hours.users_permissions_user',
+          ]),
+      );
+    }
+
+    promises.push(strapi.db.query('api::daily-dedication.daily-dedication').findMany({ limit: -1 }));
+    promises.push(strapi.db.query('api::festive.festive').findMany({ limit: -1 }));
+
+    const results = await Promise.all(promises);
+
+    let projects = results[0];
+    const dailyDedications = results[1];
+    const festives = results[2];
+
+    const totals = [];
+    for await (const p of projects) {
+      const { totalsByDay } = await calculateEstimatedTotals(
+        { id: p.id, name: p.name },
+        p.project_original_phases,
+        dailyDedications,
+        festives,
+      );
+      totals.push(...totalsByDay.map((t) => ({ ...t, day: t.day.format('YYYY-MM-DD') })));
+    }
+    // for await (const event of eventsAdded) {
+    if (year) {
+      return totals.filter((r) => r.day.substring(0, 4) === year);
+    }
+    return totals;
+  },
+
+  async findChildren(ctx) {
+    const { id, expense } = ctx.params;
+    const project = await strapi.db.query('api::project.project').findOne({ where: { id } });
+
+    // Check if this project is a mother (has children that reference it)
+    if (project && project.is_mother) {
+      const childrenAll = await strapi
+        .query('project')
+        .find({ mother: id, _limit: -1 }, [
+          'project_phases',
+          'project_phases.incomes',
+          'project_phases.incomes.income_type',
+          'project_phases.incomes.invoice',
+          'project_phases.incomes.grant',
+          'project_phases.incomes.income',
+          'project_phases.incomes.bank_account',
+          'project_phases.incomes.estimated_hours',
+          'project_phases.incomes.estimated_hours.users_permissions_user',
+          'project_phases.expenses',
+          'project_phases.expenses.expense_type',
+          'project_phases.expenses.invoice',
+          'project_phases.expenses.ticket',
+          'project_phases.expenses.diet',
+          'project_phases.expenses.expense',
+          'project_phases.expenses.bank_account',
+          'project_original_phases',
+          'project_original_phases.incomes',
+          'project_original_phases.incomes.income_type',
+          'project_original_phases.incomes.invoice',
+          'project_original_phases.incomes.grant',
+          'project_original_phases.incomes.income',
+          'project_original_phases.incomes.bank_account',
+          'project_original_phases.incomes.estimated_hours',
+          'project_original_phases.incomes.estimated_hours.users_permissions_user',
+          'project_original_phases.expenses',
+          'project_original_phases.expenses.expense_type',
+          'project_original_phases.expenses.invoice',
+          'project_original_phases.expenses.ticket',
+          'project_original_phases.expenses.diet',
+          'project_original_phases.expenses.expense',
+          'project_original_phases.expenses.bank_account',
+        ]);
+      const children = childrenAll.filter((c) => c.id != id);
+
+      const flattenMap = (arrays, prop) => _.flatten(arrays.map((a) => a[prop]));
+
+      // Store the children's values BEFORE calling doProjectInfoCalculations
+      // because that function might modify the child objects
+      // Store all three dimensions: original, estimated, real
+      const childrenStoredValues = children.map((c) => ({
+        id: c.id,
+        // Original dimension
+        total_original_incomes: parseFloat(c.total_original_incomes || 0),
+        total_original_expenses: parseFloat(c.total_original_expenses || 0),
+        total_original_expenses_vat: parseFloat(c.total_original_expenses_vat || 0),
+        total_original_hours: parseFloat(c.total_original_hours || 0),
+        total_original_hours_price: parseFloat(c.total_original_hours_price || 0),
+        original_incomes_expenses: parseFloat(c.original_incomes_expenses || 0),
+        // Estimated dimension
+        total_estimated_incomes: parseFloat(c.total_estimated_incomes || 0),
+        total_estimated_expenses: parseFloat(c.total_estimated_expenses || 0),
+        total_estimated_expenses_vat: parseFloat(c.total_estimated_expenses_vat || 0),
+        total_estimated_hours: parseFloat(c.total_estimated_hours || 0),
+        total_estimated_hours_price: parseFloat(c.total_estimated_hours_price || 0),
+        estimated_incomes_expenses: parseFloat(c.estimated_incomes_expenses || 0),
+        // Real dimension
+        total_real_incomes: parseFloat(c.total_real_incomes || 0),
+        total_real_expenses: parseFloat(c.total_real_expenses || 0),
+        total_real_expenses_vat: parseFloat(c.total_real_expenses_vat || 0),
+        total_real_hours: parseFloat(c.total_real_hours || 0),
+        total_real_hours_price: parseFloat(c.total_real_hours_price || 0),
+        total_real_incomes_expenses: parseFloat(c.total_real_incomes_expenses || 0),
+        // Backwards compatibility
+        total_incomes: parseFloat(c.total_incomes || 0),
+        total_expenses: parseFloat(c.total_expenses || 0),
+        total_expenses_vat: parseFloat(c.total_expenses_vat || 0),
+        incomes_expenses: parseFloat(c.incomes_expenses || 0),
+      }));
+
+      // Aggregate phases from all children
+      const aggregatedProjectPhases = flattenMap(children, 'project_phases');
+      const aggregatedProjectOriginalPhases = flattenMap(children, 'project_original_phases');
+
+      // Aggregate allByYear data from all children
+      const allChildrenByYear = [];
+      for (const child of children) {
+        const childCalculations = await doProjectInfoCalculations(child, child.id);
+        if (childCalculations && childCalculations.allByYear) {
+          allChildrenByYear.push(...childCalculations.allByYear);
+        }
+      }
+
+      // Group by year and sum all three dimensions separately
+      const aggregatedAllByYear = _(allChildrenByYear)
+        .groupBy('year')
+        .map((rows, year) => {
+          const original_hours = _.sumBy(rows, (r) => parseFloat(r.total_original_hours || 0));
+          const original_hours_price = _.sumBy(rows, (r) => parseFloat(r.total_original_hours_price || 0));
+
+          return {
+            year: year,
+            // Original dimension
+            total_original_incomes: _.sumBy(rows, (r) => parseFloat(r.total_original_incomes || 0)),
+            total_original_expenses: _.sumBy(rows, (r) => parseFloat(r.total_original_expenses || 0)),
+            total_original_expenses_vat: _.sumBy(rows, (r) => parseFloat(r.total_original_expenses_vat || 0)),
+            total_original_hours: original_hours,
+            total_original_hours_price: original_hours_price,
+            original_incomes_expenses: _.sumBy(rows, (r) => parseFloat(r.original_incomes_expenses || 0)),
+            // Estimated dimension
+            // EXCEPTION: Estimated hours always copy from original hours
+            total_estimated_incomes: _.sumBy(rows, (r) => parseFloat(r.total_estimated_incomes || 0)),
+            total_estimated_expenses: _.sumBy(rows, (r) => parseFloat(r.total_estimated_expenses || 0)),
+            total_estimated_expenses_vat: _.sumBy(rows, (r) =>
+              parseFloat(r.total_estimated_expenses_vat || 0),
+            ),
+            total_estimated_hours: original_hours,
+            total_estimated_hours_price: original_hours_price,
+            estimated_incomes_expenses: _.sumBy(rows, (r) => parseFloat(r.estimated_incomes_expenses || 0)),
+            // Real dimension
+            total_real_incomes: _.sumBy(rows, (r) => parseFloat(r.total_real_incomes || 0)),
+            total_real_expenses: _.sumBy(rows, (r) => parseFloat(r.total_real_expenses || 0)),
+            total_real_expenses_vat: _.sumBy(rows, (r) => parseFloat(r.total_real_expenses_vat || 0)),
+            total_real_hours: _.sumBy(rows, (r) => parseFloat(r.total_real_hours || 0)),
+            total_real_hours_price: _.sumBy(rows, (r) => parseFloat(r.total_real_hours_price || 0)),
+            total_real_incomes_expenses: _.sumBy(rows, (r) => parseFloat(r.total_real_incomes_expenses || 0)),
+            // Backwards compatibility
+            total_incomes: _.sumBy(rows, (r) =>
+              parseFloat(r.total_estimated_incomes || r.total_incomes || 0),
+            ),
+            total_expenses: _.sumBy(rows, (r) =>
+              parseFloat(r.total_estimated_expenses || r.total_expenses || 0),
+            ),
+            total_expenses_vat: _.sumBy(rows, (r) =>
+              parseFloat(r.total_estimated_expenses_vat || r.total_expenses_vat || 0),
+            ),
+            incomes_expenses: _.sumBy(rows, (r) =>
+              parseFloat(r.estimated_incomes_expenses || r.incomes_expenses || 0),
+            ),
+          };
+        })
+        .value();
+
+      // Apply mother project's periodification on top of aggregated data
+      const aggregatedAllByYearWithPeriodification = aggregatedAllByYear.map((y) => {
+        const periodificationData =
+          project.periodification && project.periodification.find((p) => p.year === y.year);
+
+        if (!periodificationData) {
+          return y;
+        }
+
+        const periodified_real_incomes = periodificationData.real_incomes || 0;
+        const periodified_real_expenses = periodificationData.real_expenses || 0;
+        const periodified_incomes = periodificationData.incomes || 0;
+        const periodified_expenses = periodificationData.expenses || 0;
+
+        // Periodification mapping (must mirror pushPeriodificationRows in
+        // projectFinancials.js):
+        //   - "previstos" (incomes/expenses) -> estimated dimension ONLY.
+        //     The original dimension is a locked baseline and must never be
+        //     touched by manual periodification.
+        //   - "executats" (real_incomes/real_expenses) -> real dimension ONLY.
+        const new_total_original_incomes = y.total_original_incomes;
+        const new_total_original_expenses = y.total_original_expenses;
+
+        const new_total_estimated_incomes = y.total_estimated_incomes + periodified_incomes;
+        const new_total_estimated_expenses = y.total_estimated_expenses + periodified_expenses;
+
+        const new_total_real_incomes = y.total_real_incomes + periodified_real_incomes;
+        const new_total_real_expenses = y.total_real_expenses + periodified_real_expenses;
+
+        return {
+          ...y,
+          // Original dimension (with periodification)
+          total_original_incomes: new_total_original_incomes,
+          total_original_expenses: new_total_original_expenses,
+          original_incomes_expenses:
+            new_total_original_incomes -
+            new_total_original_expenses -
+            (y.total_original_hours_price || 0) -
+            (y.total_original_expenses_vat || 0),
+          // Estimated dimension (with periodification)
+          total_estimated_incomes: new_total_estimated_incomes,
+          total_estimated_expenses: new_total_estimated_expenses,
+          estimated_incomes_expenses:
+            new_total_estimated_incomes -
+            new_total_estimated_expenses -
+            (y.total_estimated_hours_price || 0) -
+            (y.total_estimated_expenses_vat || 0),
+          // Real dimension (with periodification)
+          total_real_incomes: new_total_real_incomes,
+          total_real_expenses: new_total_real_expenses,
+          total_real_incomes_expenses:
+            new_total_real_incomes -
+            new_total_real_expenses -
+            (y.total_real_hours_price || 0) -
+            (y.total_real_expenses_vat || 0),
+          // Backwards compatibility
+          total_incomes: new_total_estimated_incomes,
+          total_expenses: new_total_estimated_expenses,
+          incomes_expenses:
+            new_total_estimated_incomes -
+            new_total_estimated_expenses -
+            (y.total_estimated_hours_price || 0) -
+            (y.total_estimated_expenses_vat || 0),
+        };
+      });
+
+      // REFACTORED: Calculate mother project totals by summing yearly values
+      // This ensures perfect consistency between year-level and project-level numbers
+      const totals = {
+        // Original dimension
+        total_original_incomes: _.sumBy(aggregatedAllByYearWithPeriodification, 'total_original_incomes'),
+        total_original_expenses: _.sumBy(aggregatedAllByYearWithPeriodification, 'total_original_expenses'),
+        total_original_expenses_vat: _.sumBy(
+          aggregatedAllByYearWithPeriodification,
+          'total_original_expenses_vat',
+        ),
+        total_original_hours: _.sumBy(aggregatedAllByYearWithPeriodification, 'total_original_hours'),
+        total_original_hours_price: _.sumBy(
+          aggregatedAllByYearWithPeriodification,
+          'total_original_hours_price',
+        ),
+        original_incomes_expenses: _.sumBy(
+          aggregatedAllByYearWithPeriodification,
+          'original_incomes_expenses',
+        ),
+        // Estimated dimension
+        total_estimated_incomes: _.sumBy(aggregatedAllByYearWithPeriodification, 'total_estimated_incomes'),
+        total_estimated_expenses: _.sumBy(aggregatedAllByYearWithPeriodification, 'total_estimated_expenses'),
+        total_estimated_expenses_vat: _.sumBy(
+          aggregatedAllByYearWithPeriodification,
+          'total_estimated_expenses_vat',
+        ),
+        total_estimated_hours: _.sumBy(aggregatedAllByYearWithPeriodification, 'total_estimated_hours'),
+        total_estimated_hours_price: _.sumBy(
+          aggregatedAllByYearWithPeriodification,
+          'total_estimated_hours_price',
+        ),
+        estimated_incomes_expenses: _.sumBy(
+          aggregatedAllByYearWithPeriodification,
+          'estimated_incomes_expenses',
+        ),
+        // Real dimension
+        total_real_incomes: _.sumBy(aggregatedAllByYearWithPeriodification, 'total_real_incomes'),
+        total_real_expenses: _.sumBy(aggregatedAllByYearWithPeriodification, 'total_real_expenses'),
+        total_real_expenses_vat: _.sumBy(aggregatedAllByYearWithPeriodification, 'total_real_expenses_vat'),
+        total_real_hours: _.sumBy(aggregatedAllByYearWithPeriodification, 'total_real_hours'),
+        total_real_hours_price: _.sumBy(aggregatedAllByYearWithPeriodification, 'total_real_hours_price'),
+        total_real_incomes_expenses: _.sumBy(
+          aggregatedAllByYearWithPeriodification,
+          'total_real_incomes_expenses',
+        ),
+      };
+
+      // EXCEPTION: Estimated hours should always copy from original hours
+      // "Hores previstes" should always be the same as "Hores originals"
+      totals.total_estimated_hours = totals.total_original_hours;
+      totals.total_estimated_hours_price = totals.total_original_hours_price;
+
+      // Recalculate estimated balance with corrected hours
+      totals.estimated_incomes_expenses =
+        totals.total_estimated_incomes -
+        totals.total_estimated_expenses -
+        totals.total_estimated_hours_price -
+        totals.total_estimated_expenses_vat;
+
+      // Update backwards compatibility fields
+      totals.total_incomes = totals.total_estimated_incomes;
+      totals.total_expenses = totals.total_estimated_expenses;
+      totals.total_expenses_vat = totals.total_estimated_expenses_vat;
+      totals.incomes_expenses = totals.estimated_incomes_expenses;
+      totals.balance = totals.estimated_incomes_expenses;
+      totals.estimated_balance = totals.estimated_incomes_expenses;
+
+      // Continue with other legacy fields
+      Object.assign(totals, {
+        // Other legacy fields
+        total_expenses_hours: _.sumBy(children, 'total_expenses_hours'),
+        dedicated_hours: _.sumBy(children, 'dedicated_hours'),
+        invoice_hours: _.sumBy(children, 'invoice_hours'),
+        invoice_hours_price: _.sumBy(children, 'invoice_hours_price'),
+        total_dedicated_hours: _.sumBy(children, 'total_dedicated_hours'),
+        structural_expenses: _.sumBy(children, 'structural_expenses'),
+        grantable_amount: _.sumBy(children, 'grantable_amount'),
+        grantable_amount_total: _.sumBy(children, 'grantable_amount_total'),
+      });
+
+      return {
+        children,
+        totals,
+        project_phases: aggregatedProjectPhases,
+        project_original_phases: aggregatedProjectOriginalPhases,
+        allByYear: aggregatedAllByYearWithPeriodification,
+      };
+    } else {
+      return {};
+    }
+  },
+
+  // async updatePhases(ctx) {
+  //   const projects = await strapi.db.query('api::project.project').findMany({ limit: -1 });
+
+  //   for (let i = 0; i < projects.length; i++) {
+  //     const project = projects[i];
+  //     if (
+  //       project.phases &&
+  //       project.phases.length &&
+  //       (!project.original_phases || !project.original_phases.length)
+  //     ) {
+  //       const projectToUpdate = { id: project.id };
+  //       projectToUpdate.original_phases = project.phases;
+  //       projectToUpdate.original_phases.forEach((p) => {
+  //         delete p.id;
+  //         p.incomes.forEach((sp) => {
+  //           delete sp.id;
+  //         });
+  //         p.expenses.forEach((sp) => {
+  //           delete sp.id;
+  //         });
+  //       });
+  //       await strapi
+  //         .query("project")
+  //         .update({ id: project.id }, projectToUpdate);
+  //     }
+  //   }
+  //   return { done: true };
+  // },
+
+  payExpense: async (ctx) => {
+    // const { id, expense } = ctx.params;
+    // const project = await strapi.db.query('api::project.project').findOne({ where: { id } });
+    // var found = false;
+    // if (project && project.id) {
+    //   project.project_phases.forEach((ph) => {
+    //     const expenseItem = ph.expenses.find((e) => e.id == expense);
+    //     if (expenseItem) {
+    //       found = true;
+    //       expenseItem.paid = true;
+    //       if (ctx.request.body.received && ctx.request.body.received.id) {
+    //         expenseItem.invoice = ctx.request.body.received.id;
+    //       }
+    //       if (ctx.request.body.ticket && ctx.request.body.ticket.id) {
+    //         expenseItem.ticket = ctx.request.body.ticket.id;
+    //       }
+    //       if (ctx.request.body.diet && ctx.request.body.diet.id) {
+    //         expenseItem.diet = ctx.request.body.diet.id;
+    //       }
+    //       if (ctx.request.body.expense && ctx.request.body.expense.id) {
+    //         expenseItem.expense = ctx.request.body.expense.id;
+    //       }
+    //     }
+    //   });
+    //   if (found) {
+    //     const projectToUpdate = { phases: project.phases };
+    //     await strapi.db.query('api::project.project').update({ id: id }, projectToUpdate);
+    //   }
+    // }
+    // return { id, expense, found };
+  },
+  payIncome: async (ctx) => {
+    // const { id, income } = ctx.params;
+    // const project = await strapi.db.query('api::project.project').findOne({ where: { id } });
+    // var found = false;
+    // if (project && project.id) {
+    //   project.phases.forEach((ph) => {
+    //     const incomeItem = ph.incomes.find((e) => e.id == income);
+    //     if (incomeItem) {
+    //       found = true;
+    //       incomeItem.paid = true;
+    //       if (ctx.request.body.emitted && ctx.request.body.emitted.id) {
+    //         incomeItem.emitted = ctx.request.body.emitted.id;
+    //       }
+    //       if (ctx.request.body.grant && ctx.request.body.grant.id) {
+    //         incomeItem.grant = ctx.request.body.grant.id;
+    //       }
+    //       if (ctx.request.body.income && ctx.request.body.income.id) {
+    //         incomeItem.income = ctx.request.body.income.id;
+    //       }
+    //     }
+    //   });
+    //   if (found) {
+    //     const projectToUpdate = { phases: project.phases };
+    //     await strapi.db.query('api::project.project').update({ id: id }, projectToUpdate);
+    //   }
+    // }
+    // return { id, income, found };
+  },
+
+  async findOne(ctx) {
+    const { id } = ctx.params;
+    // Load project with all necessary relations for calculation
+    const data = await strapi
+      .query('project')
+      .findOne({ id: id }, [
+        'leader',
+        'project_scope',
+        'project_state',
+        'clients',
+        'default_dedication_type',
+        'mother',
+        'region',
+        'project_likelihood',
+        'documents',
+        'project_type',
+        'strategies',
+        'intercooperations',
+        'emmited_invoices',
+        'received_invoices',
+        'activity_types',
+        'received_incomes',
+        'received_expenses',
+        'global_activity_types',
+        'treasury_annotations',
+        'activities',
+        'activities.activity_type',
+        'project_phases',
+        'project_phases.incomes',
+        'project_phases.incomes.estimated_hours',
+        'project_phases.incomes.estimated_hours.users_permissions_user',
+        'project_phases.incomes.income_type',
+        'project_phases.incomes.invoice',
+        'project_phases.incomes.income',
+        'project_phases.expenses',
+        'project_phases.expenses.expense_type',
+        'project_phases.expenses.invoice',
+        'project_phases.expenses.expense',
+        'project_original_phases',
+        'project_original_phases.incomes',
+        'project_original_phases.incomes.estimated_hours',
+        'project_original_phases.incomes.estimated_hours.users_permissions_user',
+        'project_original_phases.incomes.income_type',
+        'project_original_phases.incomes.invoice',
+        'project_original_phases.incomes.income',
+        'project_original_phases.expenses',
+        'project_original_phases.expenses.expense_type',
+        'project_original_phases.expenses.invoice',
+        'project_original_phases.expenses.expense',
+      ]);
+
+    // Calculate fresh totals to ensure consistency with calculate endpoint
+    // This ensures reports and lists get accurate totals from find/findOne methods
+    if (data && data.id) {
+      const calculatedData = await doProjectInfoCalculations(data, id);
+      delete calculatedData.activities;
+      return calculatedData;
+    }
+
+    return data;
+  },
+  async findOneExtended(ctx) {
+    const { id } = ctx.params;
+    // const data = await strapi.db.query('api::project.project').findOne({ where: { id } });
+    const data = await strapi
+      .query('project')
+      .findOne({ id: id }, [
+        'leader',
+        'project_scope',
+        'project_likelihood',
+        'project_state',
+        'project_type',
+        'clients',
+        'default_dedication_type',
+        'mother',
+        'region',
+        'documents',
+        'strategies',
+        'intercooperations',
+        'emmited_invoices',
+        'received_invoices',
+        'activity_types',
+        'received_incomes',
+        'received_expenses',
+        'global_activity_types',
+        'treasury_annotations',
+        'global_activity_types',
+        'project_phases',
+        'project_phases.incomes',
+        'project_phases.incomes.estimated_hours',
+        'project_phases.incomes.income_type',
+        'project_phases.incomes.estimated_hours.users_permissions_user',
+        'project_phases.incomes.invoice',
+        'project_phases.incomes.income',
+        'project_phases.expenses',
+        'project_phases.expenses.expense_type',
+        'project_phases.expenses.invoice',
+        'project_phases.expenses.expense',
+        'project_original_phases',
+        'project_original_phases.incomes',
+        'project_original_phases.incomes.estimated_hours',
+        'project_original_phases.incomes.income_type',
+        'project_original_phases.incomes.estimated_hours.users_permissions_user',
+        'project_original_phases.incomes.invoice',
+        'project_original_phases.incomes.income',
+        'project_original_phases.expenses',
+        'project_original_phases.expenses.expense_type',
+        'project_original_phases.expenses.invoice',
+        'project_original_phases.expenses.expense',
+      ]);
+
+    return data;
+  },
+  // doCalculateProjectInfo: async (ctx) => {
+  //   const { id } = ctx.params;
+  //   var start = new Date();
+  //   const data = await strapi.db.query('api::project.project').findOne({ where: { id } });
+  //   var end = new Date() - start;
+
+  //   const result = await doProjectInfoCalculations(data, id);
+  //   var end = new Date() - start;
+
+  //   return result;
+  // },
+
+  // getProjectIsDirty: async (ctx) => {
+  //   const { id } = ctx.params;
+  //   const projects = await strapi
+  //     .query("project")
+  //     .model.query((qb) => {
+  //       qb.select("id", "dirty").where({ id: id });
+  //     })
+  //     .fetchAll();
+
+  //   const p = projects.map((entity) =>
+  //     entity
+  //   );
+
+  //   return { id: id, dirty: p[0].dirty };
+  // },
+
+  // enqueueProjects: async (projects) => {
+  //   //projectsQueue.push(projects);
+  // },
+
+  // updateQueuedProjects: async () => {
+  //   const projects = projectsQueue.pop();
+  //   if (projects && projects.current) {
+  //     await updateProjectInfo(projects.current, true);
+  //   }
+  //   if (
+  //     projects &&
+  //     projects.previous &&
+  //     projects.current !== projects.previous
+  //   ) {
+  //     await updateProjectInfo(projects.previous, true);
+  //   }
+  // },
+
+  createPhaseWithNested: async (projectId, entity, phase) => {
+    console.log('createPhaseWithNested:', entity, phase.name);
+
+    // Extract nested data
+    const { incomes, expenses, ...phaseData } = phase;
+
+    // Create the phase
+    const createdPhase = await strapi.query(entity).create({ project: projectId, name: phaseData.name });
+
+    console.log('  - Phase created with id:', createdPhase.id);
+
+    // Create incomes
+    if (incomes && incomes.length > 0) {
+      console.log('  - Creating', incomes.length, 'incomes');
+      for (const income of incomes) {
+        const { estimated_hours, ...incomeData } = income;
+
+        // Calculate total_amount
+        incomeData.total_amount = (incomeData.quantity || 0) * (incomeData.amount || 0);
+
+        // Clean up bank_account - ensure it's either a valid ID or null
+        if (incomeData.bank_account && typeof incomeData.bank_account === 'object') {
+          incomeData.bank_account = incomeData.bank_account.id || null;
+        }
+
+        // Link to phase
+        if (entity === 'project-original-phases') {
+          incomeData.project_original_phase = createdPhase.id;
+        } else {
+          incomeData.project_phase = createdPhase.id;
+        }
+
+        const createdIncome = await strapi.db.query('api::phase-income.phase-income').create(incomeData);
+
+        // Create estimated_hours for both original and execution phases
+        if (estimated_hours && estimated_hours.length > 0) {
+          console.log('    - Creating', estimated_hours.length, 'estimated_hours for income');
+          for (const hour of estimated_hours) {
+            await strapi.db.query('api::estimated-hour.estimated-hour').create({
+              ...hour,
+              phase_income: createdIncome.id,
+            });
+          }
+        }
+      }
+    }
+
+    // Create expenses
+    if (expenses && expenses.length > 0) {
+      console.log('  - Creating', expenses.length, 'expenses');
+      for (const expense of expenses) {
+        // Calculate total_amount
+        expense.total_amount = (expense.quantity || 0) * (expense.amount || 0);
+
+        // Clean up bank_account - ensure it's either a valid ID or null
+        if (expense.bank_account && typeof expense.bank_account === 'object') {
+          expense.bank_account = expense.bank_account.id || null;
+        }
+
+        // Link to phase
+        if (entity === 'project-original-phases') {
+          expense.project_original_phase = createdPhase.id;
+        } else {
+          expense.project_phase = createdPhase.id;
+        }
+
+        await strapi.db.query('api::phase-expense.phase-expense').create(expense);
+      }
+    }
+
+    return createdPhase;
+  },
+  updatePhases: async (id, entity, phases, deletedPhases, deletedIncomes, deletedExpenses, deletedHours) => {
+    for await (const income of deletedIncomes.filter((i) => i)) {
+      await strapi.db.query('api::phase-income.phase-income').deleteMany({ where: { id: income } });
+    }
+    for await (const expense of deletedExpenses.filter((i) => i)) {
+      await strapi.db.query('api::phase-expense.phase-expense').deleteMany({ where: { id: expense } });
+    }
+    for await (const hour of deletedHours.filter((i) => i)) {
+      await strapi.db.query('api::estimated-hour.estimated-hour').deleteMany({ where: { id: hour } });
+    }
+    for await (const phase of deletedPhases.filter((i) => i)) {
+      if (entity === 'project-original-phases') {
+        const incomesOfPhase = await strapi
+          .query('phase-income')
+          .find({ project_original_phase: phase, _limit: -1 });
+        for await (const income of incomesOfPhase) {
+          await strapi.db.query('api::phase-income.phase-income').deleteMany({ where: { id: income.id } });
+        }
+        const expensesOfPhase = await strapi
+          .query('phase-expense')
+          .find({ project_original_phase: phase, _limit: -1 });
+
+        for await (const expense of expensesOfPhase) {
+          await strapi.db.query('api::phase-expense.phase-expense').deleteMany({ where: { id: expense.id } });
+        }
+        await strapi.db
+          .query(
+            entity === 'project-original-phases'
+              ? 'api::project-original-phase.project-original-phase'
+              : 'api::project-phase.project-phase',
+          )
+          .deleteMany({ where: { id: phase } });
+      } else {
+        const incomesOfPhase = await strapi.db
+          .query('api::phase-income.phase-income')
+          .findMany({ where: { project_phase: phase }, limit: -1 });
+        for await (const income of incomesOfPhase) {
+          await strapi.db.query('api::phase-income.phase-income').deleteMany({ where: { id: income.id } });
+        }
+        const expensesOfPhase = await strapi
+          .query('phase-expense')
+          .find({ project_phase: phase, _limit: -1 });
+        for await (const expense of expensesOfPhase) {
+          await strapi.db.query('api::phase-expense.phase-expense').deleteMany({ where: { id: expense.id } });
+        }
+        await strapi.db
+          .query(
+            entity === 'project-original-phases'
+              ? 'api::project-original-phase.project-original-phase'
+              : 'api::project-phase.project-phase',
+          )
+          .deleteMany({ where: { id: phase } });
+      }
+    }
+
+    for await (const phase of phases) {
+      const { incomes, expenses, ...item } = phase;
+      if (!phase.id) {
+        const resp = await strapi.query(entity).create({ project: id, name: item.name });
+        phase.id = resp.id;
+      } else if (phase.dirty) {
+        await strapi.query(entity).update({ id: phase.id }, { project: id, name: item.name });
+      }
+
+      if (incomes) {
+        for await (const income of incomes) {
+          income.total_amount = (income.quantity || 0) * (income.amount || 0);
+
+          // Clean up bank_account - ensure it's either a valid ID or null
+          if (income.bank_account && typeof income.bank_account === 'object' && !income.bank_account.id) {
+            income.bank_account = null;
+          } else if (income.bank_account && income.bank_account.id) {
+            income.bank_account = income.bank_account.id;
+          }
+
+          if (!income.id) {
+            const { estimated_hours, ...item } = income;
+            if (entity === 'project-original-phases') {
+              const newIncome = await strapi.db.query('api::phase-income.phase-income').create({
+                ...item,
+                project_original_phase: phase.id,
+              });
+              income.id = newIncome.id;
+            } else {
+              const newIncome = await strapi.db.query('api::phase-income.phase-income').create({
+                ...item,
+                project_phase: phase.id,
+              });
+              income.id = newIncome.id;
+            }
+          } else if (income.dirty) {
+            const { estimated_hours, ...item } = income;
+            await strapi.db.query('api::phase-income.phase-income').update({ id: income.id }, item);
+          }
+
+          // Handle estimated_hours for both original and execution phases
+          if (income.estimated_hours) {
+            for await (const estimated_hours of income.estimated_hours) {
+              if (!estimated_hours.id) {
+                await strapi.db.query('api::estimated-hour.estimated-hour').create({
+                  ...estimated_hours,
+                  phase_income: income.id,
+                });
+              } else if (estimated_hours.dirty) {
+                await strapi.query('estimated-hours').update({ id: estimated_hours.id }, estimated_hours);
+              }
+            }
+
+            // Recalculate total_estimated_hours aggregate for this income
+            // This ensures the aggregate is always up-to-date after editing hours
+            const allHours = await strapi.db.query('api::estimated-hour.estimated-hour').find({
+              phase_income: income.id,
+              _limit: -1,
+            });
+
+            const totalEstimatedHours = allHours.reduce((sum, h) => {
+              return sum + (h.quantity || 0);
+            }, 0);
+
+            await strapi.db
+              .query('api::phase-income.phase-income')
+              .update({ id: income.id }, { total_estimated_hours: totalEstimatedHours });
+          }
+        }
+      }
+
+      if (expenses) {
+        for await (const expense of expenses) {
+          expense.total_amount = (expense.quantity || 0) * (expense.amount || 0);
+
+          // Clean up bank_account - ensure it's either a valid ID or null
+          if (expense.bank_account && typeof expense.bank_account === 'object' && !expense.bank_account.id) {
+            expense.bank_account = null;
+          }
+
+          if (!expense.id) {
+            if (entity === 'project-original-phases') {
+              await strapi.db.query('api::phase-expense.phase-expense').create({
+                ...expense,
+                project_original_phase: phase.id,
+              });
+            } else {
+              await strapi.db.query('api::phase-expense.phase-expense').create({
+                ...expense,
+                project_phase: phase.id,
+              });
+            }
+          } else if (expense.dirty) {
+            await strapi.query('phase-expense').update({ id: expense.id }, expense);
+          }
+        }
+      }
+    }
+  },
+  createPhasesForAllProjects: async (ctx) => {
+    return; // Disabled in v3; the ETL (Phase 7) handles phase creation.
+
+    // eslint-disable-next-line no-unreachable
+    const phases0 = await strapi.db
+      .query('api::project-original-phase.project-original-phase')
+      .findMany({ limit: 1 });
+
+    if (phases0.length > 0) {
+      console.log('phases already created!');
+      return;
+    }
+
+    await strapi.db.query('api::estimated-hour.estimated-hour').delete({ _limit: -1 });
+    console.log('deleted estimated-hours');
+    await strapi.db.query('api::phase-income.phase-income').delete({ _limit: -1 });
+    console.log('deleted phase-income');
+    await strapi.db.query('api::phase-expense.phase-expense').delete({ _limit: -1 });
+    console.log('deleted phase-expense');
+    await strapi.db.query('api::project-phase.project-phase').delete({ _limit: -1 });
+    console.log('deleted project-phases');
+    await strapi.db.query('api::project-original-phase.project-original-phase').delete({ _limit: -1 });
+    console.log('deleted project-original-phases');
+    console.log('deleted all!!!');
+
+    const projects = await strapi.db.query('api::project.project').findMany({ limit: -1 });
+
+    for await (const p of projects) {
+      // copy p.phases to project-phase
+      console.log('project', p.name);
+      for await (const ph of p.phases) {
+        console.log('phase', ph.name);
+        const phase = await strapi.db.query('api::project-phase.project-phase').create({
+          name: ph.name,
+          project: p.id,
+        });
+        for await (const income of ph.incomes) {
+          if (!income || !income.id) continue;
+          console.log('income', income.concept);
+          const data = {
+            concept: income.concept,
+            quantity: income.quantity,
+            amount: income.amount,
+            total_amount: income.total_amount,
+            date: income.date ? income.date.substring(0, 10) : null,
+            paid: income.paid,
+            client: income.client && income.client.id ? income.client.id : null,
+            invoice: income.invoice && income.invoice.id ? income.invoice.id : null,
+            total_estimated_hours: income.total_estimated_hours,
+            income_type: income.income_type,
+            income: income.income && income.income.id ? income.income.id : null,
+            date_estimated_document: income.date_estimated_document
+              ? income.date_estimated_document.substring(0, 10)
+              : null,
+            project_phase: phase.id,
+          };
+          const newIncome = await strapi.db.query('api::phase-income.phase-income').create(data);
+        }
+        for await (const expense of ph.expenses) {
+          if (!expense || !expense.id) continue;
+          console.log('expense', expense.concept);
+          const data = {
+            concept: expense.concept,
+            quantity: expense.quantity,
+            amount: expense.amount,
+            total_amount: expense.total_amount,
+            date: expense.date ? expense.date.substring(0, 10) : null,
+            paid: expense.paid,
+            provider: expense.provider && expense.provider.id ? expense.provider.id : null,
+            invoice: expense.invoice && expense.invoice.id ? expense.invoice.id : null,
+            total_estimated_hours: expense.total_estimated_hours,
+            expense_type: expense.expense_type,
+            expense: expense.expense && expense.expense.id ? expense.expense.id : null,
+            date_estimated_document: expense.date_estimated_document
+              ? expense.date_estimated_document.substring(0, 10)
+              : null,
+            project_phase: phase.id,
+          };
+          const newExpense = await strapi.db.query('api::phase-expense.phase-expense').create(data);
+        }
+      }
+      // copy p.original-phases to project-original-phase
+      for await (const ph of p.original_phases) {
+        console.log('original-phase', ph.name);
+        const phase = await strapi.db.query('api::project-original-phase.project-original-phase').create({
+          name: ph.name,
+          project: p.id,
+        });
+        for await (const income of ph.incomes) {
+          console.log('income', income.concept);
+          if (!income || !income.id) continue;
+          const data = {
+            concept: income.concept,
+            quantity: income.quantity,
+            amount: income.amount,
+            total_amount: income.total_amount,
+            date: income.date ? income.date.substring(0, 10) : null,
+            // paid: income.paid,
+            //client: income.client,
+            //invoice: income.invoice,
+            total_estimated_hours: income.total_estimated_hours,
+            income_type: income.income_type,
+            //income: income.income,
+            date_estimated_document: income.date_estimated_document
+              ? income.date_estimated_document.substring(0, 10)
+              : null,
+            project_original_phase: phase.id,
+          };
+          const newIncome = await strapi.db.query('api::phase-income.phase-income').create(data);
+
+          for await (const estimated_hours of income.estimated_hours) {
+            console.log('estimated_hours', estimated_hours.hours);
+            const data = {
+              users_permissions_user: estimated_hours.users_permissions_user,
+              quantity: estimated_hours.quantity,
+              amount: estimated_hours.amount,
+              total_amount: estimated_hours.total_amount,
+              comment: estimated_hours.comment,
+              from: estimated_hours.from,
+              to: estimated_hours.to,
+              monthly_quantity: estimated_hours.monthly_quantity,
+              quantity_type: estimated_hours.quantity_type,
+              phase_income: newIncome.id,
+            };
+            const newEstimatedHours = await strapi.query('estimated-hours').create(data);
+          }
+        }
+        for await (const expense of ph.expenses) {
+          if (!expense || !expense.id) continue;
+          console.log('expense', expense.concept);
+          const data = {
+            concept: expense.concept,
+            quantity: expense.quantity,
+            amount: expense.amount,
+            total_amount: expense.total_amount,
+            date: expense.date ? expense.date.substring(0, 10) : null,
+            // paid: expense.paid,
+            //provider: expense.provider,
+            //invoice: expense.invoice,
+            total_estimated_hours: expense.total_estimated_hours,
+            expense_type: expense.expense_type,
+            //expense: expense.expense,
+            date_estimated_document: expense.date_estimated_document
+              ? expense.date_estimated_document.substring(0, 10)
+              : null,
+            project_original_phase: phase.id,
+          };
+          const newExpense = await strapi.db.query('api::phase-expense.phase-expense').create(data);
+        }
+      }
+    }
   },
 }));

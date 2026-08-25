@@ -300,7 +300,8 @@ function pluralize(word) {
 // Singularize a single (last) path segment. Conservative — only handles clear plurals.
 function singularizeWord(word) {
   if (/ies$/.test(word) && word.length > 3) return word.slice(0, -3) + 'y';
-  if (/ses$|xes$|zes$|ches$|shes$/.test(word)) return word.slice(0, -2);
+  // Only strip -es for true sibilant plurals (bus->buses, box->boxes), NOT "phases"->"phas"
+  if (/(o|x|ch|sh)es$/.test(word) && word.length > 3) return word.slice(0, -2);
   if (/s$/.test(word) && !/ss$/.test(word)) return word.slice(0, -1);
   return word;
 }
