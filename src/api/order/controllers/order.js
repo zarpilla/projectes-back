@@ -71,6 +71,32 @@ const assertWithinNextDayCutoff = async (ctx) => {
 
 module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   /**
+   * find override — ports the v3 afterFind hook (removed in v5): computes the
+   * finalPrice field on every order (multidelivery + pickup discounts, volume).
+   */
+  async find(ctx) {
+    const response = await super.find(ctx);
+    const rows = response?.data;
+    if (Array.isArray(rows)) {
+      for (const entry of rows) {
+        const attrs = entry?.attributes || entry;
+        if (attrs) applyFinalPrice(attrs);
+      }
+    }
+    return response;
+  },
+
+  /**
+   * findOne override — same finalPrice computation for single-order reads.
+   */
+  async findOne(ctx) {
+    const response = await super.findOne(ctx);
+    const attrs = response?.data?.attributes || response?.data;
+    if (attrs) applyFinalPrice(attrs);
+    return response;
+  },
+
+  /**
    * GET /api/orders/table
    * Lightweight list with restricted populate (drops emitted_invoice).
    */
@@ -636,3 +662,15 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     return super.update(ctx);
   },
 }));
+
+/**
+ * Computes finalPrice: base price with multidelivery + pickup discounts (percent)
+ * and volume discount (fixed) — ported verbatim from the v3 afterFind hook.
+ */
+function applyFinalPrice(order) {
+  let price = order.price || 0;
+  price = price * (1 - (order.multidelivery_discount || 0) / 100);
+  price = price * (1 - (order.contact_pickup_discount || 0) / 100);
+  price = price - (order.volume_discount || 0);
+  order.finalPrice = price;
+}

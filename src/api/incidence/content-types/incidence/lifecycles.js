@@ -128,4 +128,3 @@ async function sendIncidenceEmail(incidence, action, updaterId = null) {
   await strapi.plugin('email').service('email').send({ to: recipients, from, subject, html });
   console.log(`Incidence ${action} email sent to:`, recipients);
 }
-

@@ -44,7 +44,8 @@
     "react-router-dom": "^6.30.3",
     "rrule": "^2.8.1",
     "styled-components": "^6.0.0",
-    "transliteration": "^2.6.1"
+    "transliteration": "^2.6.1",
+    "verifactu-node-lib": "^1.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

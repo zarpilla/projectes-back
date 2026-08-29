@@ -166,6 +166,24 @@ const doProjectInfoCalculations = async (data, id) => {
 let projectsQueue = [];
 
 module.exports = createCoreController('api::project.project', ({ strapi }) => ({
+  /**
+   * find override — ports the v3 afterFind hook (removed in v5): aggregates
+   * child totals onto mother projects in list responses.
+   */
+  async find(ctx) {
+    const response = await super.find(ctx);
+    const rows = response?.data;
+    if (Array.isArray(rows)) {
+      for (const entry of rows) {
+        const attrs = entry?.attributes || entry;
+        if (attrs && attrs.is_mother) {
+          await calculateMotherProjectTotals(attrs);
+        }
+      }
+    }
+    return response;
+  },
+
   async calculateProject(data, id) {
     return await doProjectInfoCalculations(data, id);
   },
@@ -1337,9 +1355,16 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     if (data && data.id) {
       const calculatedData = await doProjectInfoCalculations(data, id);
       delete calculatedData.activities;
+      // Mother projects: aggregate child totals (v3 afterFindOne port, P5.3).
+      if (calculatedData.is_mother) {
+        await calculateMotherProjectTotals(calculatedData);
+      }
       return calculatedData;
     }
 
+    if (data && data.is_mother) {
+      await calculateMotherProjectTotals(data);
+    }
     return data;
   },
   async findOneExtended(ctx) {
@@ -1819,3 +1844,75 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     }
   },
 }));
+
+/**
+ * Aggregates child totals onto a mother project (ported verbatim from the v3
+ * afterFind/afterFindOne lifecycle helpers; lives here since v5 removed those hooks).
+ */
+async function calculateMotherProjectTotals(motherProject) {
+  try {
+    const children = await strapi.db
+      .query('api::project.project')
+      .findMany({ where: { mother: motherProject.id }, limit: -1 });
+    if (!children || children.length === 0) return;
+
+    for (const f of [
+      'total_original_incomes',
+      'total_original_expenses',
+      'total_original_hours',
+      'total_original_hours_price',
+      'total_original_expenses_vat',
+      'original_incomes_expenses',
+      'total_estimated_incomes',
+      'total_estimated_expenses',
+      'total_estimated_hours',
+      'total_estimated_hours_price',
+      'total_estimated_expenses_vat',
+      'estimated_incomes_expenses',
+      'total_real_incomes',
+      'total_real_expenses',
+      'total_real_hours',
+      'total_real_hours_price',
+      'total_real_expenses_vat',
+      'total_real_incomes_expenses',
+      'total_incomes',
+      'total_expenses',
+      'incomes_expenses',
+    ]) {
+      motherProject[f] = 0;
+    }
+
+    for (const child of children) {
+      for (const f of [
+        'total_original_incomes',
+        'total_original_expenses',
+        'total_original_hours',
+        'total_original_hours_price',
+        'total_original_expenses_vat',
+        'original_incomes_expenses',
+        'total_estimated_incomes',
+        'total_estimated_expenses',
+        'total_estimated_hours',
+        'total_estimated_hours_price',
+        'total_estimated_expenses_vat',
+        'estimated_incomes_expenses',
+        'total_real_incomes',
+        'total_real_expenses',
+        'total_real_hours',
+        'total_real_hours_price',
+        'total_real_expenses_vat',
+        'total_real_incomes_expenses',
+      ]) {
+        motherProject[f] += parseFloat(child[f] || 0);
+      }
+      // Backwards-compat fields fall back to the estimated dimension.
+      motherProject.total_incomes += parseFloat(child.total_incomes || child.total_estimated_incomes || 0);
+      motherProject.total_expenses += parseFloat(child.total_expenses || child.total_estimated_expenses || 0);
+      motherProject.incomes_expenses += parseFloat(
+        child.incomes_expenses || child.estimated_incomes_expenses || 0,
+      );
+    }
+  } catch (error) {
+    console.error(`Error calculating mother project totals for project ${motherProject.id}:`, error);
+  }
+}

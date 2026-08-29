@@ -81,6 +81,35 @@ const ENTITY_UID = {
 };
 
 module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({ strapi }) => ({
+  /**
+   * findOne override — ports the v3 afterFindOne hook (removed in v5): injects
+   * the FACe queue status and VeriFactu chain state onto the invoice response
+   * when the corresponding integration is enabled.
+   */
+  async findOne(ctx) {
+    const response = await super.findOne(ctx);
+    const invoice = response?.data?.attributes || response?.data;
+    if (!invoice || !invoice.id) return response;
+
+    const me = await strapi.documents('api::me.me').findFirst();
+    if (me && (me.face === 'test' || me.face === 'real')) {
+      const faceQueue = await strapi.db
+        .query('api::face-queue.face-queue')
+        .findOne({ where: { mode: me.face, emitted_invoice: invoice.id } });
+      invoice.face_queue = faceQueue ? faceQueue.status : 'missing';
+    }
+
+    const verifactu = await strapi.documents('api::verifactu.verifactu').findFirst();
+    if (verifactu && (verifactu.mode === 'test' || verifactu.mode === 'real')) {
+      const chain = await strapi.db
+        .query('api::verifactu-chain.verifactu-chain')
+        .findOne({ where: { mode: verifactu.mode, emitted_invoice: invoice.id } });
+      invoice.verifactu_chain = chain ? chain.state : 'missing';
+    }
+
+    return response;
+  },
+
   async findBasic(ctx) {
     const opts = adaptQuery(ctx.query);
     return strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
