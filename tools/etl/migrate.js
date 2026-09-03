@@ -29,14 +29,7 @@ if (!FROM || !TO) {
   process.exit(1);
 }
 
-// v3 admin audit columns are not migrated (different admin user tables).
-const SKIP_V3_COLUMNS = new Set(['created_by', 'updated_by']);
-
-// Column renames v3 -> v5 (upload tables).
-const UPLOAD_RENAMES = {
-  alternativeText: 'alternative_text',
-  previewUrl: 'preview_url',
-};
+// v3 admin audit columns (created_by/updated_by) are not migrated — different admin user tables.
 
 async function main() {
   const { contentTypes, components } = loadRegistry();
