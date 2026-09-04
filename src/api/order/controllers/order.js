@@ -19,7 +19,7 @@ const QRCode = require('qrcode');
 const PDFMerge = require('pdf-merge');
 const MicroInvoiceOrder = require('../../../../utils/microinvoice-order');
 const { createCoreController } = require('@strapi/strapi').factories;
-const { adaptQuery } = require('../../../services/query-adapter');
+const { adaptQuery, adaptCtxQuery } = require('../../../services/query-adapter');
 const { rawExecute } = require('../../../services/raw-sql');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
@@ -75,6 +75,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * finalPrice field on every order (multidelivery + pickup discounts, volume).
    */
   async find(ctx) {
+    adaptCtxQuery(ctx);
     const response = await super.find(ctx);
     const rows = response?.data;
     if (Array.isArray(rows)) {

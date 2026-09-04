@@ -6,9 +6,11 @@
  * (applied when no explicit _sort/sort is requested) moves into the find override.
  */
 const { createCoreController } = require('@strapi/strapi').factories;
+const { adaptCtxQuery } = require('../../../services/query-adapter');
 
 module.exports = createCoreController('api::month.month', ({ strapi }) => ({
   async find(ctx) {
+    adaptCtxQuery(ctx);
     // If the caller did not request a specific sort, sort by month number.
     const hasSort = ctx.query.sort !== undefined || ctx.query._sort !== undefined;
     if (!hasSort && ctx.query.pagination === undefined) {

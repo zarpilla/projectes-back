@@ -211,3 +211,39 @@ describe('query-adapter (v3 → v5)', () => {
     });
   });
 });
+
+describe('adaptCtxQuery (v3 REST compatibility for core find)', () => {
+  const { adaptCtxQuery } = require('../src/services/query-adapter');
+
+  const mkCtx = (query) => ({ query });
+
+  test('translates v3 list params into v5 REST params', () => {
+    const ctx = mkCtx({ _limit: '-1', _sort: 'name:ASC', mother: '5' });
+    adaptCtxQuery(ctx);
+    expect(ctx.query).toEqual({
+      filters: { mother: 5 },
+      sort: ['name:asc'],
+      pagination: { limit: -1 },
+    });
+  });
+
+  test('translates _where and published_at_null', () => {
+    const ctx = mkCtx({ _where: { 'multidelivery_eq': 'true' }, published_at_null: 'false' });
+    adaptCtxQuery(ctx);
+    expect(ctx.query.filters).toEqual({ multidelivery: true });
+    expect(ctx.query.status).toBe('published');
+  });
+
+  test('leaves v5-native queries untouched', () => {
+    const query = { filters: { name: { $contains: 'x' } }, 'sort': ['id:desc'], pagination: { limit: 10 } };
+    const ctx = mkCtx({ ...query });
+    adaptCtxQuery(ctx);
+    expect(ctx.query).toEqual(query);
+  });
+
+  test('leaves empty queries untouched', () => {
+    const ctx = mkCtx({});
+    adaptCtxQuery(ctx);
+    expect(ctx.query).toEqual({});
+  });
+});

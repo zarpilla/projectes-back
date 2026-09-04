@@ -7,10 +7,19 @@
  * same Z.ai pipeline as received-invoice).
  */
 const { createCoreController } = require('@strapi/strapi').factories;
+const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { proxyUpload } = require('../../../services/invoice-parser-proxy');
 
 module.exports = createCoreController('api::received-expense.received-expense', ({ strapi }) => ({
+  // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
+  // and flat field operators to native v5 params before core handling.
+  // v5-native queries pass through untouched.
+  async find(ctx) {
+    adaptCtxQuery(ctx);
+    return super.find(ctx);
+  },
+
   async findBasic(ctx) {
     const opts = adaptQuery(ctx.query);
     return strapi.db.query('api::received-expense.received-expense').findMany({

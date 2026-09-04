@@ -10,6 +10,7 @@
  */
 const moment = require('moment');
 const { createCoreController } = require('@strapi/strapi').factories;
+const { adaptCtxQuery } = require('../../../services/query-adapter');
 
 // A relation field may come back as a populated object { id }, a raw id, or null.
 // Normalize to a comparable string.
@@ -20,6 +21,14 @@ const idOf = (value) => {
 };
 
 module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
+  // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
+  // and flat field operators to native v5 params before core handling.
+  // v5-native queries pass through untouched.
+  async find(ctx) {
+    adaptCtxQuery(ctx);
+    return super.find(ctx);
+  },
+
   /**
    * POST /api/payrolls/create-all?year=YYYY
    * Creates payrolls for every user with a daily-dedication covering each month.

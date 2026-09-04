@@ -17,10 +17,19 @@ const { RRule } = require('rrule');
 const { google } = require('googleapis');
 const fs = require('fs');
 const { createCoreController } = require('@strapi/strapi').factories;
+const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { scheduleRefresh } = require('../../project/services/totalsRefreshScheduler');
 
 module.exports = createCoreController('api::activity.activity', ({ strapi }) => ({
+  // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
+  // and flat field operators to native v5 params before core handling.
+  // v5-native queries pass through untouched.
+  async find(ctx) {
+    adaptCtxQuery(ctx);
+    return super.find(ctx);
+  },
+
   /**
    * GET /api/activities/calendar
    * Returns activities with slimmed-down user + project relations (for the calendar view).

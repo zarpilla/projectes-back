@@ -238,8 +238,52 @@ function adaptQuery(query, opts = {}) {
   return out;
 }
 
+/**
+ * Params the v5 REST layer understands natively. Any OTHER query key means the
+ * caller speaks v3 (_limit/_sort/_q/_where, published_at_null, or flat field
+ * operators like `contact=5`) and must be translated first.
+ */
+const V5_REST_PARAMS = new Set([
+  'filters',
+  'sort',
+  'pagination',
+  'populate',
+  'fields',
+  'status',
+  'publicationState',
+  'locale',
+]);
+
+/**
+ * In-place v3->v5 translation of ctx.query for core find overrides (P9).
+ * Rewrites v3-style queries into native v5 REST params so the frontend can
+ * keep sending the exact query strings it sent to v3. v5-native queries and
+ * empty queries pass through untouched.
+ */
+function adaptCtxQuery(ctx, opts = {}) {
+  const query = ctx && ctx.query;
+  if (!query || typeof query !== 'object') return;
+  const v3Keys = Object.keys(query).filter((k) => !V5_REST_PARAMS.has(k));
+  if (v3Keys.length === 0) return;
+
+  const adapted = adaptQuery(query, opts);
+  const next = {};
+  if (adapted.filters && Object.keys(adapted.filters).length) next.filters = adapted.filters;
+  // REST query validation expects sort as an array of 'field:dir' strings
+  // (the object form from adaptQuery is only valid for db.query orderBy).
+  if (adapted.sort) next.sort = adapted.sort.map((entry) => {
+    const [field, dir] = Object.entries(entry)[0];
+    return `${field}:${dir}`;
+  });
+  if (adapted.pagination) next.pagination = adapted.pagination;
+  if (adapted.status) next.status = adapted.status;
+  if (adapted.populate) next.populate = adapted.populate;
+  ctx.query = next;
+}
+
 module.exports = {
   adaptQuery,
+  adaptCtxQuery,
   // exported for testing
   _internal: { splitFieldOp, coerceValue, coerceScalar, translateWhere, applyOp },
 };

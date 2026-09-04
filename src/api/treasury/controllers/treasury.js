@@ -12,6 +12,7 @@ const zeroPad = (num, places) => String(num).padStart(places, '0');
  * (11 strapi.query calls) was converted to strapi.db.query. All computation preserved verbatim.
  */
 const { createCoreController } = require('@strapi/strapi').factories;
+const { adaptCtxQuery } = require('../../../services/query-adapter');
 
 const getDeductiblePct = (years, emitted) => {
   const year = years.find(
@@ -54,6 +55,14 @@ const applyRowToBalance = (row, currentAccountBalance) => {
 };
 
 module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => ({
+  // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
+  // and flat field operators to native v5 params before core handling.
+  // v5-native queries pass through untouched.
+  async find(ctx) {
+    adaptCtxQuery(ctx);
+    return super.find(ctx);
+  },
+
   async forecast(ctx) {
     const year = ctx.query.year;
     const bankAccountFilterIds = ctx.query.bank_account_id;

@@ -3,7 +3,7 @@
 const { createCoreController } = require('@strapi/strapi').factories;
 const _ = require('lodash');
 const moment = require('moment');
-const { adaptQuery } = require('../../../services/query-adapter');
+const { adaptQuery, adaptCtxQuery } = require('../../../services/query-adapter');
 const { getDailyDedications, getFestives } = require('../services/project');
 const {
   buildProjectRows,
@@ -181,6 +181,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
    * child totals onto mother projects in list responses.
    */
   async find(ctx) {
+    adaptCtxQuery(ctx);
     const response = await super.find(ctx);
     const rows = response?.data;
     if (Array.isArray(rows)) {

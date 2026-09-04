@@ -7,9 +7,18 @@
  */
 const moment = require('moment');
 const { createCoreController } = require('@strapi/strapi').factories;
+const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { setCurrentUserId } = require('../utils/updater');
 
 module.exports = createCoreController('api::incidence.incidence', ({ strapi }) => ({
+  // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
+  // and flat field operators to native v5 params before core handling.
+  // v5-native queries pass through untouched.
+  async find(ctx) {
+    adaptCtxQuery(ctx);
+    return super.find(ctx);
+  },
+
   /**
    * PUT /api/incidences/:id — passes the current user id to the lifecycle
    * (used to decide notification recipients) via the module-level setter,
