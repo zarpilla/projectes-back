@@ -12,17 +12,18 @@ const https = require('https');
 const path = require('path');
 const { createVerifactuInvoice } = require('verifactu-node-lib');
 const _ = require('lodash');
-const { count } = require('console');
 
 const sendVerifactu = async () => {
   const me = await strapi.db.query('api::me.me').findOne();
-  const verifactu = await strapi.db.query('api::verifactu.verifactu').findOne();
+  const verifactu = await strapi.documents('api::verifactu.verifactu').findFirst({
+    populate: { certificate: true },
+  });
 
   if (verifactu && (verifactu.mode === 'test' || verifactu.mode === 'real')) {
     const pendingInvoices = await strapi.db.query('api::verifactu-chain.verifactu-chain').findMany({
       where: { state: { $in: ['ko', 'pending', 'okwitherrors'] }, mode: verifactu.mode },
       orderBy: { id: 'asc' },
-      limit: -1,
+      populate: { emitted_invoice: { populate: { lines: true } } },
     });
     // const okInvoices = await strapi.db.query('api::verifactu-chain.verifactu-chain').findMany({ where: { //   state: "ok", //   _limit: 1, //   _sort: "id:desc", // }, limit: -1 });
 
@@ -41,7 +42,11 @@ const sendVerifactu = async () => {
     for await (const invoice of pendingInvoices) {
       const okInvoices = await strapi.db
         .query('api::verifactu-chain.verifactu-chain')
-        .findMany({ where: { state: 'ok', mode: verifactu.mode }, orderBy: { id: 'desc' }, limit: -1 });
+        .findMany({
+          where: { state: 'ok', mode: verifactu.mode },
+          orderBy: { id: 'desc' },
+          populate: { emitted_invoice: true },
+        });
       const previousId = okInvoices.find((inv) => inv.id < invoice.id);
       const contact = await strapi.db
         .query('api::contact.contact')
@@ -50,7 +55,7 @@ const sendVerifactu = async () => {
         ? {
             issuerIrsId: me.nif,
             number: previousId.emitted_invoice.code,
-            issuedTime: new Date(previousId.emitted_invoice.created_at),
+            issuedTime: new Date(previousId.emitted_invoice.createdAt),
             hash: previousId.hash,
           }
         : null;
@@ -83,13 +88,13 @@ const sendVerifactu = async () => {
         recipient: recipient,
         id: {
           number: invoice.emitted_invoice.code,
-          issuedTime: new Date(invoice.emitted_invoice.created_at),
+          issuedTime: new Date(invoice.emitted_invoice.createdAt),
           replacement: invoice.actions === 'replacement',
         },
         type: serial.rectificative ? 'R1' : 'F1',
         description: {
           text: 'Factura ' + invoice.emitted_invoice.code,
-          operationDate: new Date(invoice.emitted_invoice.created_at),
+          operationDate: new Date(invoice.emitted_invoice.createdAt),
         },
         vatLines: (() => {
           // First, create all individual VAT lines with precise calculations
@@ -182,7 +187,6 @@ const sendVerifactu = async () => {
       await strapi.db.query('api::verifactu-chain.verifactu-chain').update({
         where: { id: invoice.id },
         data: {
-          _internal: true,
           //state: "ok",
           qr,
           hash,
@@ -205,7 +209,6 @@ const sendVerifactu = async () => {
           await strapi.db.query('api::verifactu-chain.verifactu-chain').update({
             where: { id: invoice.id },
             data: {
-              _internal: true,
               response_text: soapResponse.body,
               state: 'ok',
               actions: 'none',
@@ -221,7 +224,6 @@ const sendVerifactu = async () => {
           await strapi.db.query('api::verifactu-chain.verifactu-chain').update({
             where: { id: invoice.id },
             data: {
-              _internal: true,
               response_text: soapResponse.body,
               state: 'okwitherrors',
               actions: 'none',
@@ -233,7 +235,6 @@ const sendVerifactu = async () => {
           await strapi.db.query('api::verifactu-chain.verifactu-chain').update({
             where: { id: invoice.id },
             data: {
-              _internal: true,
               response_text: soapResponse.body,
               state: 'ko',
               actions: 'none',
@@ -252,12 +253,10 @@ const sendVerifactu = async () => {
 const sendToAEAT = async (xml, endpoint, certificateRelativePath, certificatePassphrase) => {
   try {
     // Read certificate file
-    const currentDir = process.cwd();
-
     if (!certificateRelativePath) {
       throw new Error('Certificate relative path is required.');
     }
-    const certificatePath = path.join(currentDir, strapi.config.paths.static, certificateRelativePath);
+    const certificatePath = path.join(strapi.dirs.static.public, certificateRelativePath);
 
     if (!certificatePath || !fs.existsSync(certificatePath)) {
       throw new Error(`Certificate file not found: ${certificatePath}`);
@@ -301,9 +300,9 @@ const sendToAEAT = async (xml, endpoint, certificateRelativePath, certificatePas
 
 const updateInvoiceQr = async (invoiceId, qrCode) => {
   try {
-    await strapi
-      .query('emitted-invoice')
-      .update({ where: { id: invoiceId }, data: { qr: qrCode, _internal: true } });
+    await strapi.db
+      .query('api::emitted-invoice.emitted-invoice')
+      .update({ where: { id: invoiceId }, data: { qr: qrCode } });
   } catch (error) {
     console.error('Error updating invoice QR code:', error);
   }

@@ -3,6 +3,7 @@
 const { createCoreController } = require('@strapi/strapi').factories;
 const _ = require('lodash');
 const moment = require('moment');
+const { adaptQuery } = require('../../../services/query-adapter');
 const { getDailyDedications, getFestives } = require('../services/project');
 const {
   buildProjectRows,
@@ -36,7 +37,9 @@ const doProjectInfoCalculations = async (data, id) => {
   );
 
   if (!data.activities) {
-    data.activities = await strapi.query('activity').find({ project: id, _limit: -1 });
+    data.activities = await strapi.db
+      .query('api::activity.activity')
+      .findMany({ where: { project: id } });
   }
 
   // Build the same shared engine context the pivot uses, scoped to a
@@ -103,9 +106,9 @@ const doProjectInfoCalculations = async (data, id) => {
 
   // Handle structural expenses if applicable
   if (data.structural_expenses === true) {
-    const indirects = await strapi
-      .query('project')
-      .find({ structural_expenses_pct_gt: 0, published_at_null: false });
+    const indirects = await strapi.db.query('api::project.project').findMany({
+      where: { structural_expenses_pct: { $gt: 0 }, publishedAt: { $notNull: true } },
+    });
 
     const indirectIncomesOriginal = _.sumBy(
       indirects.map((i) => ({
@@ -157,13 +160,20 @@ const doProjectInfoCalculations = async (data, id) => {
   }
 
   // Calculate is_mother: true if there are any projects with this project as their mother
-  const childProjects = await strapi.query('project').count({ mother: id });
+  const childProjects = await strapi.db.query('api::project.project').count({ where: { mother: id } });
   data.is_mother = childProjects > 0;
 
   return data;
 };
 
 let projectsQueue = [];
+
+// v3 plural entity names used by the phase helpers -> v5 UIDs
+// ('project-phases' / 'project-original-phases').
+const PHASE_ENTITY_UIDS = {
+  'project-phases': 'api::project-phase.project-phase',
+  'project-original-phases': 'api::project-original-phase.project-original-phase',
+};
 
 module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   /**
@@ -369,12 +379,9 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     let projects;
 
     // only published
-    ctx.query.published_at_null = false;
-    if (ctx.query._q) {
-      projects = await strapi.db.query('api::project.project').findMany(ctx.query);
-    } else {
-      projects = await strapi.db.query('api::project.project').findMany(ctx.query);
-    }
+    projects = await strapi.db.query('api::project.project').findMany(
+      adaptQuery({ ...ctx.query, published_at_null: false }, { searchFields: ['name'] })
+    );
 
     // Removing some info
     const newArray = projects.map((p) => {
@@ -401,19 +408,30 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     // Determine which phase type to use based on hoursType parameter
     const phaseType = hoursType === 'previstes' ? 'project_phases' : 'project_original_phases';
 
-    const withRelated = [
-      phaseType,
-      `${phaseType}.incomes`,
-      `${phaseType}.incomes.estimated_hours`,
-      `${phaseType}.incomes.estimated_hours.users_permissions_user`,
-    ];
+    // v5: Bookshelf withRelated replaced by nested db.query populate.
+    const phasePopulate = {
+      populate: {
+        incomes: {
+          populate: {
+            estimated_hours: {
+              populate: { users_permissions_user: true },
+            },
+          },
+        },
+      },
+    };
+    const populate = { [phaseType]: phasePopulate };
 
     if (activities) {
-      withRelated.push('activities');
+      populate.activities = true;
     }
 
     if (ctx.query._q) {
-      projects = await strapi.query('project').model.fetchAll({ withRelated: [phaseType] });
+      // v3 parity: the _q branch ignored the search term, applied no state
+      // filter and only populated the phase collection one level.
+      projects = await strapi.db
+        .query('api::project.project')
+        .findMany({ populate: { [phaseType]: true } });
     } else {
       // Normalize the (optional) state filter into an array of integer ids.
       const stateIds = project_state_in
@@ -423,20 +441,14 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
             .filter((n) => !isNaN(n))
         : [];
 
-      projects = await strapi
-        .query('project')
-        .model.query((qb) => {
-          qb.select('id', 'name', 'published_at');
-          if (stateIds.length) {
-            qb.where('project_state', 'in', stateIds);
-          }
-        })
-        .fetchAll({
-          withRelated: withRelated,
-        });
+      projects = await strapi.db.query('api::project.project').findMany({
+        select: ['id', 'name', 'publishedAt'],
+        ...(stateIds.length ? { where: { project_state: { $in: stateIds } } } : {}),
+        populate,
+      });
     }
 
-    return projects.map((entity) => entity).filter((p) => p.published_at !== '' && p.published_at !== null);
+    return projects.filter((p) => p.publishedAt !== '' && p.publishedAt !== null);
   },
 
   // Variant of findWithPhases used by the "Previsió/Execució dedicació" pivot
@@ -453,25 +465,34 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
 
     const project_state_in = (where._where && where._where.project_state_in) || where.project_state_in;
 
-    const withRelated = [
-      'project_phases',
-      'project_phases.incomes',
-      'project_phases.incomes.estimated_hours',
-      'project_phases.incomes.estimated_hours.users_permissions_user',
-      'project_original_phases',
-      'project_original_phases.incomes',
-      'project_original_phases.incomes.estimated_hours',
-      'project_original_phases.incomes.estimated_hours.users_permissions_user',
-    ];
+    // v5: Bookshelf withRelated replaced by nested db.query populate (both
+    // phase collections with the full incomes -> estimated_hours -> user nest).
+    const phasePopulate = {
+      populate: {
+        incomes: {
+          populate: {
+            estimated_hours: {
+              populate: { users_permissions_user: true },
+            },
+          },
+        },
+      },
+    };
+    const populate = {
+      project_phases: phasePopulate,
+      project_original_phases: phasePopulate,
+    };
 
     if (activities) {
-      withRelated.push('activities');
+      populate.activities = true;
     }
 
     if (ctx.query._q) {
-      projects = await strapi
-        .query('project')
-        .model.fetchAll({ withRelated: ['project_phases', 'project_original_phases'] });
+      // v3 parity: the _q branch ignored the search term and only populated
+      // the phase collections one level.
+      projects = await strapi.db.query('api::project.project').findMany({
+        populate: { project_phases: true, project_original_phases: true },
+      });
     } else {
       const stateIds = project_state_in
         ? String(project_state_in)
@@ -480,20 +501,14 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
             .filter((n) => !isNaN(n))
         : [];
 
-      projects = await strapi
-        .query('project')
-        .model.query((qb) => {
-          qb.select('id', 'name', 'published_at');
-          if (stateIds.length) {
-            qb.where('project_state', 'in', stateIds);
-          }
-        })
-        .fetchAll({
-          withRelated: withRelated,
-        });
+      projects = await strapi.db.query('api::project.project').findMany({
+        select: ['id', 'name', 'publishedAt'],
+        ...(stateIds.length ? { where: { project_state: { $in: stateIds } } } : {}),
+        populate,
+      });
     }
 
-    return projects.map((entity) => entity).filter((p) => p.published_at !== '' && p.published_at !== null);
+    return projects.filter((p) => p.publishedAt !== '' && p.publishedAt !== null);
   },
 
   // precomputed cells) plus the per-day dedications rows used by the Excel
@@ -581,7 +596,11 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     const year = ctx.query && ctx.query._where && ctx.query._where.year_eq ? ctx.query._where.year_eq : null;
 
     if (ctx.query._q) {
-      promises.push(strapi.db.query('api::project.project').findMany(ctx.query));
+      promises.push(
+        strapi.db
+          .query('api::project.project')
+          .findMany(adaptQuery(ctx.query, { searchFields: ['name'] }))
+      );
     } else {
       const projectQuery = { _limit: -1, published_at_null: false };
 
@@ -605,38 +624,48 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       // }
 
       promises.push(
-        strapi
-          .query('project')
-          .find({ ...projectQuery }, [
-            'project_state',
-            'activities',
-            'project_scope',
-            'project_likelihood',
-            'project_type',
-            'leader',
-            'project_phases',
-            'project_phases.incomes',
-            'project_phases.incomes.estimated_hours',
-            'project_phases.incomes.income_type',
-            'project_phases.incomes.estimated_hours.users_permissions_user',
-            'project_phases.incomes.invoice',
-            'project_phases.incomes.income',
-            'project_phases.expenses',
-            'project_phases.expenses.expense_type',
-            'project_phases.expenses.invoice',
-            'project_phases.expenses.expense',
-            'project_original_phases',
-            'project_original_phases.incomes',
-            'project_original_phases.incomes.estimated_hours',
-            'project_original_phases.incomes.income_type',
-            'project_original_phases.incomes.estimated_hours.users_permissions_user',
-            'project_original_phases.incomes.invoice',
-            'project_original_phases.incomes.income',
-            'project_original_phases.expenses',
-            'project_original_phases.expenses.expense_type',
-            'project_original_phases.expenses.invoice',
-            'project_original_phases.expenses.expense',
-          ]),
+        strapi.db
+          .query('api::project.project')
+          .findMany({ ...adaptQuery(projectQuery, {
+            populate: {
+              project_state: true,
+              activities: true,
+              project_scope: true,
+              project_likelihood: true,
+              project_type: true,
+              leader: true,
+              project_phases: {
+                populate: {
+                  incomes: {
+                    populate: {
+                      estimated_hours: { populate: { users_permissions_user: true } },
+                      income_type: true,
+                      invoice: true,
+                      income: true,
+                    },
+                  },
+                  expenses: {
+                    populate: { expense_type: true, invoice: true, expense: true },
+                  },
+                },
+              },
+              project_original_phases: {
+                populate: {
+                  incomes: {
+                    populate: {
+                      estimated_hours: { populate: { users_permissions_user: true } },
+                      income_type: true,
+                      invoice: true,
+                      income: true,
+                    },
+                  },
+                  expenses: {
+                    populate: { expense_type: true, invoice: true, expense: true },
+                  },
+                },
+              },
+            },
+          }) }),
       );
     }
 
@@ -773,9 +802,11 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         .slice(0, 200);
     } else {
       const limit = Math.min(parseInt(ctx.query.limit, 10) || 20, 200);
-      const sample = await strapi
-        .query('project')
-        .find({ _limit: limit, published_at_null: false, _sort: 'id:desc' });
+      const sample = await strapi.db.query('api::project.project').findMany({
+        where: { publishedAt: { $notNull: true } },
+        orderBy: { id: 'desc' },
+        limit,
+      });
       ids = sample.map((p) => p.id);
     }
 
@@ -844,9 +875,11 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       if (dryRun) {
         // For dry-run on `all`, just delegate to verifier with a sensible cap.
         const cap = Math.min(limit || 100, 500);
-        const projects = await strapi
-          .query('project')
-          .find({ _limit: cap, published_at_null: false, _sort: 'id:desc' });
+        const projects = await strapi.db.query('api::project.project').findMany({
+          where: { publishedAt: { $notNull: true } },
+          orderBy: { id: 'desc' },
+          limit: cap,
+        });
         return await verifyStoredTotals(projects.map((p) => p.id));
       }
       return await refreshAllStoredTotals({ limit });
@@ -916,42 +949,37 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
 
     // Check if this project is a mother (has children that reference it)
     if (project && project.is_mother) {
-      const childrenAll = await strapi
-        .query('project')
-        .find({ mother: id, _limit: -1 }, [
-          'project_phases',
-          'project_phases.incomes',
-          'project_phases.incomes.income_type',
-          'project_phases.incomes.invoice',
-          'project_phases.incomes.grant',
-          'project_phases.incomes.income',
-          'project_phases.incomes.bank_account',
-          'project_phases.incomes.estimated_hours',
-          'project_phases.incomes.estimated_hours.users_permissions_user',
-          'project_phases.expenses',
-          'project_phases.expenses.expense_type',
-          'project_phases.expenses.invoice',
-          'project_phases.expenses.ticket',
-          'project_phases.expenses.diet',
-          'project_phases.expenses.expense',
-          'project_phases.expenses.bank_account',
-          'project_original_phases',
-          'project_original_phases.incomes',
-          'project_original_phases.incomes.income_type',
-          'project_original_phases.incomes.invoice',
-          'project_original_phases.incomes.grant',
-          'project_original_phases.incomes.income',
-          'project_original_phases.incomes.bank_account',
-          'project_original_phases.incomes.estimated_hours',
-          'project_original_phases.incomes.estimated_hours.users_permissions_user',
-          'project_original_phases.expenses',
-          'project_original_phases.expenses.expense_type',
-          'project_original_phases.expenses.invoice',
-          'project_original_phases.expenses.ticket',
-          'project_original_phases.expenses.diet',
-          'project_original_phases.expenses.expense',
-          'project_original_phases.expenses.bank_account',
-        ]);
+      const phasePopulate = {
+        populate: {
+          incomes: {
+            populate: {
+              income_type: true,
+              invoice: true,
+              grant: true,
+              income: true,
+              bank_account: true,
+              estimated_hours: { populate: { users_permissions_user: true } },
+            },
+          },
+          expenses: {
+            populate: {
+              expense_type: true,
+              invoice: true,
+              ticket: true,
+              diet: true,
+              expense: true,
+              bank_account: true,
+            },
+          },
+        },
+      };
+      const childrenAll = await strapi.db.query('api::project.project').findMany({
+        where: { mother: id },
+        populate: {
+          project_phases: phasePopulate,
+          project_original_phases: phasePopulate,
+        },
+      });
       const children = childrenAll.filter((c) => c.id != id);
 
       const flattenMap = (arrays, prop) => _.flatten(arrays.map((a) => a[prop]));
@@ -1472,7 +1500,9 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     const { incomes, expenses, ...phaseData } = phase;
 
     // Create the phase
-    const createdPhase = await strapi.query(entity).create({ project: projectId, name: phaseData.name });
+    const createdPhase = await strapi.db
+      .query(PHASE_ENTITY_UIDS[entity])
+      .create({ data: { project: projectId, name: phaseData.name } });
 
     console.log('  - Phase created with id:', createdPhase.id);
 
@@ -1497,15 +1527,16 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           incomeData.project_phase = createdPhase.id;
         }
 
-        const createdIncome = await strapi.db.query('api::phase-income.phase-income').create(incomeData);
+        const createdIncome = await strapi.db
+          .query('api::phase-income.phase-income')
+          .create({ data: incomeData });
 
         // Create estimated_hours for both original and execution phases
         if (estimated_hours && estimated_hours.length > 0) {
           console.log('    - Creating', estimated_hours.length, 'estimated_hours for income');
           for (const hour of estimated_hours) {
             await strapi.db.query('api::estimated-hour.estimated-hour').create({
-              ...hour,
-              phase_income: createdIncome.id,
+              data: { ...hour, phase_income: createdIncome.id },
             });
           }
         }
@@ -1531,7 +1562,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           expense.project_phase = createdPhase.id;
         }
 
-        await strapi.db.query('api::phase-expense.phase-expense').create(expense);
+        await strapi.db.query('api::phase-expense.phase-expense').create({ data: expense });
       }
     }
 
@@ -1549,15 +1580,15 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     }
     for await (const phase of deletedPhases.filter((i) => i)) {
       if (entity === 'project-original-phases') {
-        const incomesOfPhase = await strapi
-          .query('phase-income')
-          .find({ project_original_phase: phase, _limit: -1 });
+        const incomesOfPhase = await strapi.db
+          .query('api::phase-income.phase-income')
+          .findMany({ where: { project_original_phase: phase } });
         for await (const income of incomesOfPhase) {
           await strapi.db.query('api::phase-income.phase-income').deleteMany({ where: { id: income.id } });
         }
-        const expensesOfPhase = await strapi
-          .query('phase-expense')
-          .find({ project_original_phase: phase, _limit: -1 });
+        const expensesOfPhase = await strapi.db
+          .query('api::phase-expense.phase-expense')
+          .findMany({ where: { project_original_phase: phase } });
 
         for await (const expense of expensesOfPhase) {
           await strapi.db.query('api::phase-expense.phase-expense').deleteMany({ where: { id: expense.id } });
@@ -1576,9 +1607,9 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         for await (const income of incomesOfPhase) {
           await strapi.db.query('api::phase-income.phase-income').deleteMany({ where: { id: income.id } });
         }
-        const expensesOfPhase = await strapi
-          .query('phase-expense')
-          .find({ project_phase: phase, _limit: -1 });
+        const expensesOfPhase = await strapi.db
+          .query('api::phase-expense.phase-expense')
+          .findMany({ where: { project_phase: phase } });
         for await (const expense of expensesOfPhase) {
           await strapi.db.query('api::phase-expense.phase-expense').deleteMany({ where: { id: expense.id } });
         }
@@ -1595,10 +1626,14 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     for await (const phase of phases) {
       const { incomes, expenses, ...item } = phase;
       if (!phase.id) {
-        const resp = await strapi.query(entity).create({ project: id, name: item.name });
+        const resp = await strapi.db
+          .query(PHASE_ENTITY_UIDS[entity])
+          .create({ data: { project: id, name: item.name } });
         phase.id = resp.id;
       } else if (phase.dirty) {
-        await strapi.query(entity).update({ id: phase.id }, { project: id, name: item.name });
+        await strapi.db
+          .query(PHASE_ENTITY_UIDS[entity])
+          .update({ where: { id: phase.id }, data: { project: id, name: item.name } });
       }
 
       if (incomes) {
@@ -1629,7 +1664,9 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
             }
           } else if (income.dirty) {
             const { estimated_hours, ...item } = income;
-            await strapi.db.query('api::phase-income.phase-income').update({ id: income.id }, item);
+            await strapi.db
+              .query('api::phase-income.phase-income')
+              .update({ where: { id: income.id }, data: item });
           }
 
           // Handle estimated_hours for both original and execution phases
@@ -1637,20 +1674,20 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
             for await (const estimated_hours of income.estimated_hours) {
               if (!estimated_hours.id) {
                 await strapi.db.query('api::estimated-hour.estimated-hour').create({
-                  ...estimated_hours,
-                  phase_income: income.id,
+                  data: { ...estimated_hours, phase_income: income.id },
                 });
               } else if (estimated_hours.dirty) {
-                await strapi.query('estimated-hours').update({ id: estimated_hours.id }, estimated_hours);
+                await strapi.db
+                  .query('api::estimated-hour.estimated-hour')
+                  .update({ where: { id: estimated_hours.id }, data: estimated_hours });
               }
             }
 
             // Recalculate total_estimated_hours aggregate for this income
             // This ensures the aggregate is always up-to-date after editing hours
-            const allHours = await strapi.db.query('api::estimated-hour.estimated-hour').find({
-              phase_income: income.id,
-              _limit: -1,
-            });
+            const allHours = await strapi.db
+              .query('api::estimated-hour.estimated-hour')
+              .findMany({ where: { phase_income: income.id } });
 
             const totalEstimatedHours = allHours.reduce((sum, h) => {
               return sum + (h.quantity || 0);
@@ -1658,7 +1695,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
 
             await strapi.db
               .query('api::phase-income.phase-income')
-              .update({ id: income.id }, { total_estimated_hours: totalEstimatedHours });
+              .update({ where: { id: income.id }, data: { total_estimated_hours: totalEstimatedHours } });
           }
         }
       }
@@ -1675,17 +1712,17 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           if (!expense.id) {
             if (entity === 'project-original-phases') {
               await strapi.db.query('api::phase-expense.phase-expense').create({
-                ...expense,
-                project_original_phase: phase.id,
+                data: { ...expense, project_original_phase: phase.id },
               });
             } else {
               await strapi.db.query('api::phase-expense.phase-expense').create({
-                ...expense,
-                project_phase: phase.id,
+                data: { ...expense, project_phase: phase.id },
               });
             }
           } else if (expense.dirty) {
-            await strapi.query('phase-expense').update({ id: expense.id }, expense);
+            await strapi.db
+              .query('api::phase-expense.phase-expense')
+              .update({ where: { id: expense.id }, data: expense });
           }
         }
       }

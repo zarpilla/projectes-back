@@ -30,7 +30,9 @@ module.exports = {
     if (!stateInternal.dailyDedicationsDirty) {
       return stateInternal.dailyDedications;
     }
-    const dailyDedications = await strapi.query('daily-dedication').find({ _limit: -1 });
+    const dailyDedications = await strapi.db
+      .query('api::daily-dedication.daily-dedication')
+      .findMany();
     stateInternal.dailyDedications = dailyDedications;
     stateInternal.dailyDedicationsDirty = false;
 
@@ -40,7 +42,7 @@ module.exports = {
     if (!stateInternal.festivesDirty) {
       return stateInternal.festives;
     }
-    const festives = await strapi.query('festive').find({ _limit: -1 });
+    const festives = await strapi.db.query('api::festive.festive').findMany();
     stateInternal.festives = festives;
     stateInternal.festivesDirty = false;
     return festives;

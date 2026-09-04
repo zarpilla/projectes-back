@@ -50,37 +50,36 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
   //    the activity side: the activities table FK column to project is `project`
   //    and the projects table FK column to project_state is `project_state`
   //    (both confirmed by activity.settings.json / project.settings.json).
-  const activitiesCollection = await strapi
-    .query('activity')
-    .model.query((qb) => {
-      qb.whereBetween('date', [`${targetYear}-01-01`, `${targetYear}-12-31`]);
-      if (stateIds.length) {
-        qb.whereIn('project', function () {
-          this.from('projects').select('id').whereIn('project_state', stateIds);
-        });
-      }
-    })
-    .fetchAll({
-      withRelated: [
-        'project',
-        'project.project_type',
-        'project.project_likelihood',
-        'users_permissions_user',
-      ],
-    });
+  // v5: Bookshelf fetchAll replaced by db.query findMany. The state filter is
+  // resolved in two steps (project ids first) instead of a raw subselect.
+  const stateFilteredProjectIds = stateIds.length
+    ? (
+        await strapi.db.query('api::project.project').findMany({
+          select: ['id'],
+          where: { project_state: { $in: stateIds } },
+        })
+      ).map((proj) => proj.id)
+    : null;
 
-  const activities = activitiesCollection.map((entity) => entity);
+  const activities = await strapi.db.query('api::activity.activity').findMany({
+    where: {
+      date: { $gte: `${targetYear}-01-01`, $lte: `${targetYear}-12-31` },
+      ...(stateFilteredProjectIds ? { project: { $in: stateFilteredProjectIds } } : {}),
+    },
+    populate: {
+      project: { populate: { project_type: true, project_likelihood: true } },
+      users_permissions_user: true,
+    },
+  });
 
   // 1b) Festives for the target year, with festive_type and user. Used to
   //     zero festive days out of each cell's expected capacity, mirroring
   //     /dedicacio-saldo (global festives apply to everyone, user-specific
   //     ones apply only to that user).
-  const festives = await strapi
-    .query('festive')
-    .find({ date_gte: `${targetYear}-01-01`, date_lte: `${targetYear}-12-31`, _limit: -1 }, [
-      'festive_type',
-      'users_permissions_user',
-    ]);
+  const festives = await strapi.db.query('api::festive.festive').findMany({
+    where: { date: { $gte: `${targetYear}-01-01`, $lte: `${targetYear}-12-31` } },
+    populate: { festive_type: true, users_permissions_user: true },
+  });
 
   // Global festive dates (users_permissions_user === null).
   const globalFestiveDates = new Set();
@@ -100,7 +99,9 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
 
   // 2) Users (leaders) with their daily dedications — needed both for the
   //    leaders payload and to compute each cell's expected hours.
-  const users = await strapi.query('user', 'users-permissions').find({ _limit: -1 }, ['daily_dedications']);
+  const users = await strapi.db
+    .query('plugin::users-permissions.user')
+    .findMany({ populate: { daily_dedications: true } });
 
   // Leaders payload (projected to the fields the client needs). Computed here
   // so the empty-activities early return below can reuse it.

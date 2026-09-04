@@ -110,40 +110,38 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
 
   // 1) Projects with the selected phase type populated (same shape & query as
   //    findWithPhases so the source data is identical to the old flow).
-  const withRelated = [
-    phaseType,
-    `${phaseType}.incomes`,
-    `${phaseType}.incomes.estimated_hours`,
-    `${phaseType}.incomes.estimated_hours.users_permissions_user`,
-    'project_type',
-    'project_likelihood',
-  ];
+  // v5: Bookshelf fetchAll replaced by db.query findMany with nested populate
+  // (same shape & filters as findWithPhases so the source data is identical).
+  const projectsCollection = await strapi.db.query('api::project.project').findMany({
+    select: ['id', 'name', 'publishedAt', 'project_type', 'project_likelihood'],
+    where: { project_state: { $in: projectStateIds.map((s) => parseInt(s, 10)) } },
+    populate: {
+      [phaseType]: {
+        populate: {
+          incomes: {
+            populate: {
+              estimated_hours: { populate: { users_permissions_user: true } },
+            },
+          },
+        },
+      },
+      project_type: true,
+      project_likelihood: true,
+    },
+  });
 
-  const projectsCollection = await strapi
-    .query('project')
-    .model.query((qb) => {
-      // Include project_type / project_likelihood FK columns so the nested
-      // withRelated relations below can populate (Bookshelf eager-loading
-      // needs the FK value present on the loaded model).
-      qb.select('id', 'name', 'published_at', 'project_type', 'project_likelihood').where(
-        'project_state',
-        'in',
-        projectStateIds.map((s) => parseInt(s, 10)),
-      );
-    })
-    .fetchAll({ withRelated });
-
-  const projectList = projectsCollection
-    .map((entity) => entity)
-    .filter((p) => p.published_at !== '' && p.published_at !== null);
+  const projectList = projectsCollection.filter((p) => p.publishedAt !== '' && p.publishedAt !== null);
 
   // 2) Users (leaders) with their daily dedications.
-  const users = await strapi.query('user', 'users-permissions').find({ _limit: -1 }, ['daily_dedications']);
+  const users = await strapi.db
+    .query('plugin::users-permissions.user')
+    .findMany({ populate: { daily_dedications: true } });
 
   // 3) Festives for the target year onward, with festive_type and user.
-  const festives = await strapi
-    .query('festive')
-    .find({ date_gte: `${targetYear}-01-01`, _limit: -1 }, ['festive_type', 'users_permissions_user']);
+  const festives = await strapi.db.query('api::festive.festive').findMany({
+    where: { date: { $gte: `${targetYear}-01-01` } },
+    populate: { festive_type: true, users_permissions_user: true },
+  });
 
   // Festives map keyed by `${date}-${userId|'all'}` for the day-expansion loop
   // (identical to the festivesMap built in DedicationGantt.vue).
