@@ -2,22 +2,14 @@
  * v5 cron tasks. Ported from v3 config/functions/cron.js.
  *
  * v5 shape: each task is { schedule, task: ({ strapi }) => async (name) => {} } or a
- * bare function. The 3 jobs reference controllers/services that are ported in Phase 4
- * (task.email) and Phase 5/8 (FACe check-status / retry-pending). Until then they run
- * as safe no-op stubs so the scheduler is verified end-to-end.
- *
- * Once the real handlers exist, replace the stub bodies with:
- *   task.email          -> strapi.service('api::task.task').email()
- *   face check-status   -> strapi.service('api::face-queue.face-queue').checkStatus()
- *   face retry-pending  -> strapi.service('api::face-queue.face-queue').retryPending()
+ * bare function. All four v3 jobs are fully ported:
+ *   - task.email daily 3am -> api::task.task controller email action
+ *   - totals drain (2 min) -> totalsRefreshScheduler.processDirty (PM2-safe)
+ *   - face check-status (30 min) -> api::face-queue.face-queue cronCheckStatus (P8.1)
+ *   - face retry-pending (5 min)  -> api::face-queue.face-queue cronRetryPending (P8.1)
  */
 
 /* global strapi */ // strapi injected at runtime for the taskEmailDigest helper.
-
-const STUB = (label) => async () => {
-  // eslint-disable-next-line no-console
-  console.log(`[cron] ${label}: stub — handler not yet ported (Phase 4/5/8)`);
-};
 
 // Daily task digest — delegates to the ported task controller's email action.
 // The action reads all data itself; ctx is unused for input.
@@ -39,12 +31,12 @@ module.exports = {
   '*/2 * * * *': {
     task: ({ strapi }) => require('./src/api/project/services/totalsRefreshScheduler').processDirty(),
   },
-  // Check FACe invoice status every 30 minutes (ported in Phase 8.1).
+  // Check FACe invoice status every 30 minutes (ported in P8.1).
   '*/30 * * * *': {
-    task: ({ strapi }) => STUB('face.check-status'),
+    task: ({ strapi }) => strapi.service('api::face-queue.face-queue').cronCheckStatus(),
   },
-  // Retry pending FACe submissions every 5 minutes (ported in Phase 8.1).
+  // Retry pending FACe submissions every 5 minutes, max 10 attempts (ported in P8.1).
   '*/5 * * * *': {
-    task: ({ strapi }) => STUB('face.retry-pending'),
+    task: ({ strapi }) => strapi.service('api::face-queue.face-queue').cronRetryPending(),
   },
 };

@@ -5,9 +5,8 @@
  * the v3 convention. The v3-era provider packages (strapi-provider-email-sendgrid,
  * strapi-provider-email-nodemailer) are v3-only and have no direct v5 equivalent from
  * the same maintainers; the v5 community provider `@strapi/provider-email-nodemailer`
- * covers SMTP. SendGrid is callable via its REST API through a thin custom provider
- * (implemented in Phase 2.3 / src/providers/email-sendgrid). Until then, only the
- * nodemailer path is wired here; the sendgrid path falls back to nodemailer with a log.
+ * covers SMTP, and SendGrid is served by the local custom provider
+ * (src/providers/email-sendgrid, P8.4) via the SendGrid REST API.
  */
 const path = require('path');
 
@@ -38,15 +37,13 @@ function emailProviderConfig(env) {
   const defaultFrom = env('EMAIL_FROM', 'no-reply@example.com');
 
   if (provider === 'sendgrid') {
-    // NOTE(R8): v3 used strapi-provider-email-sendgrid. The v5 SendGrid path uses a
-    // custom local provider (src/providers/email-sendgraph) until a maintained v5
-    // provider is installed. Falls back to nodemailer if SMTP creds are present.
+    // NOTE(R8): v3 used strapi-provider-email-sendgrid (v3-only package).
+    // The v5 SendGrid path is a local custom provider (src/providers/email-sendgrid,
+    // ported in P8.4) that calls the SendGrid v3 REST API with the same options.
     return {
-      provider: 'nodemailer',
+      provider: require('../src/providers/email-sendgrid'),
       providerOptions: {
-        host: env('SMTP_HOST', 'smtp.example.com'),
-        port: env.int('SMTP_PORT', 587),
-        auth: { user: env('SMTP_USER'), pass: env('SMTP_PASS') },
+        apiKey: env('SENDGRID_API_KEY'),
       },
       settings: { defaultFrom, defaultReplyTo: defaultFrom },
     };

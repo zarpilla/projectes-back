@@ -22,11 +22,13 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@peculiar/webcrypto": "^1.7.1",
     "@strapi/database": "5.51.1",
     "@strapi/plugin-cloud": "5.51.1",
     "@strapi/plugin-users-permissions": "5.51.1",
     "@strapi/provider-email-nodemailer": "^5.51.1",
     "@strapi/strapi": "5.51.1",
+    "@xmldom/xmldom": "^0.9.12",
     "axios": "^1.19.0",
     "form-data": "^4.0.6",
     "googleapis": "^174.0.0",
@@ -34,6 +36,7 @@
     "lodash.merge": "^4.6.2",
     "moment": "^2.30.1",
     "mysql2": "3.20.0",
+    "node-forge": "^1.4.0",
     "node-ical": "^0.26.1",
     "nodemailer": "^9.0.4",
     "pdf-merge": "^1.2.0",
@@ -45,7 +48,8 @@
     "rrule": "^2.8.1",
     "styled-components": "^6.0.0",
     "transliteration": "^2.6.1",
-    "verifactu-node-lib": "^1.0.0"
+    "verifactu-node-lib": "^1.0.0",
+    "xadesjs": "^2.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
