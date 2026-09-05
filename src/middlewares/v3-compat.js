@@ -141,6 +141,30 @@ function attributesFor(def, strapi) {
   return null;
 }
 
+/**
+ * `{ id: 0 }` is how the frontend spells "not set" for a to-one relation —
+ * ProjectForm initialises every select that way. v3's ORM stored it as NULL;
+ * v5 rejects it with "1 relation(s) of type … do not exist". Same for a bare
+ * `0` or an empty string.
+ */
+function isEmptyRelationRef(entry) {
+  if (entry === null || entry === undefined || entry === '') return true;
+  if (typeof entry === 'number') return entry <= 0;
+  if (typeof entry === 'string') return !/^[1-9]\d*$/.test(entry);
+  if (typeof entry !== 'object' || Array.isArray(entry)) return false;
+  if (entry.documentId) return false;
+  if (!Object.prototype.hasOwnProperty.call(entry, 'id')) return false;
+  const { id } = entry;
+  if (typeof id === 'number') return id <= 0;
+  return !/^[1-9]\d*$/.test(String(id));
+}
+
+/** Turns the "not set" placeholders into what v5 understands: null, or absence. */
+function dropEmptyRelations(value) {
+  if (Array.isArray(value)) return value.filter((entry) => !isEmptyRelationRef(entry));
+  return isEmptyRelationRef(value) ? null : value;
+}
+
 function cleanPayload(value, attributes, strapi, isRoot, depth) {
   if (depth > 10 || value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) {
@@ -157,9 +181,10 @@ function cleanPayload(value, attributes, strapi, isRoot, depth) {
     const def = attributes && attributes[key];
     if (!def) continue; // computed or unknown — v3 ignored these
     const nested = attributesFor(def, strapi);
-    clean[key] = nested
+    const cleaned = nested
       ? cleanPayload(value[key], nested, strapi, false, depth + 1)
       : value[key];
+    clean[key] = def.type === 'relation' ? dropEmptyRelations(cleaned) : cleaned;
   }
   return clean;
 }
@@ -257,4 +282,4 @@ function numericId(ctx) {
 
 module.exports.numericId = numericId;
 // exported for testing
-module.exports._internal = { cleanPayload };
+module.exports._internal = { cleanPayload, isEmptyRelationRef };

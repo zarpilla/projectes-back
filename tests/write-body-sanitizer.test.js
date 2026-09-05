@@ -103,3 +103,33 @@ describe('write-body sanitizer', () => {
     });
   });
 });
+
+describe('"not set" relation placeholders', () => {
+  const { isEmptyRelationRef } = _internal;
+
+  // ProjectForm initialises every to-one select as `{ id: 0 }`. v3 stored that
+  // as NULL; v5 answers "1 relation(s) of type … do not exist".
+  test('recognises the placeholders', () => {
+    expect(isEmptyRelationRef({ id: 0 })).toBe(true);
+    expect(isEmptyRelationRef({ id: '0' })).toBe(true);
+    expect(isEmptyRelationRef(0)).toBe(true);
+    expect(isEmptyRelationRef('')).toBe(true);
+    expect(isEmptyRelationRef(null)).toBe(true);
+  });
+
+  test('leaves real references alone', () => {
+    expect(isEmptyRelationRef({ id: 20 })).toBe(false);
+    expect(isEmptyRelationRef({ id: '20' })).toBe(false);
+    expect(isEmptyRelationRef(20)).toBe(false);
+    expect(isEmptyRelationRef({ documentId: 'abc' })).toBe(false);
+    // a nested entity being created has no id yet
+    expect(isEmptyRelationRef({ name: 'new phase' })).toBe(false);
+  });
+
+  test('a to-one placeholder becomes null, a to-many entry is dropped', () => {
+    expect(clean({ leader: { id: 0 }, project_phases: [{ id: 0 }, { id: 20, name: 'x' }] })).toEqual({
+      leader: null,
+      project_phases: [{ id: 20, name: 'x' }],
+    });
+  });
+});
