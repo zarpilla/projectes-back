@@ -9,7 +9,7 @@ export interface BudgetLineBudgetLine extends Struct.ComponentSchema {
   };
   attributes: {
     amount: Schema.Attribute.Decimal;
-    client: Schema.Attribute.Relation<'oneToOne', 'api::contacts.contacts'>;
+    client: Schema.Attribute.Relation<'oneToOne', 'api::contact.contact'>;
     concept: Schema.Attribute.String;
     date: Schema.Attribute.Date;
     date_estimate_document: Schema.Attribute.Date;
@@ -116,7 +116,7 @@ export interface ExpenseExpense extends Struct.ComponentSchema {
     grant: Schema.Attribute.Relation<'oneToOne', 'api::emitted-grant.emitted-grant'>;
     invoice: Schema.Attribute.Relation<'oneToOne', 'api::received-invoice.received-invoice'>;
     paid: Schema.Attribute.Boolean;
-    provider: Schema.Attribute.Relation<'oneToOne', 'api::contacts.contacts'>;
+    provider: Schema.Attribute.Relation<'oneToOne', 'api::contact.contact'>;
     quantity: Schema.Attribute.Decimal;
     ticket: Schema.Attribute.Relation<'oneToOne', 'api::ticket.ticket'>;
     total_amount: Schema.Attribute.Decimal;
@@ -132,7 +132,7 @@ export interface GrantableContactGrantableContact extends Struct.ComponentSchema
   };
   attributes: {
     amount: Schema.Attribute.Decimal;
-    contact: Schema.Attribute.Relation<'oneToOne', 'api::contacts.contacts'>;
+    contact: Schema.Attribute.Relation<'oneToOne', 'api::contact.contact'>;
   };
 }
 
