@@ -5,7 +5,7 @@
  * daily-dedication lifecycles (v5). Ported from v3 api/daily-dedication/models/daily-dedication.js.
  * Validates no overlapping dedication periods; back-propagates cost_by_hour to activities.
  */
-const service = require('../../../project/services/project');
+const service = require('../../../project/services/projectCache');
 
 module.exports = {
   async beforeCreate(event) {

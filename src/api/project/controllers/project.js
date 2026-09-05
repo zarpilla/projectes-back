@@ -4,7 +4,7 @@ const { createCoreController } = require('@strapi/strapi').factories;
 const _ = require('lodash');
 const moment = require('moment');
 const { adaptQuery, adaptCtxQuery } = require('../../../services/query-adapter');
-const { getDailyDedications, getFestives } = require('../services/project');
+const { getDailyDedications, getFestives } = require('../services/projectCache');
 const {
   buildProjectRows,
   aggregateRowsByYear,

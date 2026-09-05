@@ -1,50 +1,13 @@
 'use strict';
-/* global strapi */
 
 /**
- * Read the documentation (https://strapi.io/documentation/v3.x/concepts/services.html#core-services)
- * to customize this service
+ * project service (v5). Core service methods (find/findOne/create/update/delete)
+ * provided by createCoreService — required by the core API controllers.
+ *
+ * The dedication/festive cache helpers this file used to hold live in
+ * ./projectCache.js (they are a plain shared module, not service methods).
  */
 
-const stateInternal = {
-  dailyDedicationsDirty: true,
-  dailyDedications: [],
-  festivesDirty: true,
-  festives: [],
-};
+const { createCoreService } = require('@strapi/strapi').factories;
 
-module.exports = {
-  setDailyDedicationsDirty: (val) => {
-    stateInternal.dailyDedicationsDirty = val;
-  },
-  setFestivesDirty: (val) => {
-    stateInternal.festivesDirty = val;
-  },
-  getDailyDedicationsDirty: () => {
-    return stateInternal.dailyDedicationsDirty;
-  },
-  getFestivesDirty: () => {
-    return stateInternal.festivesDirty;
-  },
-  getDailyDedications: async () => {
-    if (!stateInternal.dailyDedicationsDirty) {
-      return stateInternal.dailyDedications;
-    }
-    const dailyDedications = await strapi.db
-      .query('api::daily-dedication.daily-dedication')
-      .findMany();
-    stateInternal.dailyDedications = dailyDedications;
-    stateInternal.dailyDedicationsDirty = false;
-
-    return dailyDedications;
-  },
-  getFestives: async () => {
-    if (!stateInternal.festivesDirty) {
-      return stateInternal.festives;
-    }
-    const festives = await strapi.db.query('api::festive.festive').findMany();
-    stateInternal.festives = festives;
-    stateInternal.festivesDirty = false;
-    return festives;
-  },
-};
+module.exports = createCoreService('api::project.project');
