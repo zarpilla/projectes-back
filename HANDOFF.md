@@ -102,7 +102,7 @@ first-level populate reinstated via `src/middlewares/v3-compat.js` — which als
 resolves the frontend's **numeric ids** to v5 documentIds (`ctx.state.v3.numericId`
 keeps ported controllers working).
 
-**Verification**: 83 backend unit tests, eslint clean, and
+**Verification**: 85 backend unit tests, eslint clean, and
 `node tools/v5-smoke.mjs` in the frontend repo (22 checks: auth flow, list
 screens, pagination meta, emulated `/count` — 20,992 orders matching the DB —
 timestamp aliases, populated relations, `users/me` role + permissions,
@@ -225,6 +225,15 @@ scripts (`scripts/templates/pm2-app.config.js.template`, Dockerfile,
 - **Numeric ids**: `/api/<plural>/:id` resolves `:id` as a documentId. The
   `v3-compat` middleware rewrites numeric ids; controllers that need the numeric
   value must read `numericId(ctx)`, not `ctx.params.id`.
+- **Relations need exactly ONE owning side**: the owner declares `inversedBy`
+  (and gets the `<table>_<attr>_lnk` join table), the other `mappedBy`. Nothing
+  warns when this is wrong — the table is never created, the ETL silently skips
+  it, and every populate returns null. `tests/schema-relations.test.js` guards
+  this; if it ever fails, fix the schema, boot once to create the table, then
+  re-run the ETL for every already-migrated tenant.
+- **`me` needs populate.** Its settings live in components (`options`, `quotes`,
+  `orders_options`) and media/relations, and the Document Service returns none
+  of it by default. Always go through `services/me-settings.js#getMe()`.
 - **Plugin routes bypass both compat paths.** `/api/users*` never reaches
   `adaptCtxQuery`, addresses rows by NUMERIC id (so no documentId rewrite), and
   hands its query to `query-params.transform`, which reads
@@ -246,6 +255,7 @@ scripts (`scripts/templates/pm2-app.config.js.template`, Dockerfile,
 src/middlewares/v3-compat.js         numeric id -> documentId, v3 default populate
 src/services/query-adapter.js        adaptQuery + adaptCtxQuery (v3 param compat),
                                       dbLimit / expandPopulate / v3FindArgs
+src/services/me-settings.js          getMe() — the `me` single type, populated
 src/services/raw-sql.js              rawExecute (parameter-bound raw SQL)
 src/services/bootstrap-permissions.js permission matrix + seed rows (runs on boot)
 src/api/…/lifecycles.js              26 lifecycle files (big four: emitted-invoice,
