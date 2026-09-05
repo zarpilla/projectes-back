@@ -30,4 +30,7 @@ module.exports = ({ env }) => [
   'strapi::session',
   'strapi::favicon',
   'strapi::public',
+  // v3 -> v5 REST transport compat (P9): numeric id -> documentId on core
+  // routes, and v3's default first-level populate. Must run before the router.
+  'global::v3-compat',
 ];

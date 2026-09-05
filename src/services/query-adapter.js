@@ -227,6 +227,8 @@ function adaptQuery(query, opts = {}) {
   for (const [key, rawValue] of Object.entries(query)) {
     if (CONTROL_PARAMS.has(key)) continue;
     if (key === '_where') continue;
+    // v5-native params (populate, fields, status…) are not v3 field filters.
+    if (V5_REST_PARAMS.has(key)) continue;
     const { field, op } = splitFieldOp(key);
     applyOp(filters, field, op, coerceValue(op, rawValue));
   }
@@ -267,7 +269,13 @@ function adaptCtxQuery(ctx, opts = {}) {
   if (v3Keys.length === 0) return;
 
   const adapted = adaptQuery(query, opts);
+  // Carry over any v5-native params the caller (or the v3-compat middleware,
+  // which defaults `populate` to '*') already put on the query — rebuilding
+  // ctx.query from the v3 params alone used to drop them.
   const next = {};
+  for (const key of V5_REST_PARAMS) {
+    if (query[key] !== undefined) next[key] = query[key];
+  }
   if (adapted.filters && Object.keys(adapted.filters).length) next.filters = adapted.filters;
   // REST query validation expects sort as an array of 'field:dir' strings
   // (the object form from adaptQuery is only valid for db.query orderBy).

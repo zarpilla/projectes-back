@@ -246,4 +246,30 @@ describe('adaptCtxQuery (v3 REST compatibility for core find)', () => {
     adaptCtxQuery(ctx);
     expect(ctx.query).toEqual({});
   });
+
+  // The v3-compat middleware defaults `populate` to '*' (v3 populated the first
+  // relation level by default). Translating the v3 params must not drop it, and
+  // it must never be mistaken for a v3 field filter.
+  test('carries v5-native params through a v3 translation', () => {
+    const ctx = mkCtx({ populate: '*', _limit: '10', mother: '5' });
+    adaptCtxQuery(ctx);
+    expect(ctx.query).toEqual({
+      populate: '*',
+      filters: { mother: 5 },
+      pagination: { limit: 10 },
+    });
+  });
+
+  test('an explicit caller populate wins over the query one', () => {
+    const ctx = mkCtx({ populate: '*', _limit: '10' });
+    adaptCtxQuery(ctx, { populate: ['contact'] });
+    expect(ctx.query.populate).toEqual(['contact']);
+  });
+
+  test('v5-native params are not turned into filters', () => {
+    const ctx = mkCtx({ populate: '*', fields: ['id'], status: 'published', _sort: 'id:DESC' });
+    adaptCtxQuery(ctx);
+    expect(ctx.query.filters).toBeUndefined();
+    expect(ctx.query.fields).toEqual(['id']);
+  });
 });
