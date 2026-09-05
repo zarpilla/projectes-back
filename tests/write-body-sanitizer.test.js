@@ -117,6 +117,10 @@ describe('"not set" relation placeholders', () => {
     expect(isEmptyRelationRef(null)).toBe(true);
   });
 
+  test('an empty object is unset too (the gantt\'s unassigned person)', () => {
+    expect(isEmptyRelationRef({})).toBe(true);
+  });
+
   test('leaves real references alone', () => {
     expect(isEmptyRelationRef({ id: 20 })).toBe(false);
     expect(isEmptyRelationRef({ id: '20' })).toBe(false);

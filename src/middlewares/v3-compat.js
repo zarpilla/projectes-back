@@ -175,6 +175,9 @@ function isEmptyRelationRef(entry) {
   if (typeof entry === 'string') return !/^[1-9]\d*$/.test(entry);
   if (typeof entry !== 'object' || Array.isArray(entry)) return false;
   if (entry.documentId) return false;
+  // `{}` is the gantt's unassigned person (ProjectGannt starts with `user: {}`).
+  // A row being created always carries fields, so an empty object is never one.
+  if (Object.keys(entry).length === 0) return true;
   if (!Object.prototype.hasOwnProperty.call(entry, 'id')) return false;
   const { id } = entry;
   if (typeof id === 'number') return id <= 0;
