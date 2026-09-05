@@ -1346,6 +1346,60 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     // return { id, income, found };
   },
 
+  /**
+   * Override core update: materialize the phase edits the form sends.
+   *
+   * "GESTIÓ ECONÒMICA" ships the edited phases plus the rows the user removed,
+   * flagged with v3 control fields (`_project_phases_updated`,
+   * `project_phases_info`). This has to happen here rather than in a lifecycle:
+   * v5 validates the input body BEFORE the service runs and rejects any key
+   * that is not a model attribute, so the control fields must be consumed and
+   * removed while the request is still in the controller.
+   */
+  async update(ctx) {
+    const data = (ctx.request.body && ctx.request.body.data) || {};
+    const id = numericId(ctx);
+
+    const sections = [
+      {
+        flag: '_project_phases_updated',
+        phases: 'project_phases',
+        info: 'project_phases_info',
+        entity: 'project-phases',
+      },
+      {
+        flag: '_project_original_phases_updated',
+        phases: 'project_original_phases',
+        info: 'project_original_phases_info',
+        entity: 'project-original-phases',
+      },
+    ];
+
+    for (const section of sections) {
+      const info = data[section.info];
+      if (data[section.flag] && data[section.phases] && info) {
+        await strapi
+          .controller('api::project.project')
+          .updatePhases(
+            id,
+            section.entity,
+            data[section.phases],
+            info.deletedPhases || [],
+            info.deletedIncomes || [],
+            info.deletedExpenses || [],
+            info.deletedHours || [],
+          );
+        // updatePhases owns these rows now; leaving them on the payload would
+        // make the core update try to rewrite the relation on top of it.
+        delete data[section.phases];
+      }
+      delete data[section.flag];
+      delete data[section.info];
+    }
+
+    return super.update(ctx);
+  },
+
   async findOne(ctx) {
     const id = numericId(ctx);
     // Load project with all necessary relations for calculation
@@ -1674,19 +1728,16 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
 
           if (!income.id) {
             const { estimated_hours, ...item } = income;
-            if (entity === 'project-original-phases') {
-              const newIncome = await strapi.db.query('api::phase-income.phase-income').create({
-                ...item,
-                project_original_phase: phase.id,
-              });
-              income.id = newIncome.id;
-            } else {
-              const newIncome = await strapi.db.query('api::phase-income.phase-income').create({
-                ...item,
-                project_phase: phase.id,
-              });
-              income.id = newIncome.id;
-            }
+            // v5's db.query create takes { data }, unlike v3 — without it the
+            // fields are read as query options and an empty row is written.
+            const link =
+              entity === 'project-original-phases'
+                ? { project_original_phase: phase.id }
+                : { project_phase: phase.id };
+            const newIncome = await strapi.db
+              .query('api::phase-income.phase-income')
+              .create({ data: { ...item, ...link } });
+            income.id = newIncome.id;
           } else if (income.dirty) {
             const { estimated_hours, ...item } = income;
             await strapi.db

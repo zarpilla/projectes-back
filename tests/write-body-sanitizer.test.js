@@ -133,3 +133,62 @@ describe('"not set" relation placeholders', () => {
     });
   });
 });
+
+describe('v3 control fields', () => {
+  // "GESTIÓ ECONÒMICA" ships the edited phases plus the removed rows, flagged
+  // with fields that are not model attributes. Dropping them as "unknown"
+  // silently discarded every economic edit on a project.
+  test('the phase-edit flags and info survive at the root', () => {
+    const body = {
+      name: 'x',
+      _project_phases_updated: true,
+      project_phases_info: { deletedPhases: [1], deletedIncomes: [2], deletedExpenses: [], deletedHours: [] },
+      _project_original_phases_updated: true,
+      project_original_phases_info: { deletedPhases: [] },
+    };
+    const out = clean(body);
+    expect(out._project_phases_updated).toBe(true);
+    expect(out.project_phases_info).toEqual(body.project_phases_info);
+    expect(out._project_original_phases_updated).toBe(true);
+    expect(out.project_original_phases_info).toEqual({ deletedPhases: [] });
+  });
+
+  test('any underscore-prefixed control field survives (e.g. _internal)', () => {
+    expect(clean({ name: 'x', _internal: true })._internal).toBe(true);
+  });
+
+  test('control fields are root-only — nested payloads stay clean', () => {
+    expect(
+      clean({ leader: { id: 20, _internal: true, project_phases_info: {} } }),
+    ).toEqual({ leader: { id: 20 } });
+  });
+
+  test('genuinely unknown root keys are still dropped', () => {
+    expect(clean({ name: 'x', allByYear: [] })).toEqual({ name: 'x' });
+  });
+});
+
+describe('nested row markers', () => {
+  // `updatePhases` only writes a phase / income / expense back when the
+  // frontend marked it `dirty`, and `dirty` is not a schema attribute on any of
+  // them — so dropping it made every edit to an existing "GESTIÓ ECONÒMICA" row
+  // a silent no-op.
+  test('dirty survives inside a nested row', () => {
+    expect(
+      clean({
+        project_phases: [
+          { id: 20, name: 'x', dirty: true, expenses: [{ id: 5, concept: 'a', dirty: true }] },
+        ],
+      }),
+    ).toEqual({
+      project_phases: [
+        { id: 20, name: 'x', dirty: true, expenses: [{ id: 5, concept: 'a', dirty: true }] },
+      ],
+    });
+  });
+
+  test('other client-only fields are still dropped from nested rows', () => {
+    expect(clean({ project_phases: [{ id: 20, name: 'x', assign: false, total_expenses_vat: 9 }] }))
+      .toEqual({ project_phases: [{ id: 20, name: 'x' }] });
+  });
+});

@@ -128,6 +128,28 @@ const MANAGED_KEYS = new Set([
 ]);
 const IDENTITY_KEYS = new Set(['id', 'documentId']);
 
+/**
+ * v3 control fields: not model attributes, but the backend acts on them. The
+ * project form flags edited phases with `_project_phases_updated` and ships the
+ * deletions in `project_phases_info`, and several lifecycles branch on
+ * `_internal`. Dropping them here silently discarded the whole "GESTIÓ
+ * ECONÒMICA" section of a project save.
+ *
+ * They are kept only at the root, and the controller that reads them deletes
+ * them again before v5's own input validation runs (which would reject them).
+ */
+const CONTROL_KEYS = new Set(['project_phases_info', 'project_original_phases_info']);
+const isControlKey = (key) => key.charAt(0) === '_' || CONTROL_KEYS.has(key);
+
+/**
+ * Markers the frontend sets on NESTED rows and the backend acts on. `dirty`
+ * flags an edited phase / income / expense / estimated-hour: `updatePhases`
+ * only writes a row back when it is set, so dropping it made every edit to an
+ * existing "GESTIÓ ECONÒMICA" row a silent no-op. (On a project `dirty` is a
+ * real attribute — the totals-refresh flag — and passes on its own.)
+ */
+const NESTED_MARKER_KEYS = new Set(['dirty']);
+
 function attributesFor(def, strapi) {
   if (!def) return null;
   if (def.type === 'relation' && def.target) {
@@ -173,6 +195,10 @@ function cleanPayload(value, attributes, strapi, isRoot, depth) {
   const clean = {};
   for (const key of Object.keys(value)) {
     if (MANAGED_KEYS.has(key)) continue;
+    if (isRoot ? isControlKey(key) : NESTED_MARKER_KEYS.has(key)) {
+      clean[key] = value[key];
+      continue;
+    }
     if (IDENTITY_KEYS.has(key)) {
       if (isRoot) continue; // the URL identifies the row being written
       clean[key] = value[key];

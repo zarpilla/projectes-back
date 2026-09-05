@@ -7,9 +7,12 @@
  * - beforeCreate: extracts nested phases (the ORM can't handle deep nested
  *   creates) and stashes them on event.state (v5's cross-hook carrier) for
  *   afterCreate to materialize via the project service.
- * - beforeUpdate: materializes phase updates (updatePhases), then recomputes ALL
- *   financial totals from the fully-populated project (the financial engine's
- *   calculateProject) and merges them into the update.
+ * - beforeUpdate: recomputes ALL financial totals from the fully-populated
+ *   project (the financial engine's calculateProject) and merges them into the
+ *   update. The phase materialization it used to do moved to the controller's
+ *   update override: v5 validates the input body before the service runs, so the
+ *   v3 control fields it keys off (`_project_phases_updated`, …) have to be
+ *   consumed while the request is still in the controller.
  * - afterCreate/afterUpdate/afterDelete: maintain the is_mother flag on mother
  *   projects (direct db.query updates — the v3 `_internal` flag bypass).
  * - afterFind/afterFindOne (mother aggregation) moved to the project controller's
@@ -71,38 +74,6 @@ module.exports = {
         .query('api::project.project')
         .findOne({ where: { id }, populate: { mother: true } });
       event.state.oldMotherId = current?.mother?.id || current?.mother || null;
-    }
-
-    if (
-      data.project_original_phases &&
-      data.project_original_phases_info &&
-      data._project_original_phases_updated
-    ) {
-      await strapi
-        .controller('api::project.project')
-        .updatePhases(
-          id,
-          'project-original-phases',
-          data.project_original_phases,
-          data.project_original_phases_info.deletedPhases || [],
-          data.project_original_phases_info.deletedIncomes || [],
-          data.project_original_phases_info.deletedExpenses || [],
-          data.project_original_phases_info.deletedHours || [],
-        );
-    }
-
-    if (data.project_phases && data.project_phases_info && data._project_phases_updated) {
-      await strapi
-        .controller('api::project.project')
-        .updatePhases(
-          id,
-          'project-phases',
-          data.project_phases,
-          data.project_phases_info.deletedPhases || [],
-          data.project_phases_info.deletedIncomes || [],
-          data.project_phases_info.deletedExpenses || [],
-          data.project_phases_info.deletedHours || [],
-        );
     }
 
     // Recompute financials from the FULL project (data only carries changed fields).
