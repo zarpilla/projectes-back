@@ -768,8 +768,8 @@ export interface ApiDocumentTypeDocumentType extends Struct.CollectionTypeSchema
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::document-type.document-type'> &
       Schema.Attribute.Private;
     name: Schema.Attribute.String;
-    published_at: Schema.Attribute.DateTime;
     publishedAt: Schema.Attribute.DateTime;
+    trashed: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     type: Schema.Attribute.Enumeration<['income', 'expense']>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
@@ -1114,8 +1114,8 @@ export interface ApiIncomeTypeIncomeType extends Struct.CollectionTypeSchema {
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::income-type.income-type'> &
       Schema.Attribute.Private;
     name: Schema.Attribute.String;
-    published_at: Schema.Attribute.DateTime;
     publishedAt: Schema.Attribute.DateTime;
+    trashed: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     vat_pct: Schema.Attribute.Decimal;
@@ -1219,8 +1219,8 @@ export interface ApiLogoLogo extends Struct.CollectionTypeSchema {
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::logo.logo'> & Schema.Attribute.Private;
     logo: Schema.Attribute.Media<'images'>;
     order: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<10>;
-    published_at: Schema.Attribute.DateTime;
     publishedAt: Schema.Attribute.DateTime;
+    trashed: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     url: Schema.Attribute.String;
@@ -1672,8 +1672,8 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::product.product'> & Schema.Attribute.Private;
     name: Schema.Attribute.String;
-    published_at: Schema.Attribute.DateTime;
     publishedAt: Schema.Attribute.DateTime;
+    trashed: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     vat: Schema.Attribute.Decimal;
@@ -1939,7 +1939,6 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     project_scope: Schema.Attribute.Relation<'oneToOne', 'api::project-scope.project-scope'>;
     project_state: Schema.Attribute.Relation<'oneToOne', 'api::project-state.project-state'>;
     project_type: Schema.Attribute.Relation<'oneToOne', 'api::project-type.project-type'>;
-    published_at: Schema.Attribute.DateTime;
     publishedAt: Schema.Attribute.DateTime;
     purpose: Schema.Attribute.RichText;
     quotes: Schema.Attribute.Relation<'oneToMany', 'api::quote.quote'>;
@@ -1972,6 +1971,7 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     total_real_hours_price: Schema.Attribute.Decimal;
     total_real_incomes: Schema.Attribute.Decimal;
     total_real_incomes_expenses: Schema.Attribute.Decimal;
+    trashed: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     treasury_annotations: Schema.Attribute.Relation<'oneToMany', 'api::treasury.treasury'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;

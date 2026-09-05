@@ -101,38 +101,69 @@ function adaptUserQuery(ctx) {
 }
 
 /**
- * Keys v5 refuses in a write body even though they are part of what it just
- * returned. `id`/`documentId` identify the row, the timestamps and audit fields
- * are managed.
+ * v3 ignored body keys that were not model fields; v5 answers
+ * `400 ValidationError: Invalid key <k>` — and it validates NESTED payloads too
+ * (`Invalid key created_at at leader`, `Invalid key total_expenses_vat at
+ * project_phases.expenses`).
+ *
+ * The frontend edits the entity it just fetched and PUTs the whole graph back,
+ * so every level carries things v5 will not take: the row identity, the managed
+ * timestamps, and server-computed fields that are not schema attributes
+ * (`allByYear` on a project, `total_expenses_vat` on a phase expense). Walk the
+ * payload against the schema and drop them rather than failing the save.
+ *
+ * `id` and `documentId` survive below the top level: there they identify the
+ * related row or the component entry, and v5 needs them.
  */
-const RESERVED_WRITE_KEYS = new Set([
-  'id',
-  'documentId',
+const MANAGED_KEYS = new Set([
   'createdAt',
   'updatedAt',
-  // Draft & Publish is off everywhere: v5's version keeps a second row per
-  // document and renumbers the published one on every save, which would break
-  // the numeric ids the migration preserves. With it off Strapi still owns
-  // `publishedAt` and stamps it on every write, so it is never a field the app
-  // writes — the v3 live/trashed state lives in `trashed` instead.
+  // Draft & Publish is off everywhere (v5's version renumbers a row on every
+  // save); Strapi still owns `publishedAt` and stamps it on every write.
   'publishedAt',
   'createdBy',
   'updatedBy',
   'locale',
   'localizations',
 ]);
+const IDENTITY_KEYS = new Set(['id', 'documentId']);
 
-/**
- * v3 ignored body keys that were not model fields; v5 answers
- * `400 ValidationError: Invalid key <k>`. The frontend edits the entity it just
- * fetched and PUTs the whole thing back, so its body legitimately carries the
- * row identity, the timestamps, the snake_case aliases the client adds, and
- * server-computed fields that are not schema attributes (`allByYear` on a
- * project, for one). Drop those instead of rejecting the save.
- *
- * Top level only: `id` inside a component or a relation payload is meaningful
- * to v5 and must survive.
- */
+function attributesFor(def, strapi) {
+  if (!def) return null;
+  if (def.type === 'relation' && def.target) {
+    const ct = strapi.contentTypes[def.target];
+    return (ct && ct.attributes) || null;
+  }
+  if (def.type === 'component' && def.component) {
+    const comp = strapi.components[def.component];
+    return (comp && comp.attributes) || null;
+  }
+  return null;
+}
+
+function cleanPayload(value, attributes, strapi, isRoot, depth) {
+  if (depth > 10 || value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) {
+    return value.map((entry) => cleanPayload(entry, attributes, strapi, isRoot, depth + 1));
+  }
+  const clean = {};
+  for (const key of Object.keys(value)) {
+    if (MANAGED_KEYS.has(key)) continue;
+    if (IDENTITY_KEYS.has(key)) {
+      if (isRoot) continue; // the URL identifies the row being written
+      clean[key] = value[key];
+      continue;
+    }
+    const def = attributes && attributes[key];
+    if (!def) continue; // computed or unknown — v3 ignored these
+    const nested = attributesFor(def, strapi);
+    clean[key] = nested
+      ? cleanPayload(value[key], nested, strapi, false, depth + 1)
+      : value[key];
+  }
+  return clean;
+}
+
 function sanitizeWriteBody(ctx, uid, strapi) {
   const body = ctx.request.body;
   if (!body || typeof body !== 'object') return;
@@ -141,12 +172,8 @@ function sanitizeWriteBody(ctx, uid, strapi) {
 
   const ct = strapi.contentTypes[uid];
   const attributes = (ct && ct.attributes) || {};
-  const clean = {};
-  for (const key of Object.keys(data)) {
-    if (RESERVED_WRITE_KEYS.has(key)) continue;
-    if (attributes[key] === undefined) continue;
-    clean[key] = data[key];
-  }
+  const clean = cleanPayload(data, attributes, strapi, true, 0);
+
   // The one v3 publication write the frontend makes: ProjectsTable's "trash"
   // sends `{ published_at: null }`. v5 owns the `published_at` column, so the
   // live/trashed state lives in `trashed` — translate the gesture onto it.
@@ -156,9 +183,12 @@ function sanitizeWriteBody(ctx, uid, strapi) {
   body.data = clean;
 }
 
-/** v3 populated the first relation level on reads; v5 populates nothing. */
+/**
+ * v3 populated the first relation level by default — on reads AND on the entity
+ * a create/update echoed back; v5 populates nothing unless asked.
+ */
 function defaultPopulate(ctx) {
-  if (ctx.method === 'GET' && ctx.query.populate === undefined) {
+  if (ctx.query.populate === undefined) {
     ctx.query = { ...ctx.query, populate: '*' };
   }
 }
@@ -182,7 +212,7 @@ module.exports = (config, { strapi }) => async (ctx, next) => {
   if (kind === 'singleType') {
     if (idSegment !== undefined) return next();
     if (ctx.method === 'PUT') sanitizeWriteBody(ctx, uid, strapi);
-    else defaultPopulate(ctx);
+    if (ctx.method === 'GET' || ctx.method === 'PUT') defaultPopulate(ctx);
     return next();
   }
 
@@ -205,8 +235,8 @@ module.exports = (config, { strapi }) => async (ctx, next) => {
     }
   }
 
-  // 2. v3 default populate for core reads
-  defaultPopulate(ctx);
+  // 2. v3 default populate — the response of a write is populated too
+  if (ctx.method === 'GET' || ctx.method === 'POST' || ctx.method === 'PUT') defaultPopulate(ctx);
 
   // 3. drop write-body keys v5 would reject
   if (ctx.method === 'POST' || ctx.method === 'PUT') sanitizeWriteBody(ctx, uid, strapi);
@@ -226,3 +256,5 @@ function numericId(ctx) {
 }
 
 module.exports.numericId = numericId;
+// exported for testing
+module.exports._internal = { cleanPayload };
