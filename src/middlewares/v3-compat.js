@@ -110,6 +110,11 @@ const RESERVED_WRITE_KEYS = new Set([
   'documentId',
   'createdAt',
   'updatedAt',
+  // Echoing `publishedAt` back is what splits a Draft & Publish row in two:
+  // v5 keeps a draft and a published entry per document and regenerates the
+  // published one, so the numeric id the frontend holds changes on every save.
+  // Ordinary saves must not carry it; the deliberate v3 gesture below still can.
+  'publishedAt',
   'createdBy',
   'updatedBy',
   'locale',
@@ -140,6 +145,12 @@ function sanitizeWriteBody(ctx, uid, strapi) {
     if (RESERVED_WRITE_KEYS.has(key)) continue;
     if (attributes[key] === undefined) continue;
     clean[key] = data[key];
+  }
+  // The one deliberate v3 publication write: ProjectsTable's "trash" sends
+  // `{ published_at: null }`. Snake_case means the view meant it — camelCase is
+  // just the value it read back — so honour it under the v5 name.
+  if (Object.prototype.hasOwnProperty.call(data, 'published_at') && attributes.publishedAt) {
+    clean.publishedAt = data.published_at;
   }
   body.data = clean;
 }
