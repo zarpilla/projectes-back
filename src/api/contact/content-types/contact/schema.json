@@ -38,7 +38,7 @@
     },
     "projects": {
       "type": "relation",
-      "relation": "oneToMany",
+      "relation": "manyToMany",
       "target": "api::project.project",
       "mappedBy": "clients"
     },
@@ -72,7 +72,7 @@
     },
     "projectes": {
       "type": "relation",
-      "relation": "oneToMany",
+      "relation": "manyToMany",
       "target": "api::project.project",
       "mappedBy": "intercooperations"
     },

@@ -22,7 +22,7 @@
     },
     "users_permissions_user": {
       "type": "relation",
-      "relation": "oneToOne",
+      "relation": "manyToOne",
       "target": "plugin::users-permissions.user",
       "inversedBy": "daily_dedications"
     },

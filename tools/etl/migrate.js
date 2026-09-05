@@ -33,6 +33,10 @@ if (!FROM || !TO) {
 
 async function main() {
   const { contentTypes, components } = loadRegistry();
+  // uid -> collectionName, so a relation can be traced from its OTHER side:
+  // v3 named a M2M join table after whichever side was `dominant`, which is not
+  // always the side that owns the v5 link table.
+  const tableByUid = Object.fromEntries(contentTypes.map((c) => [c.uid, c.table]));
   const conn = await mysql.createConnection({
     host: process.env.DATABASE_HOST || '127.0.0.1',
     port: Number(process.env.DATABASE_PORT || 3306),
@@ -52,7 +56,7 @@ async function main() {
     (v3Columns[TABLE_NAME] = v3Columns[TABLE_NAME] || new Set()).add(COLUMN_NAME);
   }
 
-  const stats = { copied: [], skippedMissing: [], relations: [], components: 0 };
+  const stats = { copied: [], skippedMissing: [], relations: [], relationsNoSource: [], components: 0 };
 
   if (!DRY) {
     await conn.query(`SET FOREIGN_KEY_CHECKS=0`);
@@ -195,10 +199,23 @@ async function main() {
         const targetCol = cols.find((c) => c.endsWith('_id') && c !== ownerCol);
         if (!ownerCol || !targetCol) continue;
 
-        // v3 source A: M2M join table <table>_<attr>__<something>
-        const joinCandidate = [...v3TableNames].find(
-          (t) => t.startsWith(`${ent.table}_${attrName}__`),
-        );
+        // v3 source A: the M2M join table. v3 used three shapes, and only the
+        // first was recognised before — the other two left the relation empty:
+        //   1. <table>_<attr>__<otherTable>_<otherAttr>   (this side dominant)
+        //   2. <otherTable>_<otherAttr>__<table>_<attr>   (other side dominant)
+        //   3. <table>__<attr>                            (no `via` on the other side)
+        const inverseAttr = def.mappedBy || def.inversedBy;
+        const targetTable = def.target ? tableByUid[def.target] : undefined;
+        const joinPrefixes = [`${ent.table}_${attrName}__`];
+        if (inverseAttr && targetTable) joinPrefixes.push(`${targetTable}_${inverseAttr}__`);
+        let joinCandidate = null;
+        for (const prefix of joinPrefixes) {
+          joinCandidate = [...v3TableNames].find((t) => t.startsWith(prefix));
+          if (joinCandidate) break;
+        }
+        if (!joinCandidate && v3TableNames.has(`${ent.table}__${attrName}`)) {
+          joinCandidate = `${ent.table}__${attrName}`;
+        }
         // v3 source B: inline FK column <table>.<attr>
         const hasInlineFk = v3Columns[ent.table] && v3Columns[ent.table].has(attrName);
 
@@ -225,7 +242,10 @@ async function main() {
             `INSERT INTO \`${TO}\`.\`${v5Lnk}\` (\`${ownerCol}\`, \`${targetCol}\`) ` +
             `SELECT id, \`${attrName}\` FROM \`${FROM}\`.\`${ent.table}\` WHERE \`${attrName}\` IS NOT NULL`;
         }
-        if (!sql) continue;
+        if (!sql) {
+          stats.relationsNoSource.push(v5Lnk);
+          continue;
+        }
 
         if (DRY) {
           stats.relations.push(v5Lnk);
@@ -357,6 +377,13 @@ async function main() {
   const totalRows = stats.copied.reduce((s, c) => s + c.rows, 0);
   console.log(`\n──── ETL ${DRY ? '(dry run)' : 'COMPLETE'} ────`);
   console.log(`Core tables copied: ${stats.copied.length} (${totalRows} rows)`);
+  if (stats.relationsNoSource.length) {
+    // Not necessarily wrong — a v5-only relation has no v3 source — but this is
+    // where silently-unmigrated relations show up, so print it.
+    console.log(
+      `Relations with a v5 link table but no v3 source: ${stats.relationsNoSource.length}`,
+    );
+  }
   console.log(`Component rows: ${stats.components}`);
   console.log(`Skipped (missing in v3): ${stats.skippedMissing.length}`);
   if (DRY) console.log(`Relation lnk tables (dry): ${stats.relations.length}`);

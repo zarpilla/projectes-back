@@ -6,13 +6,14 @@
  * Validates no overlapping dedication periods; back-propagates cost_by_hour to activities.
  */
 const service = require('../../../project/services/projectCache');
+const { relationId } = require('../../../../services/relation-input');
 
 module.exports = {
   async beforeCreate(event) {
-    const data = event.data;
+    const data = event.params.data;
     const dedications = await strapi.db
       .query('api::daily-dedication.daily-dedication')
-      .findMany({ where: { users_permissions_user: data.users_permissions_user } });
+      .findMany({ where: { users_permissions_user: relationId(data.users_permissions_user) } });
 
     const invalids = dedications.filter(
       (d) => (data.to >= d.from && data.to <= d.to) || (data.from <= d.to && data.to >= d.from),
@@ -26,11 +27,11 @@ module.exports = {
   },
 
   async beforeUpdate(event) {
-    const data = event.data;
+    const data = event.params.data;
     const id = event.params.where.id;
     const dedications = await strapi.db
       .query('api::daily-dedication.daily-dedication')
-      .findMany({ where: { users_permissions_user: data.users_permissions_user } });
+      .findMany({ where: { users_permissions_user: relationId(data.users_permissions_user) } });
     const others = dedications.filter((d) => String(d.id) !== String(id));
 
     const invalids = others.filter(

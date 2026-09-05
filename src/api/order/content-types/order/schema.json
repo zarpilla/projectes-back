@@ -225,7 +225,7 @@
     },
     "collection_order": {
       "type": "relation",
-      "relation": "oneToOne",
+      "relation": "manyToOne",
       "target": "api::order.order",
       "inversedBy": "collection_orders"
     },

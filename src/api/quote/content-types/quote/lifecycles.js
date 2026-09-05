@@ -1,5 +1,6 @@
 'use strict';
 /* global strapi */
+const { relationId } = require('../../../../services/relation-input');
 
 /**
  * quote lifecycles (v5). Ported from v3 api/quote/models/quote.js.
@@ -9,18 +10,18 @@
  */
 module.exports = {
   async beforeCreate(event) {
-    await fillContactInfo(event.data);
-    await calculateTotals(event.data);
+    await fillContactInfo(event.params.data);
+    await calculateTotals(event.params.data);
   },
   async beforeUpdate(event) {
-    await fillContactInfo(event.data);
-    await calculateTotals(event.data);
+    await fillContactInfo(event.params.data);
+    await calculateTotals(event.params.data);
   },
 };
 
 async function fillContactInfo(data) {
   if (data.contact) {
-    const contactId = typeof data.contact === 'object' ? data.contact.id : data.contact;
+    const contactId = relationId(data.contact);
     if (contactId) {
       const contact = await strapi.db.query('api::contact.contact').findOne({ where: { id: contactId } });
       if (contact) {
@@ -47,12 +48,13 @@ async function calculateTotals(data) {
   data.total = 0;
 
   if (!data.code) {
-    const serial = await strapi.db.query('api::serie.serie').findOne({ where: { id: data.serial } });
+    const serialId = relationId(data.serial);
+    const serial = await strapi.db.query('api::serie.serie').findOne({ where: { id: serialId } });
     if (serial) {
       if (!data.number) {
         const quotes = await strapi.db
           .query('api::quote.quote')
-          .findMany({ where: { serial: data.serial } });
+          .findMany({ where: { serial: serialId } });
         data.number = quotes.length + 1;
       }
       const zeroPad = (num, places) => String(num).padStart(places, '0');

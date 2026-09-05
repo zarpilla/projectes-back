@@ -19,7 +19,7 @@ const { PROJECT_GRAPH_FOR_TOTALS_POPULATE } = require('../../services/projectFin
 
 module.exports = {
   async beforeCreate(event) {
-    const data = event.data;
+    const data = event.params.data;
 
     // Extract phases before the ORM sees them (deep nested creates unsupported).
     if (data.project_original_phases && data.project_original_phases.length > 0) {
@@ -62,7 +62,7 @@ module.exports = {
   },
 
   async beforeUpdate(event) {
-    const data = event.data;
+    const data = event.params.data;
     const id = event.params.where.id || event.params.where.documentId;
 
     // Store the old mother when the mother field changes.

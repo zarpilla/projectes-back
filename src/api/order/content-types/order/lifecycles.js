@@ -10,6 +10,7 @@
 
 const _ = require('lodash');
 const moment = require('moment');
+const { relationId } = require('../../../../services/relation-input');
 
 /**
  * Safely extract ID from a value that could be a number, string, or object with an id property
@@ -92,8 +93,8 @@ const processVolumeDiscountForCurrentOrder = async (orderId, data) => {
 
   // Only if route, owner, and date are present
   if (!data.route || !data.owner || !data.estimated_delivery_date) return;
-  const routeId = data.route.id ? data.route.id : data.route;
-  const ownerId = data.owner.id ? data.owner.id : data.owner;
+  const routeId = relationId(data.route);
+  const ownerId = relationId(data.owner);
   const { eligible, discount } = await checkVolumeDiscount(
     orderId,
     data.estimated_delivery_date,
@@ -205,23 +206,14 @@ const checkMultidelivery = async (id, date, contactId, currentStatus) => {
 };
 
 const setDeliveryTypeRefrigerated = async (data) => {
-  if (data.delivery_type && data.delivery_type.id) {
-    const deliveryTypes = await strapi.service('api::delivery-type.delivery-type').find();
-    const deliveryType = deliveryTypes.find((d) => d.id === data.delivery_type.id);
-    if (deliveryType && deliveryType.refrigerated) {
-      data.refrigerated = 1;
-    } else {
-      data.refrigerated = 0;
-    }
-  } else if (data.delivery_type) {
-    const deliveryTypes = await strapi.service('api::delivery-type.delivery-type').find();
-    const deliveryType = deliveryTypes.find((d) => d.id === data.delivery_type);
-    if (deliveryType && deliveryType.refrigerated) {
-      data.refrigerated = 1;
-    } else {
-      data.refrigerated = 0;
-    }
-  }
+  // v3's service.find() returned an array; v5's returns { results, pagination }.
+  // Go to db.query for the plain rows.
+  const id = relationId(data.delivery_type);
+  if (!id) return;
+  const deliveryType = await strapi.db
+    .query('api::delivery-type.delivery-type')
+    .findOne({ where: { id } });
+  data.refrigerated = deliveryType && deliveryType.refrigerated ? 1 : 0;
 };
 
 /**
@@ -232,8 +224,8 @@ const normalizeContactLegalForm = (data) => {
   if (data.contact_legal_form !== undefined && data.contact_legal_form !== null) {
     if (typeof data.contact_legal_form === 'object') {
       // It's an object - check if it has an id property
-      if (data.contact_legal_form.id) {
-        data.contact_legal_form = data.contact_legal_form.id;
+      if (relationId(data.contact_legal_form) !== undefined) {
+        data.contact_legal_form = relationId(data.contact_legal_form);
       } else {
         // Empty object or object without id - set to default
         data.contact_legal_form = 1;
@@ -1463,7 +1455,7 @@ const processMultideliveryDiscountForOtherOrders = async (orderId, currentData, 
 
 module.exports = {
   async beforeCreate(event) {
-    const data = event.data;
+    const data = event.params.data;
     // Set route_date to current date if not provided
     if (!data.route_date) {
       data.route_date = new Date();
@@ -1492,7 +1484,7 @@ module.exports = {
 
   async beforeUpdate(event) {
     const params = { id: event.params.where && event.params.where.id };
-    const data = event.data;
+    const data = event.params.data;
     if (data._internal) {
       return data;
     }

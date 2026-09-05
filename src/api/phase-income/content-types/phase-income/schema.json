@@ -63,13 +63,13 @@
     },
     "project_phase": {
       "type": "relation",
-      "relation": "oneToOne",
+      "relation": "manyToOne",
       "target": "api::project-phase.project-phase",
       "inversedBy": "incomes"
     },
     "project_original_phase": {
       "type": "relation",
-      "relation": "oneToOne",
+      "relation": "manyToOne",
       "target": "api::project-original-phase.project-original-phase",
       "inversedBy": "incomes"
     },

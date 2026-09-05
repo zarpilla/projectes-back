@@ -32,6 +32,7 @@
  * @param {boolean} [opts.skipTotalsOnInternal=false]
  */
 const { scheduleFromEntityProjects } = require('../api/project/services/totalsRefreshScheduler');
+const { relationId } = require('./relation-input');
 
 function createDocumentLifecycles({
   uid,
@@ -43,7 +44,7 @@ function createDocumentLifecycles({
 }) {
   return {
     async beforeCreate(event) {
-      const data = event.data;
+      const data = event.params.data;
       if (withPaymentMethod) await applyPaymentMethod(data, null);
       if (withContactInfo) await fillContactInfo(data);
       await calculateTotals(data);
@@ -52,7 +53,7 @@ function createDocumentLifecycles({
       scheduleFromEntityProjects(event.result);
     },
     async beforeUpdate(event) {
-      const data = event.data;
+      const data = event.params.data;
       const existing = await strapi.db.query(uid).findOne({ where: event.params.where });
       if (existing && existing.updatable === false && !(data.updatable_admin === true)) {
         throw new Error(`${entity} NOT updatable`);
@@ -83,7 +84,7 @@ function createDocumentLifecycles({
 
   // Default payment_method to the first one in DB; derive bank_account from it.
   async function applyPaymentMethod(data, previousPaymentMethod) {
-    if (!data.payment_method && previousPaymentMethod == null) {
+    if (!relationId(data.payment_method) && previousPaymentMethod == null) {
       const first = await strapi.db
         .query('api::payment-method.payment-method')
         .findOne({ populate: { bank_account: true } });
@@ -91,10 +92,11 @@ function createDocumentLifecycles({
         data.payment_method = first.id;
       }
     }
-    if (data.payment_method) {
+    const paymentMethodId = relationId(data.payment_method);
+    if (paymentMethodId) {
       const paymentMethod = await strapi.db
         .query('api::payment-method.payment-method')
-        .findOne({ where: { id: data.payment_method }, populate: { bank_account: true } });
+        .findOne({ where: { id: paymentMethodId }, populate: { bank_account: true } });
       if (paymentMethod && paymentMethod.bank_account) {
         data.bank_account = paymentMethod.bank_account.id || paymentMethod.bank_account;
       }
@@ -104,7 +106,7 @@ function createDocumentLifecycles({
   // Denormalize contact fields into contact_info (v3 filled it on every write).
   async function fillContactInfo(data) {
     if (data.contact) {
-      const contactId = typeof data.contact === 'object' ? data.contact.id : data.contact;
+      const contactId = relationId(data.contact);
       if (contactId) {
         const contact = await strapi.db.query('api::contact.contact').findOne({ where: { id: contactId } });
         if (contact) {
@@ -132,11 +134,12 @@ function createDocumentLifecycles({
 
     // Serie-based code numbering: SERIE-000N
     if (!data.code) {
-      const serial = await strapi.db.query('api::serie.serie').findOne({ where: { id: data.serial } });
+      const serialId = relationId(data.serial);
+      const serial = await strapi.db.query('api::serie.serie').findOne({ where: { id: serialId } });
       if (serial) {
         if (!data.number) {
           const existing = await strapi.db.query(uid).findMany({
-            where: { serial: data.serial },
+            where: { serial: serialId },
           });
           data.number = existing.length + 1;
         }

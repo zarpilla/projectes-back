@@ -35,10 +35,10 @@ module.exports = {
   },
   async beforeUpdate(event) {
     const queueId = event.params.where && event.params.where.id ? Number(event.params.where.id) : null;
-    if (queueId && event.data && event.data._internal === true) {
+    if (queueId && event.params.data && event.params.data._internal === true) {
       internalUpdateQueueIds.add(queueId);
       strapi.log.info(`[face-queue] beforeUpdate internal id=${queueId}`);
-      delete event.data._internal;
+      delete event.params.data._internal;
     }
   },
   async afterUpdate(event) {

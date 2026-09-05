@@ -74,6 +74,31 @@ describe('content-type relations', () => {
     expect(problems).toEqual([]);
   });
 
+  // A oneToMany's inverse must be manyToOne, never oneToOne: with oneToOne
+  // Strapi builds the join table WITHOUT the `_ord` column it then tries to
+  // maintain, and any write to the relation dies inside knex
+  // ("Cannot read properties of undefined (reading 'isRawInstance')").
+  test('paired relation types are compatible', () => {
+    const VALID = new Set(['oneToMany|manyToOne', 'manyToOne|oneToMany', 'oneToOne|oneToOne', 'manyToMany|manyToMany']);
+    const problems = [];
+    for (const [uid, attrs] of schemas) {
+      for (const [name, attr] of Object.entries(attrs)) {
+        if (attr.type !== 'relation' || !attr.target) continue;
+        const back = attr.mappedBy || attr.inversedBy;
+        if (!back) continue;
+        const target = schemas.get(attr.target);
+        if (!target) continue;
+        const counter = target[back];
+        if (!counter || (counter.mappedBy || counter.inversedBy) !== name) continue;
+        const pair = `${attr.relation}|${counter.relation}`;
+        if (!VALID.has(pair)) {
+          problems.push(`${uid}.${name} is ${attr.relation} but ${attr.target}.${back} is ${counter.relation}`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
   test('the users-permissions user owns its role relation', () => {
     // mappedBy here leaves users role-less, and the auth strategy reads
     // user.role.id — so every authenticated request 401s.

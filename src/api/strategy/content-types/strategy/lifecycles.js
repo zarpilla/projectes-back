@@ -6,10 +6,10 @@
  */
 module.exports = {
   async beforeCreate(event) {
-    calculateCodeName(event.data);
+    calculateCodeName(event.params.data);
   },
   async beforeUpdate(event) {
-    calculateCodeName(event.data);
+    calculateCodeName(event.params.data);
   },
 };
 

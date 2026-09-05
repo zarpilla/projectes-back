@@ -51,7 +51,7 @@
     },
     "route_rates": {
       "type": "relation",
-      "relation": "oneToMany",
+      "relation": "manyToMany",
       "target": "api::route-rate.route-rate",
       "mappedBy": "routes"
     },
@@ -76,7 +76,10 @@
     },
     "is_transfer_route_date": {
       "type": "enumeration",
-      "enum": ["only_same_day", "only_previous_days"]
+      "enum": [
+        "only_same_day",
+        "only_previous_days"
+      ]
     },
     "delivery_user": {
       "type": "relation",

@@ -237,31 +237,31 @@
     },
     "linked_emitted_invoices": {
       "type": "relation",
-      "relation": "oneToMany",
+      "relation": "manyToMany",
       "target": "api::emitted-invoice.emitted-invoice",
       "mappedBy": "projects"
     },
     "linked_received_expenses": {
       "type": "relation",
-      "relation": "oneToMany",
+      "relation": "manyToMany",
       "target": "api::received-expense.received-expense",
       "mappedBy": "projects"
     },
     "linked_received_incomes": {
       "type": "relation",
-      "relation": "oneToMany",
+      "relation": "manyToMany",
       "target": "api::received-income.received-income",
       "mappedBy": "projects"
     },
     "linked_received_invoices": {
       "type": "relation",
-      "relation": "oneToMany",
+      "relation": "manyToMany",
       "target": "api::received-invoice.received-invoice",
       "mappedBy": "projects"
     },
     "global_activity_types": {
       "type": "relation",
-      "relation": "oneToMany",
+      "relation": "manyToMany",
       "target": "api::activity-type.activity-type",
       "mappedBy": "projects"
     },
@@ -286,7 +286,11 @@
     "documents": {
       "type": "media",
       "relation": "oneToMany",
-      "allowedTypes": ["images", "files", "videos"]
+      "allowedTypes": [
+        "images",
+        "files",
+        "videos"
+      ]
     },
     "dirty": {
       "type": "boolean",
@@ -356,7 +360,13 @@
     },
     "creation_step": {
       "type": "enumeration",
-      "enum": ["basic_data", "phases_budget", "planning", "confirmation", "completed"]
+      "enum": [
+        "basic_data",
+        "phases_budget",
+        "planning",
+        "confirmation",
+        "completed"
+      ]
     },
     "internal_notes": {
       "type": "text"

@@ -320,3 +320,29 @@ describe('dbLimit / expandPopulate / v3FindArgs (db.query bridge)', () => {
     expect(v3FindArgs({ _start: '20', _limit: '10' })).toEqual({ where: {}, limit: 10, offset: 20 });
   });
 });
+
+describe('relationId (lifecycle relation payloads)', () => {
+  const { relationId } = require('../src/services/relation-input');
+
+  // What a v5 db lifecycle actually receives after the Document Service has
+  // normalised the input — ported v3 code read `.id` off this and fed the
+  // operation object into a where clause.
+  test('v5 relation operations', () => {
+    expect(relationId({ set: [{ id: 5 }] })).toBe(5);
+    expect(relationId({ connect: [{ id: 7 }] })).toBe(7);
+    expect(relationId({ set: [] })).toBeUndefined();
+  });
+
+  test('the v3 shapes still work', () => {
+    expect(relationId(5)).toBe(5);
+    expect(relationId('5')).toBe(5);
+    expect(relationId({ id: 5 })).toBe(5);
+    expect(relationId([{ id: 5 }])).toBe(5);
+  });
+
+  test('absent or cleared relations', () => {
+    expect(relationId(null)).toBeUndefined();
+    expect(relationId(undefined)).toBeUndefined();
+    expect(relationId({})).toBeUndefined();
+  });
+});

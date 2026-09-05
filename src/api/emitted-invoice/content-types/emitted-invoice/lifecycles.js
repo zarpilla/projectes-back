@@ -19,10 +19,11 @@
 const { scheduleFromEntityProjects } = require('../../../project/services/totalsRefreshScheduler');
 const { rawExecute } = require('../../../../services/raw-sql');
 const { getMe } = require('../../../../services/me-settings');
+const { relationId } = require('../../../../services/relation-input');
 
 module.exports = {
   async beforeCreate(event) {
-    const data = event.data;
+    const data = event.params.data;
     data.state = 'draft';
     data.code = 'ESBORRANY';
 
@@ -53,7 +54,7 @@ module.exports = {
   },
 
   async beforeUpdate(event) {
-    const data = event.data;
+    const data = event.params.data;
     const invoice = await strapi.db
       .query('api::emitted-invoice.emitted-invoice')
       .findOne({ where: event.params.where });
@@ -64,10 +65,11 @@ module.exports = {
 
     cleanupUserFields(data);
 
-    if (data.payment_method && invoice && data.payment_method !== invoice.payment_method) {
+    const paymentMethodId = relationId(data.payment_method);
+    if (paymentMethodId && invoice && paymentMethodId !== relationId(invoice.payment_method)) {
       const paymentMethod = await strapi.db
         .query('api::payment-method.payment-method')
-        .findOne({ where: { id: data.payment_method }, populate: { bank_account: true } });
+        .findOne({ where: { id: paymentMethodId }, populate: { bank_account: true } });
       if (paymentMethod && paymentMethod.bank_account) {
         data.bank_account = paymentMethod.bank_account.id || paymentMethod.bank_account;
       }
@@ -231,13 +233,14 @@ async function handleState(data) {
 
   if (data.code === 'ESBORRANY' && data.state === 'real') {
     data.user_real = data.user_last;
-    const serial = await strapi.db.query('api::serie.serie').findOne({ where: { id: data.serial } });
+    const serialId = relationId(data.serial);
+    const serial = await strapi.db.query('api::serie.serie').findOne({ where: { id: serialId } });
     if (serial) {
       if (!data.number) {
         const nextNumber = serial.emitted_invoice_number + 1;
         await strapi.db
           .query('api::serie.serie')
-          .update({ where: { id: data.serial }, data: { emitted_invoice_number: nextNumber } });
+          .update({ where: { id: serialId }, data: { emitted_invoice_number: nextNumber } });
         data.number = nextNumber;
       }
       const zeroPad = (num, places) => String(num).padStart(places, '0');
@@ -277,7 +280,7 @@ async function calculateTotals(data) {
 async function fillContactInfo(data) {
   if (data.contact_info === null || data.contact_info === undefined || data.state === 'draft') {
     if (data.contact) {
-      const contactId = typeof data.contact === 'object' ? data.contact.id : data.contact;
+      const contactId = relationId(data.contact);
       if (contactId) {
         const contact = await strapi.db.query('api::contact.contact').findOne({ where: { id: contactId } });
         if (contact) {

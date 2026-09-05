@@ -1,6 +1,7 @@
 'use strict';
 /* global strapi */
 const { getMe } = require('../../../../services/me-settings');
+const { relationId } = require('../../../../services/relation-input');
 
 /**
  * form-submission lifecycles (v5). Ported from v3 api/form-submission/models/form-submission.js.
@@ -8,7 +9,7 @@ const { getMe } = require('../../../../services/me-settings');
  */
 module.exports = {
   async beforeCreate(event) {
-    const data = event.data;
+    const data = event.params.data;
 
     const me = await getMe();
     if (!me.contact_form_email) {
@@ -22,7 +23,7 @@ module.exports = {
     const subject = '[ESSSTRAPIS] Contacte a través del formulari';
     const userData = await strapi.db
       .query('plugin::users-permissions.user')
-      .findOne({ where: { id: data.user } });
+      .findOne({ where: { id: relationId(data.user) } });
 
     const html = `
             <b>Contacte a través del formulari</b><br><br>

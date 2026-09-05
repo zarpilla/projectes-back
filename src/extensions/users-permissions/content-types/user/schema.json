@@ -74,7 +74,7 @@
     },
     "tasks": {
       "type": "relation",
-      "relation": "oneToMany",
+      "relation": "manyToMany",
       "target": "api::task.task",
       "mappedBy": "users_permissions_users"
     },

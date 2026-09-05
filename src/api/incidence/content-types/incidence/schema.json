@@ -37,7 +37,7 @@
     },
     "order": {
       "type": "relation",
-      "relation": "oneToOne",
+      "relation": "manyToOne",
       "target": "api::order.order",
       "inversedBy": "incidences"
     },

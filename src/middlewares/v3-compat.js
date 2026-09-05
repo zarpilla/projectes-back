@@ -100,6 +100,50 @@ function adaptUserQuery(ctx) {
   ctx.query = next;
 }
 
+/**
+ * Keys v5 refuses in a write body even though they are part of what it just
+ * returned. `id`/`documentId` identify the row, the timestamps and audit fields
+ * are managed.
+ */
+const RESERVED_WRITE_KEYS = new Set([
+  'id',
+  'documentId',
+  'createdAt',
+  'updatedAt',
+  'createdBy',
+  'updatedBy',
+  'locale',
+  'localizations',
+]);
+
+/**
+ * v3 ignored body keys that were not model fields; v5 answers
+ * `400 ValidationError: Invalid key <k>`. The frontend edits the entity it just
+ * fetched and PUTs the whole thing back, so its body legitimately carries the
+ * row identity, the timestamps, the snake_case aliases the client adds, and
+ * server-computed fields that are not schema attributes (`allByYear` on a
+ * project, for one). Drop those instead of rejecting the save.
+ *
+ * Top level only: `id` inside a component or a relation payload is meaningful
+ * to v5 and must survive.
+ */
+function sanitizeWriteBody(ctx, uid, strapi) {
+  const body = ctx.request.body;
+  if (!body || typeof body !== 'object') return;
+  const data = body.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+
+  const ct = strapi.contentTypes[uid];
+  const attributes = (ct && ct.attributes) || {};
+  const clean = {};
+  for (const key of Object.keys(data)) {
+    if (RESERVED_WRITE_KEYS.has(key)) continue;
+    if (attributes[key] === undefined) continue;
+    clean[key] = data[key];
+  }
+  body.data = clean;
+}
+
 /** v3 populated the first relation level on reads; v5 populates nothing. */
 function defaultPopulate(ctx) {
   if (ctx.method === 'GET' && ctx.query.populate === undefined) {
@@ -125,7 +169,8 @@ module.exports = (config, { strapi }) => async (ctx, next) => {
   // matches, so anything trailing here is not a core route.
   if (kind === 'singleType') {
     if (idSegment !== undefined) return next();
-    defaultPopulate(ctx);
+    if (ctx.method === 'PUT') sanitizeWriteBody(ctx, uid, strapi);
+    else defaultPopulate(ctx);
     return next();
   }
 
@@ -150,6 +195,9 @@ module.exports = (config, { strapi }) => async (ctx, next) => {
 
   // 2. v3 default populate for core reads
   defaultPopulate(ctx);
+
+  // 3. drop write-body keys v5 would reject
+  if (ctx.method === 'POST' || ctx.method === 'PUT') sanitizeWriteBody(ctx, uid, strapi);
 
   return next();
 };

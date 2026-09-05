@@ -6,10 +6,11 @@
  * Computes cost_by_hour from the covering daily-dedication; marks projects dirty.
  */
 const { scheduleRefresh } = require('../../../project/services/totalsRefreshScheduler');
+const { relationId } = require('../../../../services/relation-input');
 
 module.exports = {
   async beforeCreate(event) {
-    await calculatePrice(0, event.data);
+    await calculatePrice(0, event.params.data);
   },
   async afterCreate(event) {
     const result = event.result;
@@ -18,7 +19,7 @@ module.exports = {
     }
   },
   async beforeUpdate(event) {
-    await calculatePrice(event.params.where.id, event.data);
+    await calculatePrice(event.params.where.id, event.params.data);
   },
   async afterUpdate(event) {
     const result = event.result;
@@ -31,9 +32,9 @@ module.exports = {
       data &&
       data.project &&
       result &&
-      (!result.project || (result.project.id || result.project) !== (data.project.id || data.project))
+      (!result.project || relationId(result.project) !== relationId(data.project))
     ) {
-      scheduleRefresh(data.project.id || data.project);
+      scheduleRefresh(relationId(data.project));
     }
   },
   async beforeDelete(event) {
@@ -48,7 +49,7 @@ async function calculatePrice(id, data) {
   if (data && !data.cost_by_hour && data.users_permissions_user) {
     const dedications = await strapi.db
       .query('api::daily-dedication.daily-dedication')
-      .findMany({ where: { users_permissions_user: data.users_permissions_user } });
+      .findMany({ where: { users_permissions_user: relationId(data.users_permissions_user) } });
     if (dedications.length) {
       const dedication = dedications.find((d) => d.from <= data.date && d.to >= data.date);
       if (dedication) {
