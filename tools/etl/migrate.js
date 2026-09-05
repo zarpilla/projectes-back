@@ -280,9 +280,12 @@ async function main() {
 
         // upload_file_morph -> files_related_mph
         if (v3TableNames.has('upload_file_morph')) {
+          // related_id must fit v5's INT UNSIGNED: skip orphan/corrupt morph
+          // rows (some tenants carry related_id = -1 pointing at nothing).
           const morphSql =
             `INSERT INTO \`${TO}\`.\`files_related_mph\` (file_id, related_id, related_type, field) ` +
-            `SELECT upload_file_id, related_id, related_type, field FROM \`${FROM}\`.upload_file_morph`;
+            `SELECT upload_file_id, related_id, related_type, field FROM \`${FROM}\`.upload_file_morph ` +
+            `WHERE related_id IS NOT NULL AND related_id > 0`;
           if (!DRY) {
             await q(conn, `TRUNCATE TABLE \`${TO}\`.\`files_related_mph\``);
             await q(conn, morphSql);
