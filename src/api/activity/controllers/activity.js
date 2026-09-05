@@ -20,6 +20,7 @@ const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { scheduleRefresh } = require('../../project/services/totalsRefreshScheduler');
+const { getMe } = require('../../../services/me-settings');
 
 module.exports = createCoreController('api::activity.activity', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -96,7 +97,7 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
     const { id } = ctx.params;
     const { from, to } = ctx.query;
 
-    const me = await strapi.documents('api::me.me').findFirst();
+    const me = await getMe();
     const user = await strapi.db.query('plugin::users-permissions.user').findOne({ where: { id } });
 
     const fromDate = from ? moment(from) : moment().startOf('month');

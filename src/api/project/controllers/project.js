@@ -11,6 +11,7 @@ const {
 } = require('../../../services/query-adapter');
 const { numericId } = require('../../../middlewares/v3-compat');
 const { getDailyDedications, getFestives } = require('../services/projectCache');
+const { getMe } = require('../../../services/me-settings');
 const {
   buildProjectRows,
   aggregateRowsByYear,
@@ -32,7 +33,7 @@ const doProjectInfoCalculations = async (data, id) => {
   const dailyDedications = await getDailyDedications();
   const festives = await getFestives();
 
-  const me = await strapi.documents('api::me.me').findFirst();
+  const me = await getMe();
   const fallback_deductible_vat_pct =
     me.options && me.options.deductible_vat_pct ? me.options.deductible_vat_pct : 100.0;
   const yearEntities = await strapi.db.query('api::year.year').findMany({});
@@ -747,7 +748,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       activitiesByProject.get(activity.projectId).push(activity);
     });
 
-    const me = await strapi.documents('api::me.me').findFirst();
+    const me = await getMe();
     const fallback_deductible_vat_pct =
       me.options && me.options.deductible_vat_pct ? me.options.deductible_vat_pct : 100.0;
     const yearEntities = await strapi.db.query('api::year.year').findMany({});
@@ -1365,7 +1366,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         'project_type',
         'strategies',
         'intercooperations',
-        'emmited_invoices',
+        'emitted_invoices',
         'received_invoices',
         'activity_types',
         'received_incomes',
@@ -1436,7 +1437,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         'documents',
         'strategies',
         'intercooperations',
-        'emmited_invoices',
+        'emitted_invoices',
         'received_invoices',
         'activity_types',
         'received_incomes',

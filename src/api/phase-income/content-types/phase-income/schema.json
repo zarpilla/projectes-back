@@ -65,13 +65,13 @@
       "type": "relation",
       "relation": "oneToOne",
       "target": "api::project-phase.project-phase",
-      "mappedBy": "incomes"
+      "inversedBy": "incomes"
     },
     "project_original_phase": {
       "type": "relation",
       "relation": "oneToOne",
       "target": "api::project-original-phase.project-original-phase",
-      "mappedBy": "incomes"
+      "inversedBy": "incomes"
     },
     "bank_account": {
       "type": "relation",

@@ -18,6 +18,7 @@
  */
 const { scheduleFromEntityProjects } = require('../../../project/services/totalsRefreshScheduler');
 const { rawExecute } = require('../../../../services/raw-sql');
+const { getMe } = require('../../../../services/me-settings');
 
 module.exports = {
   async beforeCreate(event) {
@@ -137,7 +138,7 @@ module.exports = {
     }
 
     // FACe queue enqueue
-    const me = await strapi.documents('api::me.me').findFirst();
+    const me = await getMe();
     const faceEnabled = me && (me.face === 'test' || me.face === 'real');
     let contact = null;
     if (invoice && invoice.contact) {

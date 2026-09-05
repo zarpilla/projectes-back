@@ -39,12 +39,17 @@
     },
     "quantity_type": {
       "type": "enumeration",
-      "enum": ["total", "week", "month"]
+      "enum": [
+        "total",
+        "week",
+        "month"
+      ]
     },
     "phase_income": {
       "type": "relation",
       "relation": "manyToOne",
-      "target": "api::phase-income.phase-income"
+      "target": "api::phase-income.phase-income",
+      "inversedBy": "estimated_hours"
     }
   }
 }

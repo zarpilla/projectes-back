@@ -330,6 +330,9 @@ async function main() {
             [TO],
           );
           if (lnkExists.length) {
+            // TRUNCATE first, like every other table — the ETL is meant to be
+            // re-runnable and the lnk table has a (user, role) unique key.
+            await conn.query(`TRUNCATE TABLE \`${TO}\`.\`users_permissions_user_role_lnk\``);
             const [lnkRes] = await q(conn, roleSql);
             stats.copied.push({ table: 'users_permissions_user_role_lnk', rows: lnkRes.affectedRows });
           } else {

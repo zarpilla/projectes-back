@@ -1,5 +1,6 @@
 'use strict';
 /* global strapi */
+const { getMe } = require('./me-settings');
 
 /**
  * Permission matrix + seed rows (P6.1 + P6.3). Ported from the v3
@@ -262,7 +263,7 @@ async function importSeedPermissions() {
 
 /** Seed rows (P6.3): verifactu settings, declarations, default bank account. */
 async function importSeedRows() {
-  const me = await strapi.documents('api::me.me').findFirst();
+  const me = await getMe();
 
   // Verifactu settings single-type
   const verifactu = await strapi.documents('api::verifactu.verifactu').findFirst();

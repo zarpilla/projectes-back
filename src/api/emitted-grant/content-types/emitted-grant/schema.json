@@ -64,7 +64,11 @@
     "documents": {
       "type": "media",
       "relation": "oneToMany",
-      "allowedTypes": ["images", "files", "videos"]
+      "allowedTypes": [
+        "images",
+        "files",
+        "videos"
+      ]
     },
     "payment_method": {
       "type": "relation",
@@ -77,7 +81,8 @@
     "project": {
       "type": "relation",
       "relation": "manyToOne",
-      "target": "api::project.project"
+      "target": "api::project.project",
+      "inversedBy": "emitted_grants"
     },
     "comments_internal": {
       "type": "richtext"

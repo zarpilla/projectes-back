@@ -9,6 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const axios = require('axios');
 const FormData = require('form-data');
+const { getMe } = require('./me-settings');
 
 async function readUploadedPdfBuffer(ctx) {
   const files = ctx.request && ctx.request.files;
@@ -59,7 +60,7 @@ async function proxyUpload(strapi, ctx) {
       return ctx.badRequest('No PDF file was provided.');
     }
 
-    const meSettings = await strapi.documents('api::me.me').findFirst();
+    const meSettings = await getMe();
     if (!meSettings?.invoice_parser_api_url || !meSettings?.invoice_parser_api_token) {
       return ctx.badRequest('Invoice parser API is not configured');
     }

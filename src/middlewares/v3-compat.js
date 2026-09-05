@@ -40,18 +40,27 @@ const NUMERIC = /^\d+$/;
 const DOCUMENT_ID = /^[a-z0-9]{20,}$/i;
 const ID_METHODS = new Set(['GET', 'PUT', 'DELETE']);
 
-let pluralToUid = null;
+let routeMap = null;
 
-/** plural route name → collection-type uid, built once from the loaded schemas. */
-function getPluralMap(strapi) {
-  if (pluralToUid) return pluralToUid;
-  pluralToUid = new Map();
+/**
+ * route segment → { uid, kind }, built once from the loaded schemas.
+ * Collection types are served at `/api/<pluralName>`, single types at
+ * `/api/<singularName>` (v5 core router) — both need the v3 default populate,
+ * but only collection types have an `/:id` to resolve.
+ */
+function getRouteMap(strapi) {
+  if (routeMap) return routeMap;
+  routeMap = new Map();
   for (const [uid, ct] of Object.entries(strapi.contentTypes)) {
     if (!uid.startsWith('api::')) continue;
-    if (ct.kind !== 'collectionType') continue;
-    if (ct.info && ct.info.pluralName) pluralToUid.set(ct.info.pluralName, uid);
+    const info = ct.info || {};
+    if (ct.kind === 'collectionType' && info.pluralName) {
+      routeMap.set(info.pluralName, { uid, kind: 'collectionType' });
+    } else if (ct.kind === 'singleType' && info.singularName) {
+      routeMap.set(info.singularName, { uid, kind: 'singleType' });
+    }
   }
-  return pluralToUid;
+  return routeMap;
 }
 
 /**
@@ -107,9 +116,18 @@ module.exports = (config, { strapi }) => async (ctx, next) => {
   const match = CORE_PATH.exec(ctx.path || '');
   if (!match) return next();
 
-  const [, plural, idSegment] = match;
-  const uid = getPluralMap(strapi).get(plural);
-  if (!uid) return next();
+  const [, segment, idSegment] = match;
+  const entry = getRouteMap(strapi).get(segment);
+  if (!entry) return next();
+  const { uid, kind } = entry;
+
+  // A single type has no `/:id`; `/api/me/dir3/...` is longer than this regex
+  // matches, so anything trailing here is not a core route.
+  if (kind === 'singleType') {
+    if (idSegment !== undefined) return next();
+    defaultPopulate(ctx);
+    return next();
+  }
 
   // `/api/contacts/basic`, `/api/orders/table`, … are custom actions, not core
   // CRUD on an entity. They parse their own query and must not be touched.
@@ -126,7 +144,7 @@ module.exports = (config, { strapi }) => async (ctx, next) => {
       // Ported controllers that still address rows by their numeric id read this
       // (see numericId() below) — ctx.params.id is the documentId from here on.
       ctx.state.v3 = { numericId: Number(idSegment), documentId: row.documentId };
-      ctx.path = `/api/${plural}/${encodeURIComponent(row.documentId)}`;
+      ctx.path = `/api/${segment}/${encodeURIComponent(row.documentId)}`;
     }
   }
 

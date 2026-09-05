@@ -10,6 +10,7 @@
  * update override). NOTE: v5 lifecycle modules may only export hook functions.
  */
 const updater = require('../../utils/updater');
+const { getMe } = require('../../../../services/me-settings');
 
 module.exports = {
   async afterCreate(event) {
@@ -53,7 +54,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null) {
     return;
   }
 
-  const me = await strapi.documents('api::me.me').findFirst();
+  const me = await getMe();
   if (!me || !me.contact_form_email) {
     console.error('contact_form_email not set');
     return;

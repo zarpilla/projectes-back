@@ -1,5 +1,6 @@
 'use strict';
 /* global strapi */
+const { getMe } = require('../../../../services/me-settings');
 
 /**
  * form-submission lifecycles (v5). Ported from v3 api/form-submission/models/form-submission.js.
@@ -9,7 +10,7 @@ module.exports = {
   async beforeCreate(event) {
     const data = event.data;
 
-    const me = await strapi.documents('api::me.me').findFirst();
+    const me = await getMe();
     if (!me.contact_form_email) {
       throw new Error('contact_form_email not set');
     }

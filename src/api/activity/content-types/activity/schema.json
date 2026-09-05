@@ -22,7 +22,8 @@
     "project": {
       "type": "relation",
       "relation": "manyToOne",
-      "target": "api::project.project"
+      "target": "api::project.project",
+      "inversedBy": "activities"
     },
     "hours": {
       "type": "decimal"

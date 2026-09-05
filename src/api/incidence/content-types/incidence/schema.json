@@ -13,7 +13,11 @@
   "attributes": {
     "state": {
       "type": "enumeration",
-      "enum": ["open", "wip", "closed"]
+      "enum": [
+        "open",
+        "wip",
+        "closed"
+      ]
     },
     "created_user": {
       "type": "relation",
@@ -35,7 +39,7 @@
       "type": "relation",
       "relation": "oneToOne",
       "target": "api::order.order",
-      "mappedBy": "incidences"
+      "inversedBy": "incidences"
     },
     "incidence_response": {
       "type": "component",

@@ -21,6 +21,7 @@ const MicroInvoiceOrder = require('../../../../utils/microinvoice-order');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptQuery, adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { rawExecute } = require('../../../services/raw-sql');
+const { getMe } = require('../../../services/me-settings');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 const TABLE_POPULATE = ['route', 'owner', 'contact', 'pickup', 'delivery_type', 'contact_legal_form'];
@@ -52,7 +53,7 @@ const assertWithinNextDayCutoff = async (ctx) => {
 
   let nextDayLimitHour = 14;
   try {
-    const meSettings = await strapi.documents('api::me.me').findFirst();
+    const meSettings = await getMe();
     if (meSettings && meSettings.orders_options && meSettings.orders_options.next_day_limit_hour != null) {
       nextDayLimitHour = meSettings.orders_options.next_day_limit_hour;
     }
@@ -420,7 +421,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       populate: { owner: true, contact: true, route: true, pickup: true, contact_legal_form: true },
     });
 
-    const me = await strapi.documents('api::me.me').findFirst();
+    const me = await getMe();
     const config = await strapi.documents('api::config.config').findFirst();
 
     const qrWidth = 96;
@@ -580,7 +581,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     const { id, date, contactId, ownerId } = ctx.request.body;
     const owner = await strapi.db.query('plugin::users-permissions.user').findOne({ where: { id: ownerId } });
     const ownerFactor = owner?.multidelivery_discount === false ? 0 : 1;
-    const me = await strapi.documents('api::me.me').findFirst();
+    const me = await getMe();
 
     const ordersOfDateAndContact = await strapi.db.query('api::order.order').findMany({
       where: {

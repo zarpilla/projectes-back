@@ -19,6 +19,7 @@ const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { rawExecute } = require('../../../services/raw-sql');
+const { getMe } = require('../../../services/me-settings');
 
 // Map v3 entity slug -> DB table name for the raw UPDATE in payEntity.
 const ENTITY_TABLE = {
@@ -99,7 +100,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     const invoice = response?.data?.attributes || response?.data;
     if (!invoice || !invoice.id) return response;
 
-    const me = await strapi.documents('api::me.me').findFirst();
+    const me = await getMe();
     if (me && (me.face === 'test' || me.face === 'real')) {
       const faceQueue = await strapi.db
         .query('api::face-queue.face-queue')
@@ -151,7 +152,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
       where: { id },
       populate: { contact: true, document_type: true, payment_method: true, lines: true },
     });
-    const me = await strapi.documents('api::me.me').findFirst();
+    const me = await getMe();
 
     const logoUrl = me.logo ? `./public${me.logo.url}` : null;
     let logo = logoUrl;
@@ -359,7 +360,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
         .findOne({ where: { id }, populate: { contact: true } });
 
       if (invoice && invoice.contact?.contact_email && invoice.pdf) {
-        const me = await strapi.documents('api::me.me').findFirst();
+        const me = await getMe();
         const attachments = [
           {
             filename: `Factura-${invoice.code}.pdf`,
@@ -407,7 +408,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     const incomeInfo = await getEntityInfo(ENTITY_UID['received-income']);
     const rInvoiceInfo = await getEntityInfo(ENTITY_UID['received-invoice']);
     const expenseInfo = await getEntityInfo(ENTITY_UID['received-expense']);
-    const me = await strapi.documents('api::me.me').findFirst();
+    const me = await getMe();
     const bankAccountVat = me.bank_account_vat;
     const years = await getYearsInfo();
 
@@ -472,7 +473,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     const incomeInfo = await getEntityInfo(ENTITY_UID['received-income']);
     const rInvoiceInfo = await getEntityInfo(ENTITY_UID['received-invoice']);
     const expenseInfo = await getEntityInfo(ENTITY_UID['received-expense']);
-    const me = await strapi.documents('api::me.me').findFirst();
+    const me = await getMe();
     const bankAccountVat = me.bank_account_vat;
     const years = await getYearsInfo();
 

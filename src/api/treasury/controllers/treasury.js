@@ -13,6 +13,7 @@ const zeroPad = (num, places) => String(num).padStart(places, '0');
  */
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { getMe } = require('../../../services/me-settings');
 
 const getDeductiblePct = (years, emitted) => {
   const year = years.find(
@@ -200,7 +201,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
     const bankAccounts = await strapi.db.query('api::bank-account.bank-account').findMany({});
 
-    const me = await strapi.documents('api::me.me').findFirst();
+    const me = await getMe();
 
     // Economic forecast ("prevista") per year, derived from the project PLAN
     // (project_phases + prevista periodification) — exactly the way
@@ -1071,7 +1072,10 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     let cumulativeExpectedVatBalance = 0;
 
     for (let qData of sortedExpectedVatQuarters) {
-      const quarterBalance = qData.received - (qData.paid * me.options.deductible_vat_pct) / 100;
+      // `me.options` is an optional component — the same value is already
+      // resolved with a 100% fallback above; use it rather than dereferencing.
+      const quarterBalance =
+        qData.received - (qData.paid * fallback_deductible_vat_pct) / 100;
       cumulativeExpectedVatBalance += quarterBalance;
 
       // Only create treasury entry if cumulative balance is positive (payment required)

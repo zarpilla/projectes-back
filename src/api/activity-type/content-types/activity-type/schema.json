@@ -17,7 +17,8 @@
     "project": {
       "type": "relation",
       "relation": "manyToOne",
-      "target": "api::project.project"
+      "target": "api::project.project",
+      "inversedBy": "activity_types"
     },
     "global": {
       "type": "boolean",

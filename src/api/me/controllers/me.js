@@ -11,6 +11,7 @@
 const axios = require('axios');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { getMe } = require('../../../services/me-settings');
 
 module.exports = createCoreController('api::me.me', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -31,7 +32,7 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
         return ctx.badRequest('NIF parameter is required');
       }
 
-      const meSettings = await strapi.documents('api::me.me').findFirst();
+      const meSettings = await getMe();
       if (!meSettings || !meSettings.dir3_api_url || !meSettings.dir3_api_token) {
         return ctx.badRequest('DIR3 API is not configured');
       }
@@ -61,7 +62,7 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
         return ctx.badRequest('Name parameter is required');
       }
 
-      const meSettings = await strapi.documents('api::me.me').findFirst();
+      const meSettings = await getMe();
       if (!meSettings || !meSettings.dir3_api_url || !meSettings.dir3_api_token) {
         return ctx.badRequest('DIR3 API is not configured');
       }

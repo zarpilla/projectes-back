@@ -24,7 +24,7 @@
       "type": "relation",
       "relation": "oneToOne",
       "target": "plugin::users-permissions.user",
-      "mappedBy": "daily_dedications"
+      "inversedBy": "daily_dedications"
     },
     "costByHour": {
       "type": "decimal"
@@ -34,7 +34,10 @@
     },
     "scheme": {
       "type": "enumeration",
-      "enum": ["autonoma", "general"]
+      "enum": [
+        "autonoma",
+        "general"
+      ]
     },
     "quota": {
       "type": "decimal"

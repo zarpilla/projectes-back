@@ -9,7 +9,7 @@
  * v5 data-access conversions:
  *  - strapi.query(...).findOne/find/update -> strapi.db.query(...) (lifecycle-free,
  *    so the v3 `_internal` flag is no longer needed on internal updates)
- *  - `me` single-type -> strapi.documents('api::me.me').findFirst()
+ *  - `me` single-type -> getMe()
  *  - strapi.config.paths.static -> strapi.dirs.static.public
  *  - created_at -> createdAt
  * The XML builders, JWT generation and XAdES signing are ported verbatim
@@ -26,6 +26,7 @@ const { execSync } = require('child_process');
 const { signFacturaeXml } = require('../utils/sign-facturae');
 
 const { createCoreService } = require('@strapi/strapi').factories;
+const { getMe } = require('../../../services/me-settings');
 
 const FACE_QUEUE_UID = 'api::face-queue.face-queue';
 const EMITTED_INVOICE_UID = 'api::emitted-invoice.emitted-invoice';
