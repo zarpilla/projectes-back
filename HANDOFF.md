@@ -3,8 +3,8 @@
 Purpose: bootstrap a **new AI agent session** (another IDE) to continue this
 migration. Read this file first, then `MIGRATION-NOTES.md` if present.
 
-Last updated: 2026-09-05 (after Phase 8 complete + diligencia test environment
-verified by manual testing).
+Last updated: 2026-09-05 (P9 API compatibility done and smoke-tested against
+the diligencia dataset; per-screen browser testing is the next step).
 
 ---
 
@@ -14,7 +14,7 @@ verified by manual testing).
 |---|---|---|
 | v3 (production, LIVE) | `/home/jordi/Documents/work/webcoop/projectes/projectes` | Strapi 3.6.11, ~16 PM2 instances, one MySQL DB per tenant. **Do not break.** Reference for behavior parity. |
 | v5 (rebuild) | `/home/jordi/Documents/work/webcoop/projectes/projectes-v5` | Strapi 5.51.1, JS (no TS), clean-room rebuild. **All new work goes here.** |
-| Vue frontend | `/home/jordi/Documents/work/webcoop/projectes/projectes-front` | Vue 2 + buefy, 189 `.vue` files, calls the API through `src/service/index.js`. **Untouched so far — P9 starts here.** |
+| Vue frontend | `/home/jordi/Documents/work/webcoop/projectes/projectes-front` | Vue 2 + buefy, 189 `.vue` files, calls the API through `src/service/index.js`. **P9 work is on branch `p9/strapi-v5-api-compat`.** |
 
 Node 20 is required (`.nvmrc` present; npm scripts fail fast with a clear
 message on older Node — node-ical 0.26 crashes on Node 18).
@@ -54,41 +54,75 @@ Verification commands: `npm test` (70 unit tests), `npx eslint src/ config/`
 
 ## 3. Remaining work (in order)
 
-### P9 — Frontend rewrite (Vue) · the next task
+### P9 — Frontend/API compatibility · DONE (API level), browser testing pending
 
-Goal: `projectes-front` consumes the v5 API. **The backend already accepts the
-frontend's v3-style query params** — only transport differences remain.
+`projectes-front` branch **`p9/strapi-v5-api-compat`** (commits `010c6d9`,
+`1eddc62`); backend fixes on `main` (`f953aba`, `d490ecf`, `03f91a9`).
 
-Single choke point: `projectes-front/src/service/index.js` (axios factory;
-124 files import it, ~602 HTTP calls go through it — 441 get / 87 put / 51
-post / 23 delete). Rewrite it as a compatibility layer:
+**Frontend** — `src/service/v5-compat.js` (new, pure) wired into the axios
+interceptors in `src/service/index.js`. All 118 files / ~602 calls keep their v3
+call style; the layer absorbs the six transport differences:
 
-1. **Path mapping** (request interceptor or URL mapper):
-   - content routes get an `api/` prefix (`contacts/basic?...` → `api/contacts/basic?...`)
-   - v3 auth paths: `users-permissions/auth/local` → `api/auth/local`,
-     `users-permissions/auth/forgot-password` → `api/auth/forgot-password`,
-     `users-permissions/auth/reset-password` → `api/auth/reset-password`
-   - `users/me` → `api/users/me`; `upload` → `api/upload`
-2. **Envelope unwrap** (response interceptor): v5 list/read endpoints return
-   `{ data, meta }`. Replace `response.data` with the unwrapped array/object so
-   views' `(await ...).data` keeps working; stash `meta` (e.g. `response.meta`)
-   for pagination. Auth/user endpoints (login, users/me) return plain objects —
-   only unwrap when BOTH `data` and `meta` exist.
-3. **Timestamp aliases**: v5 returns `createdAt`/`updatedAt`/`publishedAt`;
-   frontend reads `created_at` (36 uses) / `updated_at` (17 uses). Add snake_case
-   aliases in the unwrap step. `users_permissions_user` attribute name was KEPT
-   in v5 schemas — no rename needed (285 uses).
-4. **Error shape**: v5 error body is `{ error: { message } }`; add top-level
-   `message` alias for views reading v3-style errors.
+1. every route moves under `/api`
+2. core create/update get the `{ data: … }` **request** envelope — custom
+   actions (`contacts/unify`, `orders/pdf`, `<type>/upload`), `auth/*`,
+   the users-permissions routes and `upload` deliberately stay flat
+3. `{ data, meta }` **response** unwrap; pagination stashed on `response.meta`
+4. `<type>/count` (removed in v5) emulated as a one-row read reporting
+   `meta.pagination.total`
+5. `created_at`/`updated_at`/`published_at` aliases for v5's camelCase
+6. v3 `message`/`statusCode` aliases on error bodies (`views/Login.vue` updated —
+   it read the nested users-permissions error form v5 no longer sends)
 
-Then: log in via `POST /api/auth/local` (migrated users keep passwords), smoke
-every screen (Orders, Projects, Treasury, Invoices, Dedicació, Stats…), fix
-per-view issues. Test with the diligencia dataset on v5 and the same tenant on
-v3 side by side (v3 on 1337, v5 with `PORT=1338 npm run dev`).
+**Backend** — five defects found by smoke-testing, all fixed:
 
-Known frontend call style (keep working): `service({ requiresAuth: true }).get(
-"contacts/basic?_limit=-1&_sort=name:ASC&_q=...")` — params in the URL string;
-backend translates them (committed `7c86275`).
+- **Public role had no auth permissions.** `updateRole()` *replaces* a role's
+  permission set; the public matrix listed only `logos.find`, so every boot wiped
+  the users-permissions defaults and `POST /api/auth/local` answered 403 — nobody
+  could log in, on any tenant. Now seeds the same six the v3 public role had.
+- **`user.role` was declared on the non-owning side** (`oneToOne`/`mappedBy`
+  instead of the stock `manyToOne`/`inversedBy`), so no link table existed and
+  `user.role` was always null → the auth strategy threw → **401 on every
+  authenticated request**. The ETL had always been ready to fill the links but
+  skipped silently when the table was missing; it now fails loudly.
+- **All 60 custom routes were mounted at the wrong paths.** v5 does *not*
+  namespace custom routes by content type (the comment in every route file
+  claimed it did), so they landed at the root — seven APIs registered
+  `/api/basic`, and treasury-validation's `/:entity_type/:entity_id/:sub_type?`
+  became a catch-all that swallowed `/api/users/me`. Restored from v3.
+- **Custom routes were shadowed by the core `/:id` route** (alphabetical file
+  order) — hence the `01-custom-*.js` filenames.
+- **`limit: -1`** (v3's "all rows") is a SQL syntax error in v5; removed from 62
+  call sites and guarded by `dbLimit()` in the adapter.
+
+Plus: 8 v3-signature `strapi.query('project')` calls ported (they 500'd the main
+Projects screens), dotted relation filters (`_where[contact_types.id]`) now nest,
+16 permissions the v3 authenticated role had restored, and v3's default
+first-level populate reinstated via `src/middlewares/v3-compat.js` — which also
+resolves the frontend's **numeric ids** to v5 documentIds (`ctx.state.v3.numericId`
+keeps ported controllers working).
+
+**Verification**: 83 backend unit tests, eslint clean, and
+`node tools/v5-smoke.mjs` in the frontend repo (18 checks: auth flow, list
+screens, pagination meta, emulated `/count` — 20,992 orders matching the DB —
+timestamp aliases, populated relations, findOne by numeric id, and a
+create/update/delete round-trip). Probing the 94 endpoints the frontend calls:
+**90 pass**; the other 4 are the three `/count` paths (served client-side now)
+and `projects/dedications` correctly rejecting a missing required param.
+
+```bash
+# side-by-side test setup used
+cd projectes-v5 && PORT=1338 npx strapi start          # v5 on 1338, v3 stays on 1337
+cd projectes-front && SMOKE_USER=<email> SMOKE_PASS=<pw> \
+  API_URL=http://127.0.0.1:1338 node tools/v5-smoke.mjs
+```
+
+**Still to do**: run the app in a browser against 1338 and click through every
+screen (Orders, Projects, Treasury, Invoices, Dedicació, Stats…). The API shapes
+are verified but rendering, forms and the PDF/upload flows are not. Watch for:
+the `populate=*` default is one level only — screens reading `a.b.c` need their
+controller to populate explicitly; and `_q` full-text search is not reproduced
+(v5 has no db-level equivalent), so search boxes need checking.
 
 ### P10 — Pilot tenant cutover (needs user decisions)
 
@@ -177,6 +211,19 @@ scripts (`scripts/templates/pm2-app.config.js.template`, Dockerfile,
 - ETL quirks: skip `upload_file_morph` rows with `related_id <= 0` (corrupt
   v3 orphans overflow v5 INT UNSIGNED); ETL needs env vars exported
   (`set -a; source .env; set +a`).
+- **Custom routes are NOT namespaced by content type.** A route file's `path` is
+  mounted verbatim under `/api`, so it must carry its own plural prefix
+  (`/contacts/basic`, not `/basic`). Route files also load in alphabetical order
+  and the core router's `/<plural>/:id` shadows later static paths — hence
+  `01-custom-<api>.js`.
+- **`limit: -1` is invalid** for `strapi.db.query` (knex emits `LIMIT -1`).
+  Omit the limit to mean "all"; use `dbLimit(adaptQuery(...))`.
+- **Permissions are seeded with `updateRole()`, which REPLACES** the role's set —
+  anything omitted from the matrix in `bootstrap-permissions.js` is revoked on
+  every boot, including the plugin defaults.
+- **Numeric ids**: `/api/<plural>/:id` resolves `:id` as a documentId. The
+  `v3-compat` middleware rewrites numeric ids; controllers that need the numeric
+  value must read `numericId(ctx)`, not `ctx.params.id`.
 - Admin API tokens (for curl testing): table `strapi_api_tokens`,
   `kind='content-api'`, `type='read-only'`, `access_key` = HMAC-SHA512 of the
   raw token salted with `API_TOKEN_SALT` from `.env`. Note: routes with
@@ -188,7 +235,9 @@ scripts (`scripts/templates/pm2-app.config.js.template`, Dockerfile,
 ## 5. Key files map (v5 repo)
 
 ```
-src/services/query-adapter.js        adaptQuery + adaptCtxQuery (v3 param compat)
+src/middlewares/v3-compat.js         numeric id -> documentId, v3 default populate
+src/services/query-adapter.js        adaptQuery + adaptCtxQuery (v3 param compat),
+                                      dbLimit / expandPopulate / v3FindArgs
 src/services/raw-sql.js              rawExecute (parameter-bound raw SQL)
 src/services/bootstrap-permissions.js permission matrix + seed rows (runs on boot)
 src/api/…/lifecycles.js              26 lifecycle files (big four: emitted-invoice,
@@ -206,7 +255,7 @@ docs/                                existing v3-era docs (update in P12)
 
 1. Pilot tenant for P10 + maintenance window.
 2. Where production instances/uploads live (rsync source per tenant).
-3. Whether frontend P9 is done agent-side in `projectes-front` (repo is local
-   and accessible) — recommended yes.
+3. Whether to merge `p9/strapi-v5-api-compat` before the browser pass, or keep
+   iterating on the branch.
 4. Rotate the secrets that were historically committed in the v3 `.env`
    (SendGrid/SMTP/MySQL/PAT/Z.ai) before any public v5 deploy.
