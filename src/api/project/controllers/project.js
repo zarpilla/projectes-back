@@ -25,6 +25,18 @@ const {
  * to customize this controller
  */
 
+/** Removes the client-side `dirty` markers from a nested phase payload. */
+const stripDirty = (value, depth = 0) => {
+  if (depth > 6 || value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) {
+    value.forEach((entry) => stripDirty(entry, depth + 1));
+    return value;
+  }
+  delete value.dirty;
+  Object.values(value).forEach((entry) => stripDirty(entry, depth + 1));
+  return value;
+};
+
 const doProjectInfoCalculations = async (data, id) => {
   if (!id || !data) {
     return;
@@ -1347,6 +1359,21 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   },
 
   /**
+   * Override core create: the phases the form sends are extracted by the
+   * project lifecycle and materialized in afterCreate, but they still pass
+   * through v5's input validation on the way — and they carry the `dirty`
+   * markers the compat middleware preserves for update. Strip those here;
+   * nothing on the create path reads them.
+   */
+  async create(ctx) {
+    const data = (ctx.request.body && ctx.request.body.data) || {};
+    for (const key of ['project_phases', 'project_original_phases']) {
+      stripDirty(data[key]);
+    }
+    return super.create(ctx);
+  },
+
+  /**
    * Override core update: materialize the phase edits the form sends.
    *
    * "GESTIÓ ECONÒMICA" ships the edited phases plus the rows the user removed,
@@ -1389,10 +1416,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
             info.deletedExpenses || [],
             info.deletedHours || [],
           );
-        // updatePhases owns these rows now; leaving them on the payload would
-        // make the core update try to rewrite the relation on top of it.
-        delete data[section.phases];
       }
+      // Phases are managed exclusively through updatePhases, so they never
+      // belong on a core update — whether or not this request edited them. The
+      // form echoes the whole graph back, carrying `dirty` markers that v5's
+      // input validation rejects ("Invalid key dirty at project_phases.incomes")
+      // and stale rows that would otherwise overwrite the relation.
+      delete data[section.phases];
       delete data[section.flag];
       delete data[section.info];
     }

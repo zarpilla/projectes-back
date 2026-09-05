@@ -40,7 +40,10 @@ const strapi = {
 };
 
 const clean = (data) =>
-  cleanPayload(data, strapi.contentTypes['api::project.project'].attributes, strapi, true, 0);
+  cleanPayload(data, strapi.contentTypes['api::project.project'].attributes, strapi, true, 0, true);
+// the same payload for a content type whose controller does NOT consume markers
+const cleanNoMarkers = (data) =>
+  cleanPayload(data, strapi.contentTypes['api::project.project'].attributes, strapi, true, 0, false);
 
 describe('write-body sanitizer', () => {
   test('drops row identity and managed timestamps at the root', () => {
@@ -189,6 +192,13 @@ describe('nested row markers', () => {
         { id: 20, name: 'x', dirty: true, expenses: [{ id: 5, concept: 'a', dirty: true }] },
       ],
     });
+  });
+
+  // Markers are only kept for the content type whose controller strips them
+  // again (project). Anywhere else they reach v5's input validation and 400.
+  test('markers are dropped for content types that do not consume them', () => {
+    expect(cleanNoMarkers({ project_phases: [{ id: 20, name: 'x', dirty: true }] }))
+      .toEqual({ project_phases: [{ id: 20, name: 'x' }] });
   });
 
   test('other client-only fields are still dropped from nested rows', () => {

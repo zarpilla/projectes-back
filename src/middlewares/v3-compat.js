@@ -147,8 +147,12 @@ const isControlKey = (key) => key.charAt(0) === '_' || CONTROL_KEYS.has(key);
  * only writes a row back when it is set, so dropping it made every edit to an
  * existing "GESTIÓ ECONÒMICA" row a silent no-op. (On a project `dirty` is a
  * real attribute — the totals-refresh flag — and passes on its own.)
+ *
+ * Kept only for the content type whose controller consumes and removes them
+ * (project); anywhere else they would reach v5's input validation and 400.
  */
 const NESTED_MARKER_KEYS = new Set(['dirty']);
+const MARKER_UIDS = new Set(['api::project.project']);
 
 function attributesFor(def, strapi) {
   if (!def) return null;
@@ -190,15 +194,15 @@ function dropEmptyRelations(value) {
   return isEmptyRelationRef(value) ? null : value;
 }
 
-function cleanPayload(value, attributes, strapi, isRoot, depth) {
+function cleanPayload(value, attributes, strapi, isRoot, depth, keepMarkers) {
   if (depth > 10 || value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) {
-    return value.map((entry) => cleanPayload(entry, attributes, strapi, isRoot, depth + 1));
+    return value.map((entry) => cleanPayload(entry, attributes, strapi, isRoot, depth + 1, keepMarkers));
   }
   const clean = {};
   for (const key of Object.keys(value)) {
     if (MANAGED_KEYS.has(key)) continue;
-    if (isRoot ? isControlKey(key) : NESTED_MARKER_KEYS.has(key)) {
+    if (isRoot ? isControlKey(key) : keepMarkers && NESTED_MARKER_KEYS.has(key)) {
       clean[key] = value[key];
       continue;
     }
@@ -211,7 +215,7 @@ function cleanPayload(value, attributes, strapi, isRoot, depth) {
     if (!def) continue; // computed or unknown — v3 ignored these
     const nested = attributesFor(def, strapi);
     const cleaned = nested
-      ? cleanPayload(value[key], nested, strapi, false, depth + 1)
+      ? cleanPayload(value[key], nested, strapi, false, depth + 1, keepMarkers)
       : value[key];
     clean[key] = def.type === 'relation' ? dropEmptyRelations(cleaned) : cleaned;
   }
@@ -226,7 +230,7 @@ function sanitizeWriteBody(ctx, uid, strapi) {
 
   const ct = strapi.contentTypes[uid];
   const attributes = (ct && ct.attributes) || {};
-  const clean = cleanPayload(data, attributes, strapi, true, 0);
+  const clean = cleanPayload(data, attributes, strapi, true, 0, MARKER_UIDS.has(uid));
 
   // The one v3 publication write the frontend makes: ProjectsTable's "trash"
   // sends `{ published_at: null }`. v5 owns the `published_at` column, so the
