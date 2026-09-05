@@ -105,7 +105,15 @@ async function setPermissions(roleType, controllers) {
 
 /** The full public/authenticated matrix (ported verbatim from v3 importSeedData). */
 async function importSeedPermissions() {
-  await setPermissions('public', { logos: ['find'] });
+  // updateRole() REPLACES a role's permission set, so the users-permissions
+  // actions Strapi grants Public by default are wiped unless they are listed
+  // here — without them POST /api/auth/local answers 403 and nobody can log in.
+  // Same six the v3 public role had (v3 `users-permissions_permission`, role 2).
+  await setPermissions('public', {
+    logos: ['find'],
+    auth: ['callback', 'connect', 'forgotPassword', 'resetPassword'],
+    user: ['me'],
+  });
 
   await setPermissions('authenticated', {
     activity: [
