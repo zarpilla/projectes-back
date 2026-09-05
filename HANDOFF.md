@@ -103,10 +103,11 @@ resolves the frontend's **numeric ids** to v5 documentIds (`ctx.state.v3.numeric
 keeps ported controllers working).
 
 **Verification**: 83 backend unit tests, eslint clean, and
-`node tools/v5-smoke.mjs` in the frontend repo (18 checks: auth flow, list
+`node tools/v5-smoke.mjs` in the frontend repo (22 checks: auth flow, list
 screens, pagination meta, emulated `/count` — 20,992 orders matching the DB —
-timestamp aliases, populated relations, findOne by numeric id, and a
-create/update/delete round-trip). Probing the 94 endpoints the frontend calls:
+timestamp aliases, populated relations, `users/me` role + permissions,
+user-list paging, findOne by numeric id, and a create/update/delete
+round-trip). Probing the 94 endpoints the frontend calls:
 **90 pass**; the other 4 are the three `/count` paths (served client-side now)
 and `projects/dedications` correctly rejecting a missing required param.
 
@@ -224,6 +225,13 @@ scripts (`scripts/templates/pm2-app.config.js.template`, Dockerfile,
 - **Numeric ids**: `/api/<plural>/:id` resolves `:id` as a documentId. The
   `v3-compat` middleware rewrites numeric ids; controllers that need the numeric
   value must read `numericId(ctx)`, not `ctx.params.id`.
+- **Plugin routes bypass both compat paths.** `/api/users*` never reaches
+  `adaptCtxQuery`, addresses rows by NUMERIC id (so no documentId rewrite), and
+  hands its query to `query-params.transform`, which reads
+  `filters`/`sort`/`populate`/`start`/`limit` at the TOP level — not the nested
+  `pagination` object. `v3-compat` handles them separately, populating
+  `['role','permissions']` (the frontend authorization model is
+  `me.permissions.map(p => p.permission)`).
 - Admin API tokens (for curl testing): table `strapi_api_tokens`,
   `kind='content-api'`, `type='read-only'`, `access_key` = HMAC-SHA512 of the
   raw token salted with `API_TOKEN_SALT` from `.env`. Note: routes with
