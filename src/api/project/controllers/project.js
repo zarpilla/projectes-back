@@ -247,6 +247,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         'project_original_phases.expenses.expense_type',
         'project_original_phases.expenses.invoice',
         'project_original_phases.expenses.expense',
+        // v3 returned components without being asked; v5 omits them as soon as
+        // an explicit populate is given, and ProjectForm.getAuxiliarData() reads
+        // `form.periodification.length` unguarded — so the whole auxiliary-data
+        // setup threw on every load.
+        'periodification',
+        'grantable_years',
+        'grantable_contacts',
         ]),
       });
 
@@ -1481,6 +1488,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         'project_original_phases.expenses.expense_type',
         'project_original_phases.expenses.invoice',
         'project_original_phases.expenses.expense',
+        // v3 returned components without being asked; v5 omits them as soon as
+        // an explicit populate is given, and ProjectForm.getAuxiliarData() reads
+        // `form.periodification.length` unguarded — so the whole auxiliary-data
+        // setup threw on every load.
+        'periodification',
+        'grantable_years',
+        'grantable_contacts',
         ]),
       });
 
@@ -1551,6 +1565,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         'project_original_phases.expenses.expense_type',
         'project_original_phases.expenses.invoice',
         'project_original_phases.expenses.expense',
+        // v3 returned components without being asked; v5 omits them as soon as
+        // an explicit populate is given, and ProjectForm.getAuxiliarData() reads
+        // `form.periodification.length` unguarded — so the whole auxiliary-data
+        // setup threw on every load.
+        'periodification',
+        'grantable_years',
+        'grantable_contacts',
         ]),
       });
 
