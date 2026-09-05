@@ -5,33 +5,37 @@
  * These are the 5 non-CRUD endpoints; their handlers are stubbed
  * and throw "not yet ported" until Phase 4 ports each controller method.
  *
- * v5 namespaces these under /api/activities automatically.
+ * v5 mounts custom routes at /api + the path exactly as written — it does NOT
+ * namespace them by content type, so each path keeps its v3 plural prefix.
+ * The `01-` filename prefix matters: route files load in alphabetical order and
+ * the core router's `/<plural>/:id` would otherwise shadow static paths like
+ * `/<plural>/basic`.
  */
 module.exports = {
   routes: [
     {
       method: 'GET',
-      path: '/total-by-day',
+      path: '/activities/total-by-day',
       handler: 'activity.totalByDay',
     },
     {
       method: 'GET',
-      path: '/calendar',
+      path: '/activities/calendar',
       handler: 'activity.getForCalendar',
     },
     {
       method: 'GET',
-      path: '/import-calendar/:id',
+      path: '/activities/import-calendar/:id',
       handler: 'activity.importCalendar',
     },
     {
       method: 'POST',
-      path: '/move',
+      path: '/activities/move',
       handler: 'activity.move',
     },
     {
       method: 'GET',
-      path: '/import',
+      path: '/activities/import',
       handler: 'activity.importData',
     },
   ],

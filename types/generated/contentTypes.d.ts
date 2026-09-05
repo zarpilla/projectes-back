@@ -3256,7 +3256,7 @@ export interface PluginUsersPermissionsUser extends Struct.CollectionTypeSchema 
     provider: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
     resetPasswordToken: Schema.Attribute.String & Schema.Attribute.Private;
-    role: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.role'>;
+    role: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.role'>;
     tasks: Schema.Attribute.Relation<'oneToMany', 'api::task.task'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;

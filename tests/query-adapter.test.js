@@ -273,3 +273,50 @@ describe('adaptCtxQuery (v3 REST compatibility for core find)', () => {
     expect(ctx.query.fields).toEqual(['id']);
   });
 });
+
+describe('dbLimit / expandPopulate / v3FindArgs (db.query bridge)', () => {
+  const { adaptQuery, dbLimit, expandPopulate, v3FindArgs } = require('../src/services/query-adapter');
+
+  // knex emits `LIMIT -1` for a negative limit and MySQL rejects it; omitting
+  // the limit is how db.query says "all rows".
+  test('_limit=-1 becomes no limit for db.query', () => {
+    expect(dbLimit(adaptQuery({ _limit: '-1' }))).toBeUndefined();
+  });
+  test('a real limit passes through', () => {
+    expect(dbLimit(adaptQuery({ _limit: '25' }))).toBe(25);
+  });
+  test('no _limit means no limit', () => {
+    expect(dbLimit(adaptQuery({}))).toBeUndefined();
+    expect(dbLimit(undefined)).toBeUndefined();
+  });
+  // the REST path still needs the -1 (config/api.js maxLimit handles it)
+  test('the REST adapter keeps -1', () => {
+    expect(adaptQuery({ _limit: '-1' }).pagination).toEqual({ limit: -1 });
+  });
+
+  test('dotted v3 populate paths expand to nested v5 populate', () => {
+    expect(expandPopulate(['leader', 'phases', 'phases.incomes', 'phases.incomes.income_type']))
+      .toEqual({
+        leader: true,
+        phases: { populate: { incomes: { populate: { income_type: true } } } },
+      });
+  });
+  test('a deeper path already seen is not flattened back to true', () => {
+    expect(expandPopulate(['a.b', 'a'])).toEqual({ a: { populate: { b: true } } });
+  });
+  test('empty populate is omitted', () => {
+    expect(expandPopulate([])).toBeUndefined();
+    expect(expandPopulate(undefined)).toBeUndefined();
+  });
+
+  test('v3FindArgs builds db.query findMany args', () => {
+    expect(v3FindArgs({ _limit: '-1', _sort: 'name:ASC', mother: '5' }, ['leader']))
+      .toEqual({ where: { mother: 5 }, populate: { leader: true }, orderBy: [{ name: 'asc' }] });
+  });
+  test('v3FindArgs maps published_at_null=false onto publishedAt', () => {
+    expect(v3FindArgs({ published_at_null: 'false' }).where).toEqual({ publishedAt: { $notNull: true } });
+  });
+  test('v3FindArgs carries _start as offset', () => {
+    expect(v3FindArgs({ _start: '20', _limit: '10' })).toEqual({ where: {}, limit: 10, offset: 20 });
+  });
+});

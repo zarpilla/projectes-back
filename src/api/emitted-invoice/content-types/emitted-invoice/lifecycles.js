@@ -196,7 +196,7 @@ module.exports = {
     // Bulk-unlink orders via raw SQL (no lifecycle re-entry) — parameter-bound.
     const orders = await strapi.db
       .query('api::order.order')
-      .findMany({ where: { emitted_invoice: event.params.where.id }, limit: -1 });
+      .findMany({ where: { emitted_invoice: event.params.where.id } });
     if (orders && orders.length > 0) {
       const orderIds = orders.map((o) => o.id);
       const placeholders = orderIds.map(() => '?').join(',');

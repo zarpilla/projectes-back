@@ -36,9 +36,9 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
   async createAll(ctx) {
     const year = ctx.query.year;
 
-    const months = await strapi.db.query('api::month.month').findMany({ limit: -1 });
-    const years = await strapi.db.query('api::year.year').findMany({ limit: -1 });
-    const users = await strapi.db.query('plugin::users-permissions.user').findMany({ limit: -1 });
+    const months = await strapi.db.query('api::month.month').findMany({});
+    const years = await strapi.db.query('api::year.year').findMany({});
+    const users = await strapi.db.query('plugin::users-permissions.user').findMany({});
 
     const userPayrollsInfo = [];
 
@@ -48,13 +48,12 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
 
       const dedications = await strapi.db
         .query('api::daily-dedication.daily-dedication')
-        .findMany({ where: { users_permissions_user: user.id }, limit: -1 });
+        .findMany({ where: { users_permissions_user: user.id } });
 
       // Populate year/month so the existence check always has {id} objects.
       const userPayrolls = await strapi.db.query('api::payroll.payroll').findMany({
         where: { users_permissions_user: user.id },
         populate: { year: true, month: true, users_permissions_user: true },
-        limit: -1,
       });
 
       if (dedications && dedications.length) {

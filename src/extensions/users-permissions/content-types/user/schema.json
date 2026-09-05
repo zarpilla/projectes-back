@@ -48,9 +48,10 @@
     },
     "role": {
       "type": "relation",
-      "relation": "oneToOne",
+      "relation": "manyToOne",
       "target": "plugin::users-permissions.role",
-      "mappedBy": "users"
+      "inversedBy": "users",
+      "configurable": false
     },
     "hidden": {
       "type": "boolean",

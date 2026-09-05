@@ -4,7 +4,7 @@
  * phase-expense controller (v5). Ported from v3 api/phase-expense/controllers/phase-expense.js.
  */
 const { createCoreController } = require('@strapi/strapi').factories;
-const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 
 module.exports = createCoreController('api::phase-expense.phase-expense', ({ strapi }) => ({
@@ -25,7 +25,7 @@ module.exports = createCoreController('api::phase-expense.phase-expense', ({ str
     const phases = await strapi.db.query('api::phase-expense.phase-expense').findMany({
       where: opts.filters || {},
       populate: { expense: true, invoice: true },
-      limit: opts.pagination?.limit ?? -1,
+      limit: dbLimit(opts),
       orderBy: opts.sort,
     });
 

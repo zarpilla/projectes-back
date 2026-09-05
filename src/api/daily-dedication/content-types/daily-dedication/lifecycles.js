@@ -12,7 +12,7 @@ module.exports = {
     const data = event.data;
     const dedications = await strapi.db
       .query('api::daily-dedication.daily-dedication')
-      .findMany({ where: { users_permissions_user: data.users_permissions_user }, limit: -1 });
+      .findMany({ where: { users_permissions_user: data.users_permissions_user } });
 
     const invalids = dedications.filter(
       (d) => (data.to >= d.from && data.to <= d.to) || (data.from <= d.to && data.to >= d.from),
@@ -30,7 +30,7 @@ module.exports = {
     const id = event.params.where.id;
     const dedications = await strapi.db
       .query('api::daily-dedication.daily-dedication')
-      .findMany({ where: { users_permissions_user: data.users_permissions_user }, limit: -1 });
+      .findMany({ where: { users_permissions_user: data.users_permissions_user } });
     const others = dedications.filter((d) => String(d.id) !== String(id));
 
     const invalids = others.filter(
@@ -56,7 +56,6 @@ async function updateActivitiesPrice(data) {
       users_permissions_user: data.users_permissions_user,
       date: { $gte: data.from, $lte: data.to },
     },
-    limit: -1,
   });
   for (const ap of activities) {
     if (ap.cost_by_hour !== data.costByHour && data.costByHour !== null) {

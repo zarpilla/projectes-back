@@ -7,7 +7,7 @@
  * Data-access migration: strapi.query -> strapi.db.query; sanitizeEntity removed.
  */
 const { createCoreController } = require('@strapi/strapi').factories;
-const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 
 module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
@@ -28,7 +28,7 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
     const contacts = await strapi.db.query('api::contact.contact').findMany({
       where: opts.filters || {},
       populate: { projects: false },
-      limit: opts.pagination?.limit,
+      limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
     });
@@ -45,16 +45,14 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
 
     const contactsWithOwner = await strapi.db.query('api::contact.contact').findMany({
       where: { owner: { $notNull: true } },
-      limit: -1,
     });
 
     const orders = await strapi.db.query('api::order.order').findMany({
       where: { estimated_delivery_date: { $gte: oneYearAgo } },
       populate: { contact: true },
-      limit: -1,
     });
 
-    const owners = await strapi.db.query('plugin::users-permissions.user').findMany({ limit: -1 });
+    const owners = await strapi.db.query('plugin::users-permissions.user').findMany({});
 
     for (const order of orders) {
       if (order.contact) {
@@ -76,7 +74,6 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
 
     const cityRoutes = await strapi.db.query('api::city-route.city-route').findMany({
       populate: { city: true, route: true },
-      limit: -1,
     });
 
     for (const contact of contactsWithOwner) {
@@ -109,7 +106,6 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
     const orders = await strapi.db.query('api::order.order').findMany({
       where,
       populate: { contact: true },
-      limit: -1,
     });
 
     const contacts = [];
@@ -152,7 +148,7 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
 
       const orders = await strapi.db
         .query('api::order.order')
-        .findMany({ where: { contact: sourceContactId }, limit: -1 });
+        .findMany({ where: { contact: sourceContactId } });
 
       let movedCount = 0;
       for (const order of orders) {

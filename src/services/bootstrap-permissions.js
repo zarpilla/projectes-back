@@ -116,6 +116,20 @@ async function importSeedPermissions() {
   });
 
   await setPermissions('authenticated', {
+    // Present in the v3 authenticated role but missing from this matrix until
+    // P9 smoke-tested every screen: without them /api/months, /api/tickets,
+    // /api/time-counters, /api/diets, the grant endpoints and the config and
+    // home-menu single types all answer 403 to a logged-in user.
+    // (v3's `<type>.count` actions have no v5 equivalent — the frontend's
+    // `/count` calls are served from the list endpoint's meta.pagination.total.)
+    config: ['find'],
+    diet: ['find', 'findOne'],
+    'emitted-grant': ['find', 'findOne'],
+    'home-menu': ['find'],
+    month: ['find'],
+    'received-grant': ['find', 'findOne'],
+    ticket: ['find', 'findOne'],
+    'time-counter': ['create', 'find', 'findOne', 'update', 'delete'],
     activity: [
       'create',
       'find',

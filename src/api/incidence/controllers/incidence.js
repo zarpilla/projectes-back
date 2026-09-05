@@ -50,7 +50,9 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
         `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
     }
 
-    const limit = query._limit || -1;
+    // v3 sent _limit=-1 for 'all rows'; db.query says that by omitting the limit.
+    const limit =
+      query._limit && Number(query._limit) >= 0 ? parseInt(query._limit, 10) : undefined;
     const sort = query._sort || 'id:DESC';
     delete query._limit;
     delete query._sort;
@@ -66,14 +68,14 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
         closed_user: true,
         order: { populate: { owner: true, route: true } },
       },
-      limit: limit === -1 ? -1 : parseInt(limit),
+      limit,
       orderBy: sort.includes(':')
         ? { [sort.split(':')[0]]: sort.split(':')[1].toLowerCase() }
         : { id: 'desc' },
     });
 
     return incidences.map((incidence) => {
-      const createdAt = incidence.created_at ? moment(incidence.created_at) : null;
+      const createdAt = incidence.createdAt ? moment(incidence.createdAt) : null;
       return {
         id: incidence.id,
         count: 1,

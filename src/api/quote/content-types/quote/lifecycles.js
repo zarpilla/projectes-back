@@ -52,7 +52,7 @@ async function calculateTotals(data) {
       if (!data.number) {
         const quotes = await strapi.db
           .query('api::quote.quote')
-          .findMany({ where: { serial: data.serial }, limit: -1 });
+          .findMany({ where: { serial: data.serial } });
         data.number = quotes.length + 1;
       }
       const zeroPad = (num, places) => String(num).padStart(places, '0');

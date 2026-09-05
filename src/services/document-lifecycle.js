@@ -137,7 +137,6 @@ function createDocumentLifecycles({
         if (!data.number) {
           const existing = await strapi.db.query(uid).findMany({
             where: { serial: data.serial },
-            limit: -1,
           });
           data.number = existing.length + 1;
         }

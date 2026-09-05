@@ -48,7 +48,7 @@ async function calculatePrice(id, data) {
   if (data && !data.cost_by_hour && data.users_permissions_user) {
     const dedications = await strapi.db
       .query('api::daily-dedication.daily-dedication')
-      .findMany({ where: { users_permissions_user: data.users_permissions_user }, limit: -1 });
+      .findMany({ where: { users_permissions_user: data.users_permissions_user } });
     if (dedications.length) {
       const dedication = dedications.find((d) => d.from <= data.date && d.to >= data.date);
       if (dedication) {

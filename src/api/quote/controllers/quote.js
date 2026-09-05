@@ -6,6 +6,7 @@
  * (v5 removed afterFindOne): defaults the pdf field to the frontend quote URL.
  */
 const { createCoreController } = require('@strapi/strapi').factories;
+const { numericId } = require('../../../middlewares/v3-compat');
 const { adaptCtxQuery } = require('../../../services/query-adapter');
 
 module.exports = createCoreController('api::quote.quote', ({ strapi }) => ({
@@ -23,7 +24,7 @@ module.exports = createCoreController('api::quote.quote', ({ strapi }) => ({
     if (quote && !quote.pdf) {
       const config = await strapi.documents('api::config.config').findFirst();
       if (config?.front_url) {
-        quote.pdf = `${config.front_url}quote/${ctx.params.id}`;
+        quote.pdf = `${config.front_url}quote/${numericId(ctx)}`;
       }
     }
     return response;

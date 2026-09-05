@@ -16,7 +16,7 @@ const moment = require('moment');
 const sharp = require('sharp');
 const MicroInvoice = require('../../../../utils/microinvoice');
 const { createCoreController } = require('@strapi/strapi').factories;
-const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { rawExecute } = require('../../../services/raw-sql');
 
@@ -40,13 +40,12 @@ const formatCurrency = (val) => {
 const getEntityInfo = async (entityUid) => {
   const documents = await strapi.db.query(entityUid).findMany({
     where: { vat_paid_date: { $null: true } },
-    limit: -1,
   });
   return { documents, total_vat: _.sumBy(documents, 'total_vat') };
 };
 
 const getYearsInfo = async () => {
-  return strapi.db.query('api::year.year').findMany({ limit: -1 });
+  return strapi.db.query('api::year.year').findMany({});
 };
 
 /**
@@ -124,7 +123,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     return strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
       where: opts.filters || {},
       populate: { contact: true, projects: true, document_type: true },
-      limit: opts.pagination?.limit,
+      limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
     });
@@ -533,13 +532,13 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
       const user = ctx.state.user;
       const providers = await strapi.db
         .query('api::contact.contact')
-        .findMany({ where: { users_permissions_user: user.id }, limit: -1 });
+        .findMany({ where: { users_permissions_user: user.id } });
       const providerIds = providers.map((p) => p.id);
       if (!providerIds.length) return { invoices: [] };
 
       const invoices = await strapi.db
         .query('api::emitted-invoice.emitted-invoice')
-        .findMany({ where: { contact: { $in: providerIds } }, limit: -1 });
+        .findMany({ where: { contact: { $in: providerIds } } });
 
       return { invoices: invoices.filter((i) => i.paid !== true && i.sent) };
     } catch (error) {

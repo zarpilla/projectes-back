@@ -61,6 +61,9 @@ module.exports = (config, { strapi }) => async (ctx, next) => {
       .query(uid)
       .findOne({ where: { id: Number(idSegment) }, select: ['documentId'] });
     if (row && row.documentId) {
+      // Ported controllers that still address rows by their numeric id read this
+      // (see numericId() below) — ctx.params.id is the documentId from here on.
+      ctx.state.v3 = { numericId: Number(idSegment), documentId: row.documentId };
       ctx.path = `/api/${plural}/${encodeURIComponent(row.documentId)}`;
     }
   }
@@ -72,3 +75,16 @@ module.exports = (config, { strapi }) => async (ctx, next) => {
 
   return next();
 };
+
+/**
+ * The numeric id of the addressed row, for controllers ported from v3 that query
+ * `where: { id }` or build v3-style URLs. Falls back to `ctx.params.id` when the
+ * middleware did not rewrite (custom routes keep their numeric params).
+ */
+function numericId(ctx) {
+  const fromState = ctx && ctx.state && ctx.state.v3 && ctx.state.v3.numericId;
+  if (fromState !== undefined && fromState !== null) return fromState;
+  return ctx && ctx.params ? ctx.params.id : undefined;
+}
+
+module.exports.numericId = numericId;

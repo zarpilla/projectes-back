@@ -5,38 +5,42 @@
  * These are the 6 non-CRUD endpoints; their handlers are stubbed
  * and throw "not yet ported" until Phase 4 ports each controller method.
  *
- * v5 namespaces these under /api/emitted-invoices automatically.
+ * v5 mounts custom routes at /api + the path exactly as written — it does NOT
+ * namespace them by content type, so each path keeps its v3 plural prefix.
+ * The `01-` filename prefix matters: route files load in alphabetical order and
+ * the core router's `/<plural>/:id` would otherwise shadow static paths like
+ * `/<plural>/basic`.
  */
 module.exports = {
   routes: [
     {
       method: 'GET',
-      path: '/basic',
+      path: '/emitted-invoices/basic',
       handler: 'emitted-invoice.findBasic',
     },
     {
       method: 'POST',
-      path: '/pay-vat',
+      path: '/emitted-invoices/pay-vat',
       handler: 'emitted-invoice.payVat',
     },
     {
       method: 'POST',
-      path: '/pay-vat-ids',
+      path: '/emitted-invoices/pay-vat-ids',
       handler: 'emitted-invoice.payVatIds',
     },
     {
       method: 'POST',
-      path: '/send-email/:id',
+      path: '/emitted-invoices/send-email/:id',
       handler: 'emitted-invoice.sendInvoiceByEmail',
     },
     {
       method: 'GET',
-      path: '/pending-provider',
+      path: '/emitted-invoices/pending-provider',
       handler: 'emitted-invoice.pendingProvider',
     },
     {
       method: 'GET',
-      path: '/pdf/:doc/:id',
+      path: '/emitted-invoices/pdf/:doc/:id',
       handler: 'emitted-invoice.pdf',
     },
   ],

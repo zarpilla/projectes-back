@@ -19,7 +19,7 @@ const QRCode = require('qrcode');
 const PDFMerge = require('pdf-merge');
 const MicroInvoiceOrder = require('../../../../utils/microinvoice-order');
 const { createCoreController } = require('@strapi/strapi').factories;
-const { adaptQuery, adaptCtxQuery } = require('../../../services/query-adapter');
+const { adaptQuery, adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { rawExecute } = require('../../../services/raw-sql');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
@@ -109,7 +109,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
         acc[p] = true;
         return acc;
       }, {}),
-      limit: opts.pagination?.limit,
+      limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
     });
@@ -143,7 +143,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
         pickup: true,
         delivery_type: true,
       },
-      limit: opts.pagination?.limit,
+      limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
     });
@@ -161,7 +161,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
           city: o.contact_city || '-',
           units: o.units || 0,
           kilograms: o.kilograms || 0,
-          created_at: o.created_at,
+          created_at: o.createdAt,
           route: o.route ? o.route.short_name || o.route?.name : '-',
           refrigerated: o.refrigerated,
           fragile: o.fragile,
@@ -276,7 +276,6 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
     const ordersEntities = await strapi.db.query('api::order.order').findMany({
       where: { id: { $in: orderIds } },
-      limit: -1,
     });
     log('ORDERS_FETCHED', `${ordersEntities.length} orders loaded`);
 
@@ -286,7 +285,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     const paymentMethods = await strapi.db.query('api::payment-method.payment-method').findMany({});
     const paymentMethod = paymentMethods.length > 0 ? paymentMethods[0].id : null;
 
-    const allContacts = await strapi.db.query('api::contact.contact').findMany({ limit: -1 });
+    const allContacts = await strapi.db.query('api::contact.contact').findMany({});
     log('CONTACTS_FETCHED', `${allContacts.length} contacts fetched`);
 
     const contactsByOwnerId = {};
@@ -557,7 +556,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       }
       const hash = crypto
         .createHash('md5')
-        .update(`${myInvoice.options.data.invoice.name}-${order.created_at}-${order.id}`)
+        .update(`${myInvoice.options.data.invoice.name}-${order.createdAt}-${order.id}`)
         .digest('hex');
       const docName = `./public/uploads/orders/${order.id}-H${hash.substring(16)}.pdf`;
       await myInvoice.generate(docName);
@@ -588,7 +587,6 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
         estimated_delivery_date: moment(date).format('YYYY-MM-DD'),
         contact: contactId,
       },
-      limit: -1,
     });
 
     const others = id
@@ -623,7 +621,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
       const cityRoutes = await strapi.db
         .query('api::city-route.city-route')
-        .findMany({ where: { city: cities[0].id }, populate: { route: true }, limit: -1 });
+        .findMany({ where: { city: cities[0].id }, populate: { route: true } });
       if (!cityRoutes.length) return [];
 
       const routeIds = cityRoutes
@@ -633,7 +631,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
       const routes = await strapi.db
         .query('api::route.route')
-        .findMany({ where: { id: { $in: routeIds }, active: true }, limit: -1 });
+        .findMany({ where: { id: { $in: routeIds }, active: true } });
       return routes || [];
     } catch (error) {
       console.error('Error fetching collection point routes:', error);

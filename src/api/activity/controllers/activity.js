@@ -17,7 +17,7 @@ const { RRule } = require('rrule');
 const { google } = require('googleapis');
 const fs = require('fs');
 const { createCoreController } = require('@strapi/strapi').factories;
-const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { scheduleRefresh } = require('../../project/services/totalsRefreshScheduler');
 
@@ -39,7 +39,7 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
     const activities = await strapi.db.query('api::activity.activity').findMany({
       where: opts.filters || {},
       populate: { project: true, users_permissions_user: true },
-      limit: opts.pagination?.limit,
+      limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
     });
@@ -70,7 +70,7 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
     const activities = await strapi.db.query('api::activity.activity').findMany({
       where: opts.filters || {},
       populate: { project: { select: ['id'] } },
-      limit: opts.pagination?.limit,
+      limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
     });
@@ -309,7 +309,6 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
       if (user) where.users_permissions_user = user;
       const activities = await strapi.db.query('api::activity.activity').findMany({
         where,
-        limit: -1,
       });
       for (const a of activities) {
         // Direct db.update skips project beforeUpdate lifecycle (which reruns the

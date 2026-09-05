@@ -3,7 +3,13 @@
 const { createCoreController } = require('@strapi/strapi').factories;
 const _ = require('lodash');
 const moment = require('moment');
-const { adaptQuery, adaptCtxQuery } = require('../../../services/query-adapter');
+const {
+  adaptQuery,
+  adaptCtxQuery,
+  expandPopulate,
+  v3FindArgs,
+} = require('../../../services/query-adapter');
+const { numericId } = require('../../../middlewares/v3-compat');
 const { getDailyDedications, getFestives } = require('../services/projectCache');
 const {
   buildProjectRows,
@@ -29,7 +35,7 @@ const doProjectInfoCalculations = async (data, id) => {
   const me = await strapi.documents('api::me.me').findFirst();
   const fallback_deductible_vat_pct =
     me.options && me.options.deductible_vat_pct ? me.options.deductible_vat_pct : 100.0;
-  const yearEntities = await strapi.db.query('api::year.year').findMany({ limit: -1 });
+  const yearEntities = await strapi.db.query('api::year.year').findMany({});
   const deductibleVatPctByYear = new Map(
     (yearEntities || [])
       .filter((y) => y && y.year)
@@ -201,9 +207,11 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   async calculateProject2(ctx) {
     const id = ctx.params.id;
 
-    const dataPhases = await strapi
-      .query('project')
-      .findOne({ id: id }, [
+    const dataPhases = await strapi.db
+      .query('api::project.project')
+      .findOne({
+        where: { id },
+        populate: expandPopulate([
         'project_phases',
         'project_phases.incomes',
         'project_phases.incomes.estimated_hours',
@@ -226,7 +234,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         'project_original_phases.expenses.expense_type',
         'project_original_phases.expenses.invoice',
         'project_original_phases.expenses.expense',
-      ]);
+        ]),
+      });
 
     const moreData = await doProjectInfoCalculations(dataPhases, id);
 
@@ -305,9 +314,10 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     // only published
     ctx.query.published_at_null = false;
     if (ctx.query._q) {
-      projects = await strapi
-        .query('project')
-        .findMany(ctx.query, [
+      projects = await strapi.db
+        .query('api::project.project')
+        .findMany(
+          v3FindArgs(ctx.query, [
           'leader',
           'project_scope',
           'project_likelihood',
@@ -316,11 +326,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           'clients',
           'activity_types',
           'global_activity_types',
-        ]);
+          ]),
+        );
     } else {
-      projects = await strapi
-        .query('project')
-        .findMany(ctx.query, [
+      projects = await strapi.db
+        .query('api::project.project')
+        .findMany(
+          v3FindArgs(ctx.query, [
           'leader',
           'project_scope',
           'project_likelihood',
@@ -329,7 +341,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           'clients',
           'activity_types',
           'global_activity_types',
-        ]);
+          ]),
+        );
     }
 
     // Removing some info
@@ -670,9 +683,9 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       );
     }
 
-    promises.push(strapi.db.query('api::daily-dedication.daily-dedication').findMany({ limit: -1 }));
+    promises.push(strapi.db.query('api::daily-dedication.daily-dedication').findMany({}));
 
-    promises.push(strapi.db.query('api::festive.festive').findMany({ limit: -1 }));
+    promises.push(strapi.db.query('api::festive.festive').findMany({}));
 
     const results = await Promise.all(promises);
 
@@ -737,7 +750,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     const me = await strapi.documents('api::me.me').findFirst();
     const fallback_deductible_vat_pct =
       me.options && me.options.deductible_vat_pct ? me.options.deductible_vat_pct : 100.0;
-    const yearEntities = await strapi.db.query('api::year.year').findMany({ limit: -1 });
+    const yearEntities = await strapi.db.query('api::year.year').findMany({});
     const deductibleVatPctByYear = new Map(
       (yearEntities || [])
         .filter((y) => y && y.year)
@@ -896,30 +909,34 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     const promises = [];
     if (query._q) {
       promises.push(
-        strapi
-          .query('project')
-          .findMany(query, [
+        strapi.db
+          .query('api::project.project')
+          .findMany(
+            v3FindArgs(query, [
             'project_original_phases',
             'project_original_phases.incomes',
             'project_original_phases.incomes.estimated_hours',
             'project_original_phases.incomes.estimated_hours.users_permissions_user',
-          ]),
+            ]),
+          ),
       );
     } else {
       promises.push(
-        strapi
-          .query('project')
-          .find(query, [
+        strapi.db
+          .query('api::project.project')
+          .findMany(
+            v3FindArgs(query, [
             'project_original_phases',
             'project_original_phases.incomes',
             'project_original_phases.incomes.estimated_hours',
             'project_original_phases.incomes.estimated_hours.users_permissions_user',
-          ]),
+            ]),
+          ),
       );
     }
 
-    promises.push(strapi.db.query('api::daily-dedication.daily-dedication').findMany({ limit: -1 }));
-    promises.push(strapi.db.query('api::festive.festive').findMany({ limit: -1 }));
+    promises.push(strapi.db.query('api::daily-dedication.daily-dedication').findMany({}));
+    promises.push(strapi.db.query('api::festive.festive').findMany({}));
 
     const results = await Promise.all(promises);
 
@@ -1240,7 +1257,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   },
 
   // async updatePhases(ctx) {
-  //   const projects = await strapi.db.query('api::project.project').findMany({ limit: -1 });
+  //   const projects = await strapi.db.query('api::project.project').findMany({});
 
   //   for (let i = 0; i < projects.length; i++) {
   //     const project = projects[i];
@@ -1329,11 +1346,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   },
 
   async findOne(ctx) {
-    const { id } = ctx.params;
+    const id = numericId(ctx);
     // Load project with all necessary relations for calculation
-    const data = await strapi
-      .query('project')
-      .findOne({ id: id }, [
+    const data = await strapi.db
+      .query('api::project.project')
+      .findOne({
+        where: { id },
+        populate: expandPopulate([
         'leader',
         'project_scope',
         'project_state',
@@ -1377,7 +1396,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         'project_original_phases.expenses.expense_type',
         'project_original_phases.expenses.invoice',
         'project_original_phases.expenses.expense',
-      ]);
+        ]),
+      });
 
     // Calculate fresh totals to ensure consistency with calculate endpoint
     // This ensures reports and lists get accurate totals from find/findOne methods
@@ -1397,11 +1417,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     return data;
   },
   async findOneExtended(ctx) {
-    const { id } = ctx.params;
+    const id = numericId(ctx);
     // const data = await strapi.db.query('api::project.project').findOne({ where: { id } });
-    const data = await strapi
-      .query('project')
-      .findOne({ id: id }, [
+    const data = await strapi.db
+      .query('api::project.project')
+      .findOne({
+        where: { id },
+        populate: expandPopulate([
         'leader',
         'project_scope',
         'project_likelihood',
@@ -1444,7 +1466,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         'project_original_phases.expenses.expense_type',
         'project_original_phases.expenses.invoice',
         'project_original_phases.expenses.expense',
-      ]);
+        ]),
+      });
 
     return data;
   },
@@ -1604,7 +1627,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       } else {
         const incomesOfPhase = await strapi.db
           .query('api::phase-income.phase-income')
-          .findMany({ where: { project_phase: phase }, limit: -1 });
+          .findMany({ where: { project_phase: phase } });
         for await (const income of incomesOfPhase) {
           await strapi.db.query('api::phase-income.phase-income').deleteMany({ where: { id: income.id } });
         }
@@ -1754,7 +1777,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     console.log('deleted project-original-phases');
     console.log('deleted all!!!');
 
-    const projects = await strapi.db.query('api::project.project').findMany({ limit: -1 });
+    const projects = await strapi.db.query('api::project.project').findMany({});
 
     for await (const p of projects) {
       // copy p.phases to project-phase
@@ -1853,7 +1876,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
               quantity_type: estimated_hours.quantity_type,
               phase_income: newIncome.id,
             };
-            const newEstimatedHours = await strapi.query('estimated-hours').create(data);
+            const newEstimatedHours = await strapi.db.query('api::estimated-hour.estimated-hour').create({ data });
           }
         }
         for await (const expense of ph.expenses) {
@@ -1891,7 +1914,7 @@ async function calculateMotherProjectTotals(motherProject) {
   try {
     const children = await strapi.db
       .query('api::project.project')
-      .findMany({ where: { mother: motherProject.id }, limit: -1 });
+      .findMany({ where: { mother: motherProject.id } });
     if (!children || children.length === 0) return;
 
     for (const f of [

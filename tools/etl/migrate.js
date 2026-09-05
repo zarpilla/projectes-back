@@ -329,7 +329,19 @@ async function main() {
             `SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_name = 'users_permissions_user_role_lnk'`,
             [TO],
           );
-          if (lnkExists.length) await conn.query(roleSql);
+          if (lnkExists.length) {
+            const [lnkRes] = await q(conn, roleSql);
+            stats.copied.push({ table: 'users_permissions_user_role_lnk', rows: lnkRes.affectedRows });
+          } else {
+            // Silently skipping this used to leave every migrated user role-less,
+            // which 401s the whole content API (the auth strategy reads
+            // user.role.id). Fail loudly instead — a missing link table means the
+            // v5 schema was not generated, or the user.role relation is declared
+            // on the non-owning side.
+            throw new Error(
+              `${TO}.users_permissions_user_role_lnk is missing — boot the v5 app once against ${TO} to generate the schema before migrating users`,
+            );
+          }
         }
       }
     }

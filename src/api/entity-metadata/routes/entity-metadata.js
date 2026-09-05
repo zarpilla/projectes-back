@@ -10,7 +10,7 @@ module.exports = {
   routes: [
     {
       method: 'GET',
-      path: '/admin-entities',
+      path: '/entity-metadata/admin-entities',
       handler: 'entity-metadata.adminEntities',
       config: {
         // v5: authentication is declared via `auth` (the users-permissions strategy),

@@ -2,7 +2,7 @@
 
 /**
  * project-likelihood core router (v5). Registers standard CRUD routes at /api/<plural>.
- * Custom (non-CRUD) routes live in routes/custom-project-likelihood.js.
+ * Custom (non-CRUD) routes live in routes/01-custom-project-likelihood.js.
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 

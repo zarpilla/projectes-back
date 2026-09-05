@@ -76,7 +76,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     // Fetch all validations
     const validations = await strapi.db
       .query('api::treasury-validation.treasury-validation')
-      .findMany({ limit: -1 });
+      .findMany({});
 
     // Create a map for quick lookup: validationKey -> true
     const validationMap = {};
@@ -87,31 +87,26 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
     const treasuries = await strapi.db
       .query('api::treasury.treasury')
-      .findMany({ populate: { bank_account: true, project: true }, limit: -1 });
+      .findMany({ populate: { bank_account: true, project: true } });
 
     const emitted = await strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
       populate: { bank_account: true, project: true, projects: true, contact: true },
-      limit: -1,
     });
 
     const received = await strapi.db.query('api::received-invoice.received-invoice').findMany({
       populate: { bank_account: true, project: true, projects: true, contact: true },
-      limit: -1,
     });
 
     const receivedIncomes = await strapi.db.query('api::received-income.received-income').findMany({
       populate: { bank_account: true, project: true, projects: true, contact: true, document_type: true },
-      limit: -1,
     });
 
     const receivedExpenses = await strapi.db.query('api::received-expense.received-expense').findMany({
       populate: { bank_account: true, project: true, projects: true, contact: true, document_type: true },
-      limit: -1,
     });
 
     const payrolls = await strapi.db.query('api::payroll.payroll').findMany({
       populate: { bank_account: true, year: true, month: true, users_permissions_user: true },
-      limit: -1,
     });
 
     // Fetch ALL projects (we'll filter in JavaScript)
@@ -138,7 +133,6 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         },
         periodification: true,
       },
-      limit: -1,
     });
 
     // Filter out mother projects (is_mother === true) for unpaid items processing
@@ -202,9 +196,9 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       return ids.some((id) => allowedProjectIds.has(id));
     };
 
-    const years = await strapi.db.query('api::year.year').findMany({ limit: -1 });
+    const years = await strapi.db.query('api::year.year').findMany({});
 
-    const bankAccounts = await strapi.db.query('api::bank-account.bank-account').findMany({ limit: -1 });
+    const bankAccounts = await strapi.db.query('api::bank-account.bank-account').findMany({});
 
     const me = await strapi.documents('api::me.me').findFirst();
 
@@ -245,7 +239,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
     // Process filtered projects to find unpaid incomes and expenses
     for (let p of projects) {
-      for (let ph of p.project_phases) {
+      for (let ph of p.project_phases || []) {
         for (let e of ph.expenses || []) {
           if (!e.paid) {
             // Calculate total with VAT if vat_pct is available

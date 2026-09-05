@@ -2,7 +2,7 @@
 
 /**
  * treasury-validation core router (v5). Registers standard CRUD routes at /api/<plural>.
- * Custom (non-CRUD) routes live in routes/custom-treasury-validation.js.
+ * Custom (non-CRUD) routes live in routes/01-custom-treasury-validation.js.
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 

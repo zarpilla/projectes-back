@@ -2,7 +2,7 @@
 
 /**
  * pickup core router (v5). Registers standard CRUD routes at /api/<plural>.
- * Custom (non-CRUD) routes live in routes/custom-pickup.js.
+ * Custom (non-CRUD) routes live in routes/01-custom-pickup.js.
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 

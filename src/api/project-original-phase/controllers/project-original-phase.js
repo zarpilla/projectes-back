@@ -4,7 +4,7 @@
  * project-original-phase controller (v5). Ported from v3 api/project-original-phases/controllers.
  */
 const { createCoreController } = require('@strapi/strapi').factories;
-const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 
 module.exports = createCoreController('api::project-original-phase.project-original-phase', ({ strapi }) => ({
@@ -38,7 +38,7 @@ module.exports = createCoreController('api::project-original-phase.project-origi
           populate: { invoice: true, expense: true, expense_type: true, bank_account: true },
         },
       },
-      limit: opts.pagination?.limit ?? -1,
+      limit: dbLimit(opts),
       orderBy: opts.sort,
     });
   },

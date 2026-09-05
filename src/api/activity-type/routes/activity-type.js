@@ -2,7 +2,7 @@
 
 /**
  * activity-type core router (v5). Registers standard CRUD routes at /api/<plural>.
- * Custom (non-CRUD) routes live in routes/custom-activity-type.js.
+ * Custom (non-CRUD) routes live in routes/01-custom-activity-type.js.
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 

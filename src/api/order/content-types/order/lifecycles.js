@@ -42,7 +42,6 @@ const checkVolumeDiscount = async (id, date, routeId, ownerId, currentStatus) =>
   // Find all orders for the same route, date, and owner (excluding cancelled and this order)
   const ordersOfDateRouteOwner = await strapi.db.query('api::order.order').findMany({
     where: { estimated_delivery_date: moment(date).format('YYYY-MM-DD'), route: routeId, owner: ownerId },
-    limit: -1,
   });
 
   const others = ordersOfDateRouteOwner.filter(
@@ -191,7 +190,6 @@ const processVolumeDiscountForOtherOrders = async (orderId, currentData, previou
 const checkMultidelivery = async (id, date, contactId, currentStatus) => {
   const ordersOfDateAndContact = await strapi.db.query('api::order.order').findMany({
     where: { estimated_delivery_date: moment(date).format('YYYY-MM-DD'), contact: contactId },
-    limit: -1,
   });
 
   const others = ordersOfDateAndContact.filter(
@@ -300,7 +298,7 @@ const calculateRouteForCollectionPoint = async (collectionPointContact) => {
   // Find route that serves this city
   const cityRoutes = await strapi.db
     .query('api::city-route.city-route')
-    .findMany({ where: { city: cityId }, limit: -1 });
+    .findMany({ where: { city: cityId } });
   if (!cityRoutes || cityRoutes.length === 0) {
     return null;
   }
@@ -454,7 +452,7 @@ const calculateTransferRoute = async (estimatedDeliveryDate) => {
   // Get all active transfer routes
   const transferRoutes = await strapi.db
     .query('api::route.route')
-    .findMany({ where: { is_transfer_route: true, active: true }, limit: -1 });
+    .findMany({ where: { is_transfer_route: true, active: true } });
 
   if (!transferRoutes || transferRoutes.length === 0) {
     return { transfer_route: null, transfer_route_date: null };
@@ -737,7 +735,6 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
       status_nin: ['cancelled', 'invoiced'],
       _sort: 'id:ASC',
     },
-    limit: -1,
   });
 
   const existingCollectionOrdersByDate = (existingCollectionOrdersRaw || []).filter((co) => {
@@ -752,7 +749,7 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
   for (const co of existingCollectionOrdersByDate) {
     const linkedOrders = await strapi.db
       .query('api::order.order')
-      .findMany({ where: { collection_order: co.id, status_nin: ['cancelled', 'invoiced'] }, limit: -1 });
+      .findMany({ where: { collection_order: co.id, status_nin: ['cancelled', 'invoiced'] } });
 
     const hasMixedLinkedDates = (linkedOrders || []).some((linkedOrder) => {
       const linkedPickupDate = normalizeOrderDate(
@@ -946,7 +943,6 @@ const checkAndUpdateCollectionOrderStatus = async (collectionOrderId) => {
   // Get all related orders (exclude cancelled and invoiced orders)
   const relatedOrders = await strapi.db.query('api::order.order').findMany({
     where: { collection_order: collectionOrderId, status_nin: ['cancelled', 'invoiced'] },
-    limit: -1,
   });
 
   if (!relatedOrders || relatedOrders.length === 0) {
@@ -993,7 +989,6 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   // Get all related orders (exclude cancelled and invoiced orders from aggregation)
   const relatedOrders = await strapi.db.query('api::order.order').findMany({
     where: { collection_order: collectionOrderId, status_nin: ['cancelled', 'invoiced'] },
-    limit: -1,
   });
 
   // If no related orders and status is pending, deposited, or processed, reset aggregates to 0
@@ -1073,7 +1068,7 @@ const calculateCollectionOrderRouteRate = async (collectionOrder, kilograms) => 
     : null;
 
   // Get all route rates
-  let routeRates = await strapi.db.query('api::route-rate.route-rate').findMany({ where: {}, limit: -1 });
+  let routeRates = await strapi.db.query('api::route-rate.route-rate').findMany({ where: {} });
 
   // Filter by route (rates that apply to this route or all routes)
   routeRates = routeRates.filter((r) => {
@@ -1207,7 +1202,7 @@ const processIncidences = async (orderId, incidences, trackingUser) => {
     // Get existing incidences for this order
     const existingIncidences = await strapi.db
       .query('api::incidence.incidence')
-      .findMany({ where: { order: orderId }, limit: -1 });
+      .findMany({ where: { order: orderId } });
 
     // Create a map of existing incidences by ID for quick lookup
     const existingMap = new Map(existingIncidences.map((inc) => [inc.id, inc]));

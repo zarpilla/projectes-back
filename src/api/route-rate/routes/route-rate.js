@@ -2,7 +2,7 @@
 
 /**
  * route-rate core router (v5). Registers standard CRUD routes at /api/<plural>.
- * Custom (non-CRUD) routes live in routes/custom-route-rate.js.
+ * Custom (non-CRUD) routes live in routes/01-custom-route-rate.js.
  */
 const { createCoreRouter } = require('@strapi/strapi').factories;
 

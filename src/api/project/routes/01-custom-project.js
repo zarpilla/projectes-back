@@ -5,98 +5,102 @@
  * These are the 18 non-CRUD endpoints; their handlers are stubbed
  * and throw "not yet ported" until Phase 4 ports each controller method.
  *
- * v5 namespaces these under /api/projects automatically.
+ * v5 mounts custom routes at /api + the path exactly as written — it does NOT
+ * namespace them by content type, so each path keeps its v3 plural prefix.
+ * The `01-` filename prefix matters: route files load in alphabetical order and
+ * the core router's `/<plural>/:id` would otherwise shadow static paths like
+ * `/<plural>/basic`.
  */
 module.exports = {
   routes: [
     {
       method: 'GET',
-      path: '/basic',
+      path: '/projects/basic',
       handler: 'project.findWithBasicInfo',
     },
     {
       method: 'GET',
-      path: '/estimated-totals',
+      path: '/projects/estimated-totals',
       handler: 'project.findEstimatedTotalsByDay',
     },
     {
       method: 'GET',
-      path: '/verify-stored-totals',
+      path: '/projects/verify-stored-totals',
       handler: 'project.verifyStoredTotals',
     },
     {
       method: 'GET',
-      path: '/refresh-stored-totals',
+      path: '/projects/refresh-stored-totals',
       handler: 'project.refreshStoredTotals',
     },
     {
       method: 'GET',
-      path: '/name',
+      path: '/projects/name',
       handler: 'project.findNames',
     },
     {
       method: 'GET',
-      path: '/reset',
+      path: '/projects/reset',
       handler: 'project.reset',
     },
     {
       method: 'GET',
-      path: '/phases',
+      path: '/projects/phases',
       handler: 'project.findWithPhases',
     },
     {
       method: 'GET',
-      path: '/phases-both',
+      path: '/projects/phases-both',
       handler: 'project.findWithPhasesBoth',
     },
     {
       method: 'GET',
-      path: '/dedications',
+      path: '/projects/dedications',
       handler: 'project.findDedications',
     },
     {
       method: 'GET',
-      path: '/real-dedications',
+      path: '/projects/real-dedications',
       handler: 'project.findRealDedications',
     },
     {
       method: 'GET',
-      path: '/economic-detail',
+      path: '/projects/economic-detail',
       handler: 'project.findWithEconomicDetail',
     },
     {
       method: 'GET',
-      path: '/update-phases',
+      path: '/projects/update-phases',
       handler: 'project.updatePhases',
     },
     {
       method: 'GET',
-      path: '/:id/children',
+      path: '/projects/:id/children',
       handler: 'project.findChildren',
     },
     {
       method: 'GET',
-      path: '/:id/phases',
+      path: '/projects/:id/phases',
       handler: 'project.findOneExtended',
     },
     {
       method: 'GET',
-      path: '/:id/calculate',
+      path: '/projects/:id/calculate',
       handler: 'project.calculateProject2',
     },
     {
       method: 'POST',
-      path: '/create-phases',
+      path: '/projects/create-phases',
       handler: 'project.createPhasesForAllProjects',
     },
     {
       method: 'PUT',
-      path: '/:id/pay-expense/:expense',
+      path: '/projects/:id/pay-expense/:expense',
       handler: 'project.payExpense',
     },
     {
       method: 'PUT',
-      path: '/:id/pay-income/:income',
+      path: '/projects/:id/pay-income/:income',
       handler: 'project.payIncome',
     },
   ],

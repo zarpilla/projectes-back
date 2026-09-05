@@ -102,6 +102,23 @@ function coerceScalar(v) {
  * (e.g. created_at_gte + created_at_lte → { created_at: { $gte, $lte } }).
  */
 function applyOp(filters, field, op, value) {
+  // v3 addressed relation fields with a dotted path (`_where[contact_types.id]`,
+  // `owner.id=3`). v5 filters are nested objects, so walk the path and apply the
+  // operator on the leaf.
+  if (field.includes('.')) {
+    const segments = field.split('.');
+    const leaf = segments.pop();
+    let node = filters;
+    for (const segment of segments) {
+      const existing = node[segment];
+      if (existing === undefined || typeof existing !== 'object' || Array.isArray(existing)) {
+        node[segment] = {};
+      }
+      node = node[segment];
+    }
+    applyOp(node, leaf, op, value);
+    return filters;
+  }
   if (op === null || op === '_eq') {
     // bare field=value, or field_eq → scalar (v5 accepts field: value as $eq).
     // If the field already has operator(s), wrap as $eq and merge.
@@ -241,6 +258,82 @@ function adaptQuery(query, opts = {}) {
 }
 
 /**
+ * v3 `strapi.query(uid).find(params, populate)` took populate as a flat array of
+ * dotted paths (`['project_phases', 'project_phases.incomes']`). v5 db.query
+ * wants a nested object, so expand one into the other.
+ *
+ * @param {string[]} paths
+ * @returns {object|undefined} v5 populate object (undefined for an empty list)
+ */
+function expandPopulate(paths) {
+  if (!Array.isArray(paths) || paths.length === 0) return undefined;
+  const root = {};
+  for (const p of paths) {
+    const segments = String(p).split('.').filter(Boolean);
+    let node = root;
+    for (let i = 0; i < segments.length; i++) {
+      const key = segments[i];
+      const last = i === segments.length - 1;
+      const existing = node[key];
+      if (last) {
+        if (existing === undefined) node[key] = true;
+        // a deeper path already created the object form — keep it
+      } else {
+        if (existing === undefined || existing === true) node[key] = { populate: {} };
+        node = node[key].populate;
+      }
+    }
+  }
+  return root;
+}
+
+/**
+ * v3's `_limit=-1` ("return everything") has no equivalent in `strapi.db.query`:
+ * knex would emit `LIMIT -1`, which MySQL rejects. Omitting the limit is how v5
+ * says "all rows", so custom controllers reading `adaptQuery` output must go
+ * through this rather than passing `pagination.limit` straight to db.query.
+ * (The REST path is different — `adaptCtxQuery` keeps the -1, which the REST
+ * layer maps onto config/api.js `maxLimit`.)
+ *
+ * @param {object} opts the object returned by adaptQuery
+ * @returns {number|undefined}
+ */
+function dbLimit(opts) {
+  const limit = opts && opts.pagination && opts.pagination.limit;
+  if (limit === undefined || limit === null || limit < 0) return undefined;
+  return limit;
+}
+
+/**
+ * v3 `strapi.query(uid).find(v3Query, populatePaths)` in one call: translates a
+ * v3 query object plus a dotted populate list into the argument object
+ * `strapi.db.query(uid).findMany()` expects.
+ *
+ * Note `_q` is not reproduced — v5 has no db-level full-text search, and the
+ * ported controllers already ran the same query on both branches of their
+ * `if (query._q)` check.
+ *
+ * @param {object} query v3 ctx.query
+ * @param {string[]} [populatePaths] v3 dotted populate paths
+ */
+function v3FindArgs(query, populatePaths) {
+  const opts = adaptQuery(query);
+  const where = opts.filters || {};
+  // db.query has no `status`; "published" is publishedAt IS NOT NULL.
+  if (opts.status === 'published' && where.publishedAt === undefined) {
+    where.publishedAt = { $notNull: true };
+  }
+  const args = { where };
+  const populate = expandPopulate(populatePaths);
+  if (populate) args.populate = populate;
+  const limit = dbLimit(opts);
+  if (limit !== undefined) args.limit = limit;
+  if (opts.pagination && opts.pagination.start !== undefined) args.offset = opts.pagination.start;
+  if (opts.sort) args.orderBy = opts.sort;
+  return args;
+}
+
+/**
  * Params the v5 REST layer understands natively. Any OTHER query key means the
  * caller speaks v3 (_limit/_sort/_q/_where, published_at_null, or flat field
  * operators like `contact=5`) and must be translated first.
@@ -292,6 +385,9 @@ function adaptCtxQuery(ctx, opts = {}) {
 module.exports = {
   adaptQuery,
   adaptCtxQuery,
+  dbLimit,
+  expandPopulate,
+  v3FindArgs,
   // exported for testing
   _internal: { splitFieldOp, coerceValue, coerceScalar, translateWhere, applyOp },
 };

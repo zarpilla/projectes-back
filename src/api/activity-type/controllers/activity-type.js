@@ -23,7 +23,6 @@ module.exports = createCoreController('api::activity-type.activity-type', ({ str
   async getBasic(ctx) {
     return strapi.db.query('api::activity-type.activity-type').findMany({
       select: ['id', 'name', 'global'],
-      limit: -1,
     });
   },
 
@@ -35,7 +34,6 @@ module.exports = createCoreController('api::activity-type.activity-type', ({ str
   async updateGlobal(ctx) {
     const acTypes = await strapi.db.query('api::activity-type.activity-type').findMany({
       populate: { project: true, projects: true },
-      limit: -1,
     });
 
     let updated = 0;

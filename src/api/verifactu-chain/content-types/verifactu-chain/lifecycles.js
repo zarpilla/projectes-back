@@ -25,7 +25,7 @@ const sendVerifactu = async () => {
       orderBy: { id: 'asc' },
       populate: { emitted_invoice: { populate: { lines: true } } },
     });
-    // const okInvoices = await strapi.db.query('api::verifactu-chain.verifactu-chain').findMany({ where: { //   state: "ok", //   _limit: 1, //   _sort: "id:desc", // }, limit: -1 });
+    // const okInvoices = await strapi.db.query('api::verifactu-chain.verifactu-chain').findMany({ where: { //   state: "ok", //   _limit: 1, //   _sort: "id:desc", // } });
 
     const software = {
       developerName: verifactu.software_developerName,

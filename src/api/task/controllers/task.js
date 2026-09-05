@@ -95,7 +95,6 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
         checklist: { populate: { user: true, created: true } },
         created: true,
       },
-      limit: -1,
     });
 
     const expired = tasks.filter((t) => t.due_date <= moment().format('YYYY-MM-DD'));
@@ -103,7 +102,7 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
     // Process expired tasks
     expired.forEach((e) => {
       (e.users_permissions_users || []).forEach((u) => {
-        const wasRecentlyUpdated = moment(e.updated_at).isAfter(fifteenDaysAgo);
+        const wasRecentlyUpdated = moment(e.updatedAt).isAfter(fifteenDaysAgo);
         messages.push({
           id: e.id,
           name: e.name,
@@ -129,7 +128,7 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
     );
 
     checklists.forEach((e) => {
-      const wasRecentlyUpdated = moment(e.updated_at).isAfter(fifteenDaysAgo);
+      const wasRecentlyUpdated = moment(e.updatedAt).isAfter(fifteenDaysAgo);
 
       (e.users_permissions_users || []).forEach((u) => {
         messages.push({
@@ -164,7 +163,7 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
 
     // New tasks (updated in the last day, notifying other users)
     const onedayBefore = moment().add(-1, 'days');
-    const newTasks = tasks.filter((t) => moment(t.updated_at).isAfter(onedayBefore));
+    const newTasks = tasks.filter((t) => moment(t.updatedAt).isAfter(onedayBefore));
 
     newTasks.forEach((e) => {
       (e.users_permissions_users || []).forEach((u) => {

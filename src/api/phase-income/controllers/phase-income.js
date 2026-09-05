@@ -4,7 +4,7 @@
  * phase-income controller (v5). Ported from v3 api/phase-income/controllers/phase-income.js.
  */
 const { createCoreController } = require('@strapi/strapi').factories;
-const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 
 module.exports = createCoreController('api::phase-income.phase-income', ({ strapi }) => ({
@@ -25,7 +25,7 @@ module.exports = createCoreController('api::phase-income.phase-income', ({ strap
     const phases = await strapi.db.query('api::phase-income.phase-income').findMany({
       where: opts.filters || {},
       populate: { income: true, invoice: true },
-      limit: opts.pagination?.limit ?? -1,
+      limit: dbLimit(opts),
       orderBy: opts.sort,
     });
 
