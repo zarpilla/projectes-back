@@ -7,7 +7,7 @@
     "displayName": "Logos"
   },
   "options": {
-    "draftAndPublish": true
+    "draftAndPublish": false
   },
   "pluginOptions": {},
   "attributes": {
@@ -17,11 +17,17 @@
     "logo": {
       "type": "media",
       "relation": "oneToOne",
-      "allowedTypes": ["images"]
+      "allowedTypes": [
+        "images"
+      ]
     },
     "order": {
       "type": "integer",
       "default": 10
+    },
+    "trashed": {
+      "type": "boolean",
+      "default": false
     }
   }
 }

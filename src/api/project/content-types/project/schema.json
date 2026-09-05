@@ -7,7 +7,7 @@
     "displayName": "Projects"
   },
   "options": {
-    "draftAndPublish": true
+    "draftAndPublish": false
   },
   "pluginOptions": {},
   "attributes": {
@@ -370,6 +370,10 @@
     },
     "internal_notes": {
       "type": "text"
+    },
+    "trashed": {
+      "type": "boolean",
+      "default": false
     }
   }
 }

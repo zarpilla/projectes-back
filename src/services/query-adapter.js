@@ -19,7 +19,7 @@
  *   - date-range: created_at_gte / created_at_lte etc. (same _gte/_lte handling)
  *   - _where[field_op] and flat field_op (both accepted by v3 controllers)
  *   - _where._or / _where._and → $or / $and
- *   - published_at_null (Draft & Publish) → status:'published' preference
+ *   - published_at_null → a filter on the `trashed` boolean (see below)
  *   - populate passed separately (2nd positional arg in v3) → merged in
  */
 
@@ -229,15 +229,14 @@ function adaptQuery(query, opts = {}) {
     }
   }
 
-  // 3. published_at_null (Draft & Publish). v3 sets published_at_null:false in-controller.
+  // 3. published_at_null. v3 stored the live/trashed state in `published_at`
+  // (null = trashed) and controllers set published_at_null:false to exclude
+  // trashed rows. v5 owns that column — with Draft & Publish off it stamps
+  // `publishedAt = now` on every write — so the state lives in `trashed` and
+  // this becomes an ordinary boolean filter.
   if (query.published_at_null !== undefined) {
     const v = coerceValue('_null', query.published_at_null);
-    if (v === false) {
-      // "not null" → published
-      out.status = 'published';
-    } else {
-      filters.publishedAt = { $null: true };
-    }
+    filters.trashed = v === true;
   }
 
   // 4. flat field operators (everything that isn't a control param or _where)
@@ -319,9 +318,10 @@ function dbLimit(opts) {
 function v3FindArgs(query, populatePaths) {
   const opts = adaptQuery(query);
   const where = opts.filters || {};
-  // db.query has no `status`; "published" is publishedAt IS NOT NULL.
-  if (opts.status === 'published' && where.publishedAt === undefined) {
-    where.publishedAt = { $notNull: true };
+  // db.query has no `status`; adaptQuery already expresses "not trashed" as a
+  // `trashed` filter, so nothing extra is needed here.
+  if (opts.status === 'published' && where.trashed === undefined) {
+    where.trashed = false;
   }
   const args = { where };
   const populate = expandPopulate(populatePaths);

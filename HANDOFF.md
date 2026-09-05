@@ -225,6 +225,16 @@ scripts (`scripts/templates/pm2-app.config.js.template`, Dockerfile,
 - **Numeric ids**: `/api/<plural>/:id` resolves `:id` as a documentId. The
   `v3-compat` middleware rewrites numeric ids; controllers that need the numeric
   value must read `numericId(ctx)`, not `ctx.params.id`.
+- **Draft & Publish is OFF everywhere, deliberately.** v5's version keeps a
+  draft AND a published row per document and renumbers the published one on
+  every save, which breaks the numeric ids the whole migration preserves (the
+  frontend addresses everything by them). The five types that used it — project,
+  product, logo, document-type, income-type — carry a `trashed` boolean instead,
+  since only the null-ness of v3's `published_at` was ever read. `published_at`
+  itself cannot be reused: with D&P off Strapi still owns that column and stamps
+  it on every write. `published_at_null` in a query and `{ published_at: null }`
+  in a body are translated onto `trashed` by the adapter and the middleware, so
+  the frontend is unchanged.
 - **Relations need exactly ONE owning side**: the owner declares `inversedBy`
   (and gets the `<table>_<attr>_lnk` join table), the other `mappedBy`. Nothing
   warns when this is wrong — the table is never created, the ETL silently skips

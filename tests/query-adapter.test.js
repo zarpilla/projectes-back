@@ -115,13 +115,17 @@ describe('query-adapter (v3 → v5)', () => {
     });
   });
 
-  describe('published_at_null (Draft & Publish)', () => {
-    test('published_at_null:false → status published', () => {
-      expect(adaptQuery({ published_at_null: false }).status).toBe('published');
-      expect(adaptQuery({ published_at_null: false }).filters.publishedAt).toBeUndefined();
+  // v3 kept the live/trashed state in `published_at` (null = trashed). Draft &
+  // Publish is off on the five types that used it — v5's version renumbers a row
+  // on every save — and v5 owns the `published_at` column, so the state lives in
+  // a `trashed` boolean.
+  describe('published_at_null', () => {
+    test('published_at_null:false → not trashed', () => {
+      expect(adaptQuery({ published_at_null: false }).filters.trashed).toBe(false);
+      expect(adaptQuery({ published_at_null: false }).status).toBeUndefined();
     });
-    test('published_at_null:true → filters.publishedAt $null', () => {
-      expect(adaptQuery({ published_at_null: true }).filters.publishedAt).toEqual({ $null: true });
+    test('published_at_null:true → trashed', () => {
+      expect(adaptQuery({ published_at_null: true }).filters.trashed).toBe(true);
     });
   });
 
@@ -157,9 +161,10 @@ describe('query-adapter (v3 → v5)', () => {
         structural_expenses_pct_gt: '0',
         _limit: '-1',
       });
-      expect(r.status).toBe('published');
+      expect(r.filters.trashed).toBe(false);
       expect(r.pagination).toEqual({ limit: -1 });
       expect(r.filters).toEqual({
+        trashed: false,
         project_state: { $in: [1, 2, 3] },
         structural_expenses_pct: { $gt: 0 },
       });
@@ -230,8 +235,10 @@ describe('adaptCtxQuery (v3 REST compatibility for core find)', () => {
   test('translates _where and published_at_null', () => {
     const ctx = mkCtx({ _where: { 'multidelivery_eq': 'true' }, published_at_null: 'false' });
     adaptCtxQuery(ctx);
-    expect(ctx.query.filters).toEqual({ multidelivery: true });
-    expect(ctx.query.status).toBe('published');
+    expect(ctx.query.filters).toEqual({
+      multidelivery: true,
+      trashed: false,
+    });
   });
 
   test('leaves v5-native queries untouched', () => {
@@ -313,8 +320,8 @@ describe('dbLimit / expandPopulate / v3FindArgs (db.query bridge)', () => {
     expect(v3FindArgs({ _limit: '-1', _sort: 'name:ASC', mother: '5' }, ['leader']))
       .toEqual({ where: { mother: 5 }, populate: { leader: true }, orderBy: [{ name: 'asc' }] });
   });
-  test('v3FindArgs maps published_at_null=false onto publishedAt', () => {
-    expect(v3FindArgs({ published_at_null: 'false' }).where).toEqual({ publishedAt: { $notNull: true } });
+  test('v3FindArgs maps published_at_null=false onto trashed', () => {
+    expect(v3FindArgs({ published_at_null: 'false' }).where).toEqual({ trashed: false });
   });
   test('v3FindArgs carries _start as offset', () => {
     expect(v3FindArgs({ _start: '20', _limit: '10' })).toEqual({ where: {}, limit: 10, offset: 20 });

@@ -759,7 +759,7 @@ export interface ApiDocumentTypeDocumentType extends Struct.CollectionTypeSchema
     singularName: 'document-type';
   };
   options: {
-    draftAndPublish: true;
+    draftAndPublish: false;
   };
   attributes: {
     createdAt: Schema.Attribute.DateTime;
@@ -768,6 +768,7 @@ export interface ApiDocumentTypeDocumentType extends Struct.CollectionTypeSchema
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::document-type.document-type'> &
       Schema.Attribute.Private;
     name: Schema.Attribute.String;
+    published_at: Schema.Attribute.DateTime;
     publishedAt: Schema.Attribute.DateTime;
     type: Schema.Attribute.Enumeration<['income', 'expense']>;
     updatedAt: Schema.Attribute.DateTime;
@@ -1104,7 +1105,7 @@ export interface ApiIncomeTypeIncomeType extends Struct.CollectionTypeSchema {
     singularName: 'income-type';
   };
   options: {
-    draftAndPublish: true;
+    draftAndPublish: false;
   };
   attributes: {
     createdAt: Schema.Attribute.DateTime;
@@ -1113,6 +1114,7 @@ export interface ApiIncomeTypeIncomeType extends Struct.CollectionTypeSchema {
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::income-type.income-type'> &
       Schema.Attribute.Private;
     name: Schema.Attribute.String;
+    published_at: Schema.Attribute.DateTime;
     publishedAt: Schema.Attribute.DateTime;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
@@ -1208,7 +1210,7 @@ export interface ApiLogoLogo extends Struct.CollectionTypeSchema {
     singularName: 'logo';
   };
   options: {
-    draftAndPublish: true;
+    draftAndPublish: false;
   };
   attributes: {
     createdAt: Schema.Attribute.DateTime;
@@ -1217,6 +1219,7 @@ export interface ApiLogoLogo extends Struct.CollectionTypeSchema {
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::logo.logo'> & Schema.Attribute.Private;
     logo: Schema.Attribute.Media<'images'>;
     order: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<10>;
+    published_at: Schema.Attribute.DateTime;
     publishedAt: Schema.Attribute.DateTime;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
@@ -1659,7 +1662,7 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     singularName: 'product';
   };
   options: {
-    draftAndPublish: true;
+    draftAndPublish: false;
   };
   attributes: {
     base: Schema.Attribute.Decimal;
@@ -1669,6 +1672,7 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::product.product'> & Schema.Attribute.Private;
     name: Schema.Attribute.String;
+    published_at: Schema.Attribute.DateTime;
     publishedAt: Schema.Attribute.DateTime;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
@@ -1865,7 +1869,7 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     singularName: 'project';
   };
   options: {
-    draftAndPublish: true;
+    draftAndPublish: false;
   };
   attributes: {
     activities: Schema.Attribute.Relation<'oneToMany', 'api::activity.activity'>;
@@ -1935,6 +1939,7 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     project_scope: Schema.Attribute.Relation<'oneToOne', 'api::project-scope.project-scope'>;
     project_state: Schema.Attribute.Relation<'oneToOne', 'api::project-state.project-state'>;
     project_type: Schema.Attribute.Relation<'oneToOne', 'api::project-type.project-type'>;
+    published_at: Schema.Attribute.DateTime;
     publishedAt: Schema.Attribute.DateTime;
     purpose: Schema.Attribute.RichText;
     quotes: Schema.Attribute.Relation<'oneToMany', 'api::quote.quote'>;

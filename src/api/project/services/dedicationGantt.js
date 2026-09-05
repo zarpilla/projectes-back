@@ -113,7 +113,7 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
   // v5: Bookshelf fetchAll replaced by db.query findMany with nested populate
   // (same shape & filters as findWithPhases so the source data is identical).
   const projectsCollection = await strapi.db.query('api::project.project').findMany({
-    select: ['id', 'name', 'publishedAt', 'project_type', 'project_likelihood'],
+    select: ['id', 'name', 'trashed', 'project_type', 'project_likelihood'],
     where: { project_state: { $in: projectStateIds.map((s) => parseInt(s, 10)) } },
     populate: {
       [phaseType]: {
@@ -130,7 +130,7 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
     },
   });
 
-  const projectList = projectsCollection.filter((p) => p.publishedAt !== '' && p.publishedAt !== null);
+  const projectList = projectsCollection.filter((p) => p.trashed !== true);
 
   // 2) Users (leaders) with their daily dedications.
   const users = await strapi.db

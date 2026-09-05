@@ -7,7 +7,7 @@
     "displayName": "Document Types"
   },
   "options": {
-    "draftAndPublish": true
+    "draftAndPublish": false
   },
   "pluginOptions": {},
   "attributes": {
@@ -16,7 +16,14 @@
     },
     "type": {
       "type": "enumeration",
-      "enum": ["income", "expense"]
+      "enum": [
+        "income",
+        "expense"
+      ]
+    },
+    "trashed": {
+      "type": "boolean",
+      "default": false
     }
   }
 }

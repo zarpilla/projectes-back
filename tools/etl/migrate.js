@@ -83,12 +83,23 @@ async function main() {
         .map(([name]) => name);
 
       const shared = scalarAttrs.filter((a) => v3Cols.has(a) && v5Cols.has(a));
-      const colList = ['id', ...shared, 'created_at', 'updated_at', 'published_at']
-        .filter((c) => v3Cols.has(c) && v5Cols.has(c));
+      // `published_at` is now a declared attribute on the types that used Draft &
+      // Publish, so it can already be in `shared` — dedupe or MySQL rejects the
+      // INSERT with "Column 'published_at' specified twice".
+      const colList = [
+        ...new Set(['id', ...shared, 'created_at', 'updated_at', 'published_at']),
+      ].filter((c) => v3Cols.has(c) && v5Cols.has(c));
 
       const selectExprs = colList.map((c) =>
         c === 'id' ? 'id' : `\`${c}\``,
       );
+      // v3 kept the live/trashed state in `published_at` (null = trashed). v5
+      // owns that column, so the five formerly Draft & Publish types carry a
+      // `trashed` boolean instead — derive it here.
+      if (v5Cols.has('trashed') && !v3Cols.has('trashed') && v3Cols.has('published_at')) {
+        colList.push('trashed');
+        selectExprs.push('(`published_at` IS NULL)');
+      }
       // document_id for v5
       const insertCols = colList.includes('document_id') ? colList : ['document_id', ...colList];
       const docIdx = insertCols.indexOf('document_id');

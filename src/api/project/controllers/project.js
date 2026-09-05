@@ -114,7 +114,7 @@ const doProjectInfoCalculations = async (data, id) => {
   // Handle structural expenses if applicable
   if (data.structural_expenses === true) {
     const indirects = await strapi.db.query('api::project.project').findMany({
-      where: { structural_expenses_pct: { $gt: 0 }, publishedAt: { $notNull: true } },
+      where: { structural_expenses_pct: { $gt: 0 }, trashed: false },
     });
 
     const indirectIncomesOriginal = _.sumBy(
@@ -457,13 +457,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         : [];
 
       projects = await strapi.db.query('api::project.project').findMany({
-        select: ['id', 'name', 'publishedAt'],
+        select: ['id', 'name', 'trashed'],
         ...(stateIds.length ? { where: { project_state: { $in: stateIds } } } : {}),
         populate,
       });
     }
 
-    return projects.filter((p) => p.publishedAt !== '' && p.publishedAt !== null);
+    return projects.filter((p) => p.trashed !== true);
   },
 
   // Variant of findWithPhases used by the "Previsió/Execució dedicació" pivot
@@ -517,13 +517,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         : [];
 
       projects = await strapi.db.query('api::project.project').findMany({
-        select: ['id', 'name', 'publishedAt'],
+        select: ['id', 'name', 'trashed'],
         ...(stateIds.length ? { where: { project_state: { $in: stateIds } } } : {}),
         populate,
       });
     }
 
-    return projects.filter((p) => p.publishedAt !== '' && p.publishedAt !== null);
+    return projects.filter((p) => p.trashed !== true);
   },
 
   // precomputed cells) plus the per-day dedications rows used by the Excel
@@ -818,7 +818,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     } else {
       const limit = Math.min(parseInt(ctx.query.limit, 10) || 20, 200);
       const sample = await strapi.db.query('api::project.project').findMany({
-        where: { publishedAt: { $notNull: true } },
+        where: { trashed: false },
         orderBy: { id: 'desc' },
         limit,
       });
@@ -891,7 +891,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         // For dry-run on `all`, just delegate to verifier with a sensible cap.
         const cap = Math.min(limit || 100, 500);
         const projects = await strapi.db.query('api::project.project').findMany({
-          where: { publishedAt: { $notNull: true } },
+          where: { trashed: false },
           orderBy: { id: 'desc' },
           limit: cap,
         });

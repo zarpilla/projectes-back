@@ -7,7 +7,7 @@
     "displayName": "Product"
   },
   "options": {
-    "draftAndPublish": true
+    "draftAndPublish": false
   },
   "pluginOptions": {},
   "attributes": {
@@ -22,6 +22,10 @@
     },
     "vat": {
       "type": "decimal"
+    },
+    "trashed": {
+      "type": "boolean",
+      "default": false
     }
   }
 }
