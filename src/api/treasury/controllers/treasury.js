@@ -14,6 +14,7 @@ const zeroPad = (num, places) => String(num).padStart(places, '0');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { getMe } = require('../../../services/me-settings');
+const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
 
 const getDeductiblePct = (years, emitted) => {
   const year = years.find(
@@ -133,6 +134,10 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           },
         },
         periodification: true,
+        // v3 exposed these as FK columns on the row; v5 omits an unpopulated
+        // relation entirely, so the state/type/likelihood filters below would
+        // see `undefined` for every project and match nothing.
+        ...Object.fromEntries(FILTER_RELATIONS.map((r) => [r, true])),
       },
     });
 
@@ -140,18 +145,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     // This ensures we only process real projects, not container/mother projects
     const allProjects = allProjectsRaw.filter((p) => p.is_mother !== true);
 
-    // Filter projects by state, type and likelihood.
-    // Each filter is a comma-separated id list; "null" is a valid token that
-    // represents the "Sense" bucket (projects with no value set).
-    //   - param absent (undefined)        => no filter on that field
-    //   - param present but empty ("")    => match NOTHING (all deselected)
-    //   - param present with ids/"null"   => only those ids (+ null bucket)
-    const parseIdList = (raw) => {
-      if (raw === undefined || raw === null) return null; // not sent -> no filter
-      if (raw === '') return []; // sent empty -> match nothing
-      return raw.split(',').map((x) => (x === 'null' ? null : parseInt(x)));
-    };
-
+    // Filter projects by state, type and likelihood — see services/project-filter.js
+    // for the parameter grammar and the v3/v5 relation-shape difference.
     let selectedStates = parseIdList(ctx.query.project_states);
     // Legacy filter shortcuts (only honored when project_states is not sent)
     if (selectedStates === null && ctx.query.filter) {
@@ -161,23 +156,12 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         selectedStates = [3];
       }
     }
-    const selectedTypes = parseIdList(ctx.query.project_types);
-    const selectedLikelihoods = parseIdList(ctx.query.project_likelihoods);
 
-    // Some projects store a non-FK sentinel (0) instead of NULL for
-    // project_type / project_likelihood — legacy dirty data. Treat any falsy
-    // value (null, 0, undefined) as the "Sense" bucket, so the null bucket
-    // (selected via the "null" token) covers them too.
-    const bucket = (val) => (val ? val : null);
-
-    const inSet = (val, set) => (set === null ? true : set.includes(val));
-
-    const projects = allProjects.filter(
-      (p) =>
-        inSet(p.project_state, selectedStates) &&
-        inSet(bucket(p.project_type), selectedTypes) &&
-        inSet(bucket(p.project_likelihood), selectedLikelihoods),
-    );
+    const projects = filterProjects(allProjects, {
+      states: selectedStates,
+      types: parseIdList(ctx.query.project_types),
+      likelihoods: parseIdList(ctx.query.project_likelihoods),
+    });
 
     // Set of project ids that pass the filter, used to also scope the realized
     // rows (emitted/received invoices & incomes/expenses, treasury operations).
