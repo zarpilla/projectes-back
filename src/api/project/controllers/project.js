@@ -346,6 +346,12 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           'clients',
           'activity_types',
           'global_activity_types',
+          // v3 kept relations as FK columns, so `mother` was on every row even
+          // unpopulated; v5 omits an unpopulated relation entirely. Views read
+          // `p.mother === null` (JornadaDiaria, ModalBoxMoveProject,
+          // TreasuryAnnotationInput — all of which threw on undefined) and
+          // `p.mother.name` (Home, the pivots), so it has to be a real object.
+          'mother',
           ]),
         );
     } else {
@@ -361,6 +367,12 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           'clients',
           'activity_types',
           'global_activity_types',
+          // v3 kept relations as FK columns, so `mother` was on every row even
+          // unpopulated; v5 omits an unpopulated relation entirely. Views read
+          // `p.mother === null` (JornadaDiaria, ModalBoxMoveProject,
+          // TreasuryAnnotationInput — all of which threw on undefined) and
+          // `p.mother.name` (Home, the pivots), so it has to be a real object.
+          'mother',
           ]),
         );
     }
