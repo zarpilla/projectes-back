@@ -35,10 +35,11 @@ module.exports = {
         data.payment_method = firstPaymentMethod.id;
       }
     }
-    if (data.payment_method) {
+    const createPaymentMethodId = relationId(data.payment_method);
+    if (createPaymentMethodId) {
       const paymentMethod = await strapi.db
         .query('api::payment-method.payment-method')
-        .findOne({ where: { id: data.payment_method }, populate: { bank_account: true } });
+        .findOne({ where: { id: createPaymentMethodId }, populate: { bank_account: true } });
       if (paymentMethod && paymentMethod.bank_account) {
         data.bank_account = paymentMethod.bank_account.id || paymentMethod.bank_account;
       }

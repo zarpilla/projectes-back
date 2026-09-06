@@ -135,8 +135,10 @@ const IDENTITY_KEYS = new Set(['id', 'documentId']);
  * `_internal`. Dropping them here silently discarded the whole "GESTIÓ
  * ECONÒMICA" section of a project save.
  *
- * They are kept only at the root, and the controller that reads them deletes
- * them again before v5's own input validation runs (which would reject them).
+ * They are kept only at the root, and only for the content type whose controller
+ * reads them and deletes them again before v5's own input validation runs.
+ * Everywhere else an underscore key is client-side bookkeeping — `_dedication`
+ * on a daily-dedication, say — that nothing consumes and v5 rejects.
  */
 const CONTROL_KEYS = new Set(['project_phases_info', 'project_original_phases_info']);
 const isControlKey = (key) => key.charAt(0) === '_' || CONTROL_KEYS.has(key);
@@ -150,6 +152,7 @@ const isControlKey = (key) => key.charAt(0) === '_' || CONTROL_KEYS.has(key);
  *
  * Kept only for the content type whose controller consumes and removes them
  * (project); anywhere else they would reach v5's input validation and 400.
+ * MARKER_UIDS gates the root control fields above as well.
  */
 const NESTED_MARKER_KEYS = new Set(['dirty']);
 const MARKER_UIDS = new Set(['api::project.project']);
@@ -202,7 +205,7 @@ function cleanPayload(value, attributes, strapi, isRoot, depth, keepMarkers) {
   const clean = {};
   for (const key of Object.keys(value)) {
     if (MANAGED_KEYS.has(key)) continue;
-    if (isRoot ? isControlKey(key) : keepMarkers && NESTED_MARKER_KEYS.has(key)) {
+    if (keepMarkers && (isRoot ? isControlKey(key) : NESTED_MARKER_KEYS.has(key))) {
       clean[key] = value[key];
       continue;
     }

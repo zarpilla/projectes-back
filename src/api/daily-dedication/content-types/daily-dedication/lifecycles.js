@@ -54,7 +54,9 @@ module.exports = {
 async function updateActivitiesPrice(data) {
   const activities = await strapi.db.query('api::activity.activity').findMany({
     where: {
-      users_permissions_user: data.users_permissions_user,
+      // at lifecycle time this is a v5 relation operation ({ set: [{ id }] }),
+      // not the raw id the v3 port assumed
+      users_permissions_user: relationId(data.users_permissions_user),
       date: { $gte: data.from, $lte: data.to },
     },
   });

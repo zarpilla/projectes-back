@@ -164,6 +164,14 @@ describe('v3 control fields', () => {
     expect(clean({ name: 'x', _internal: true })._internal).toBe(true);
   });
 
+  // Only the project controller consumes and removes them. `_dedication` on a
+  // daily-dedication is client-side bookkeeping that nothing reads, and keeping
+  // it produced "Invalid key _dedication".
+  test('control fields are dropped for content types that do not consume them', () => {
+    expect(cleanNoMarkers({ name: 'x', _dedication: { from: 'a' }, _internal: true }))
+      .toEqual({ name: 'x' });
+  });
+
   test('control fields are root-only — nested payloads stay clean', () => {
     expect(
       clean({ leader: { id: 20, _internal: true, project_phases_info: {} } }),
