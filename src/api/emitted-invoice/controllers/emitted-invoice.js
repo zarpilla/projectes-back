@@ -339,10 +339,15 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     const docName = `./public/uploads/documents/${myInvoice.options.data.invoice.name}-${invoice.contact?.name}-${invoice.code}-H${hash.substring(16)}.pdf`;
     await myInvoice.generate(docName);
 
-    // Update the document's pdf path (lifecycle bypass via db.query, equivalent to v3 _internal)
+    // Update the document's pdf path. `strapi.db.query().update()` still runs the
+    // content type's lifecycles in v5, so this needs the v3 `_internal` flag the
+    // lifecycles check: without it a payload carrying only `pdf` looks like a
+    // real edit, and quote's beforeUpdate then recomputes the totals from an
+    // absent `lines` (zeroing them) and re-derives `code` from an absent
+    // `serial` — which is what made every quote PDF answer 500.
     await strapi.db.query(docUid).update({
       where: { id: invoice.id },
-      data: { pdf: docName.substring('./public'.length) },
+      data: { pdf: docName.substring('./public'.length), _internal: true },
     });
 
     return { url: docName.substring('./public'.length) };

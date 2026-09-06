@@ -253,7 +253,10 @@ async function handleState(data, stored) {
   if (becomingReal || (data.code === 'ESBORRANY' && data.state === 'real')) {
     data.user_real = data.user_last;
     const serialId = relationId(data.serial) || (stored && relationId(stored.serial));
-    const serial = await strapi.db.query('api::serie.serie').findOne({ where: { id: serialId } });
+    // v5 passes an undefined binding straight to knex and throws; v3 answered null.
+    const serial = serialId
+      ? await strapi.db.query('api::serie.serie').findOne({ where: { id: serialId } })
+      : null;
     if (serial) {
       const existingNumber = data.number || (stored && stored.number);
       if (existingNumber) {

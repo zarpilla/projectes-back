@@ -49,7 +49,12 @@ async function calculateTotals(data) {
 
   if (!data.code) {
     const serialId = relationId(data.serial);
-    const serial = await strapi.db.query('api::serie.serie').findOne({ where: { id: serialId } });
+    // v3's query layer answered `{ id: undefined }` with null; v5 hands the
+    // undefined binding straight to knex, which throws "Undefined binding(s)
+    // detected when compiling WHERE".
+    const serial = serialId
+      ? await strapi.db.query('api::serie.serie').findOne({ where: { id: serialId } })
+      : null;
     if (serial) {
       if (!data.number) {
         const quotes = await strapi.db
