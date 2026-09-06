@@ -22,6 +22,8 @@ const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptQuery, adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { rawExecute } = require('../../../services/raw-sql');
 const { getMe } = require('../../../services/me-settings');
+const { numericId } = require('../../../middlewares/v3-compat');
+const { processIncidences } = require('../services/order-incidences');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 const TABLE_POPULATE = ['route', 'owner', 'contact', 'pickup', 'delivery_type', 'contact_legal_form'];
@@ -653,13 +655,36 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   },
 
   /**
-   * Override core update: set tracking user.
+   * Override core update: set tracking user, and handle the incidences the
+   * order form submits inline.
+   *
+   * OrdersForm sends `incidences` as full objects to create or update, not as
+   * relation ids. v5 validates relation payloads BEFORE any lifecycle runs, so
+   * the write is rejected with 400 "Invalid relations" and beforeUpdate's
+   * `delete data.incidences` never gets to run (v3 validated nothing, so the
+   * lifecycle was early enough there). Pull the array off here and apply it
+   * after the order itself has saved.
    */
   async update(ctx) {
     if (!ctx.request.body._tracking_user && ctx.state.user) {
       ctx.request.body._tracking_user = ctx.state.user;
     }
-    return super.update(ctx);
+
+    const body = ctx.request.body || {};
+    const payload = body.data && typeof body.data === 'object' ? body.data : body;
+    const incidences = Array.isArray(payload.incidences) ? payload.incidences : null;
+    if (incidences) delete payload.incidences;
+
+    const response = await super.update(ctx);
+
+    if (incidences && incidences.length) {
+      // The route addresses the order by its numeric id; the compat middleware
+      // rewrote the path to the documentId and kept the numeric one on state.
+      const orderId = numericId(ctx);
+      await processIncidences(orderId, incidences, ctx.state.user);
+    }
+
+    return response;
   },
 }));
 

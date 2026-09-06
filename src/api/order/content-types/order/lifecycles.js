@@ -1192,82 +1192,9 @@ const createOrderTracking = async (orderId, status, user) => {
 };
 
 // --- INCIDENCES LOGIC ---
-const processIncidences = async (orderId, incidences, trackingUser) => {
-  try {
-    // Get existing incidences for this order
-    const existingIncidences = await strapi.db
-      .query('api::incidence.incidence')
-      .findMany({ where: { order: orderId } });
-
-    // Create a map of existing incidences by ID for quick lookup
-    const existingMap = new Map(existingIncidences.map((inc) => [inc.id, inc]));
-    const processedIds = new Set();
-
-    // Process each incidence from the form
-    for (const incidence of incidences) {
-      if (incidence.id) {
-        // Update existing incidence
-        processedIds.add(incidence.id);
-        const existing = existingMap.get(incidence.id);
-
-        if (existing) {
-          const updateData = {
-            description: incidence.description,
-            state: incidence.state,
-          };
-
-          // If changing to closed state and not already closed, set closed_date and closed_user
-          if (incidence.state === 'closed' && existing.state !== 'closed') {
-            updateData.closed_date = new Date();
-            if (trackingUser) {
-              updateData.closed_user = trackingUser.id;
-            }
-          }
-
-          await strapi.db
-            .query('api::incidence.incidence')
-            .update({ where: { id: incidence.id }, data: updateData });
-        }
-      } else {
-        // Create new incidence
-        const createData = {
-          order: orderId,
-          description: incidence.description,
-          state: incidence.state || 'open',
-        };
-
-        if (trackingUser) {
-          createData.created_user = trackingUser.id;
-        }
-
-        // If creating as closed, set closed_date and closed_user
-        if (createData.state === 'closed') {
-          createData.closed_date = new Date();
-          if (trackingUser) {
-            createData.closed_user = trackingUser.id;
-          }
-        }
-
-        const newIncidence = await strapi.db.query('api::incidence.incidence').create(createData);
-        processedIds.add(newIncidence.id);
-      }
-    }
-
-    // Note: We're not deleting incidences that are not in the list
-    // If you want to delete removed incidences, uncomment the code below:
-    /*
-    // Delete incidences that were removed from the list
-    for (const existing of existingIncidences) {
-      if (!processedIds.has(existing.id)) {
-        await strapi.db.query('api::incidence.incidence').delete({ id: existing.id });
-      }
-    }
-    */
-  } catch (error) {
-    console.error('Error processing incidences:', error);
-    throw error;
-  }
-};
+// Lives in a service: the order controller has to call it too, because v5
+// validates relation payloads before lifecycles run. See order-incidences.js.
+const { processIncidences } = require('../../services/order-incidences');
 
 const processMultideliveryDiscountForCurrentOrder = async (orderId, data) => {
   // Skip if this is an internal update
@@ -1512,12 +1439,12 @@ module.exports = {
 
     await setDeliveryTypeRefrigerated(data);
 
-    // Handle incidences if provided
-    if (data.incidences && Array.isArray(data.incidences)) {
-      // Store incidences data temporarily (will be processed in afterUpdate)
-      event.state.incidencesToProcess = data.incidences;
-      delete data.incidences; // Remove from data to avoid Strapi trying to process it
-    }
+    // v3 stashed `data.incidences` here for afterUpdate to process. In v5 the
+    // relation payload is validated before any lifecycle runs, so the write is
+    // already rejected by the time this would fire — the order controller pulls
+    // `incidences` off the request body instead. (The stash was also writing
+    // `event.state.incidencesToProcess` while afterUpdate read
+    // `data._incidencesToProcess`, so it could never have worked.)
 
     // Merge data with previous order data for complete context
     const mergedData = {
