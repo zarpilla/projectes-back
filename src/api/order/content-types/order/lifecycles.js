@@ -78,7 +78,7 @@ const updateVolumeDiscountForOrders = async (orders, discount) => {
     if (order.volume_discount !== discount) {
       await strapi
         .query('api::order.order')
-        .update({ where: { id: order.id }, data: { volume_discount: discount } });
+        .update({ where: { id: order.id }, data: { volume_discount: discount, _internal: true } });
     }
   }
 };
@@ -135,7 +135,7 @@ const processVolumeDiscountForOtherOrders = async (orderId, currentData, previou
       if (order.volume_discount > 0) {
         await strapi
           .query('api::order.order')
-          .update({ where: { id: order.id }, data: { volume_discount: 0 } });
+          .update({ where: { id: order.id }, data: { volume_discount: 0, _internal: true } });
       }
     }
   }
@@ -171,7 +171,7 @@ const processVolumeDiscountForOtherOrders = async (orderId, currentData, previou
               if (order.volume_discount > 0) {
                 await strapi
                   .query('api::order.order')
-                  .update({ where: { id: order.id }, data: { volume_discount: 0 } });
+                  .update({ where: { id: order.id }, data: { volume_discount: 0, _internal: true } });
               }
             }
           } else if (
@@ -844,7 +844,7 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
     if (orderId && extractId(orderData.collection_order) !== collectionOrder.id) {
       await strapi.db
         .query('api::order.order')
-        .update({ where: { id: orderId }, data: { collection_order: collectionOrder.id } });
+        .update({ where: { id: orderId }, data: { collection_order: collectionOrder.id, _internal: true } });
     }
 
     // After updating, recalculate aggregated data
@@ -906,7 +906,7 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
     if (orderId && newCollectionOrder) {
       await strapi.db
         .query('api::order.order')
-        .update({ where: { id: orderId }, data: { collection_order: newCollectionOrder.id } });
+        .update({ where: { id: orderId }, data: { collection_order: newCollectionOrder.id, _internal: true } });
 
       // After creating, recalculate aggregated data
       await updateCollectionOrderAggregates(newCollectionOrder.id);
@@ -986,17 +986,19 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   // If no related orders and status is pending, deposited, or processed, reset aggregates to 0
   if (!relatedOrders || relatedOrders.length === 0) {
     if (collectionOrder.status === 'pending' || collectionOrder.status === 'processed') {
-      await strapi.db.query('api::order.order').update(
-        { id: collectionOrderId },
-        {
+      // v3 used a two-argument update signature; v5 takes a single { where, data }.
+      await strapi.db.query('api::order.order').update({
+        where: { id: collectionOrderId },
+        data: {
           units: 0,
           kilograms: 0,
           price: 0,
           refrigerated: false,
           status: 'cancelled',
           contact_pickup_discount: updatedPickupDiscount,
+          _internal: true,
         },
-      );
+      });
     }
     return;
   }
@@ -1032,6 +1034,7 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
     refrigerated: isRefrigerated,
     // comments: concatenatedComments,
     contact_pickup_discount: updatedPickupDiscount,
+    _internal: true,
   };
 
   // Only update route_rate if one was found
@@ -1155,7 +1158,7 @@ const updateMultideliveryDiscountForOrders = async (orders, me, ownerFactor = 1)
     if (order.multidelivery_discount !== discountToApply) {
       await strapi.db.query('api::order.order').update({
         where: { id: order.id },
-        data: { multidelivery_discount: discountToApply },
+        data: { multidelivery_discount: discountToApply, _internal: true },
       });
     }
   }
@@ -1370,7 +1373,7 @@ const processMultideliveryDiscountForOtherOrders = async (orderId, currentData, 
       if (order.multidelivery_discount > 0) {
         await strapi
           .query('api::order.order')
-          .update({ where: { id: order.id }, data: { multidelivery_discount: 0 } });
+          .update({ where: { id: order.id }, data: { multidelivery_discount: 0, _internal: true } });
       }
     }
   }
@@ -1410,7 +1413,7 @@ const processMultideliveryDiscountForOtherOrders = async (orderId, currentData, 
               if (order.multidelivery_discount > 0) {
                 await strapi
                   .query('api::order.order')
-                  .update({ where: { id: order.id }, data: { multidelivery_discount: 0 } });
+                  .update({ where: { id: order.id }, data: { multidelivery_discount: 0, _internal: true } });
               }
             }
           } else {
@@ -1437,7 +1440,7 @@ const processMultideliveryDiscountForOtherOrders = async (orderId, currentData, 
               if (order.multidelivery_discount > 0) {
                 await strapi
                   .query('api::order.order')
-                  .update({ where: { id: order.id }, data: { multidelivery_discount: 0 } });
+                  .update({ where: { id: order.id }, data: { multidelivery_discount: 0, _internal: true } });
               }
             }
           }
@@ -1610,6 +1613,7 @@ module.exports = {
           data: {
             transfer_route: transferRouteInfo.transfer_route,
             transfer_route_date: transferRouteInfo.transfer_route_date,
+            _internal: true,
           },
         });
       }
@@ -1702,6 +1706,7 @@ module.exports = {
             data: {
               transfer_route: transferRouteInfo.transfer_route,
               transfer_route_date: transferRouteInfo.transfer_route_date,
+              _internal: true,
             },
           });
         }
