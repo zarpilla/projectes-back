@@ -528,6 +528,17 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     const populate = {
       project_phases: phasePopulate,
       project_original_phases: phasePopulate,
+      // Pivot dimensions: Estat / Líder / Àmbit, plus the dedication-type
+      // column. v3 never loaded these either — its withRelated held only the
+      // two phase trees — so DedicationEstPivot's
+      // `p.project_state ? p.project_state.name : '-'` has always fallen
+      // through to '-'. They are relations, so they belong in `populate`;
+      // naming them in the `select` below would ask for columns that no longer
+      // exist in v5.
+      project_state: true,
+      leader: true,
+      project_scope: true,
+      default_dedication_type: true,
     };
 
     if (activities) {
@@ -549,7 +560,10 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         : [];
 
       projects = await strapi.db.query('api::project.project').findMany({
-        select: ['id', 'name', 'trashed'],
+        // date_start / createdAt back the pivot's "Any" dimension, which reads
+        // `p.date_start || p.created_at`. Both were outside the v3 select too,
+        // so that column rendered "Invalid date".
+        select: ['id', 'name', 'trashed', 'date_start', 'createdAt'],
         ...(stateIds.length ? { where: { project_state: { $in: stateIds } } } : {}),
         populate,
       });
