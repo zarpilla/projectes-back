@@ -10,6 +10,12 @@
  * The `01-` filename prefix matters: route files load in alphabetical order and
  * the core router's `/<plural>/:id` would otherwise shadow static paths like
  * `/<plural>/basic`.
+ *
+ * Paths carry NO trailing slash. v3's routes.json wrote two of them with one
+ * ("/orders/check-multidelivery/", "/orders/pdf/") and Strapi 3's router
+ * matched anyway; v5's does not. The callers post without the slash, so the
+ * request instead fell through to the core `/orders/:documentId` route, which
+ * has no POST — hence 405 Method Not Allowed rather than a 404.
  */
 module.exports = {
   routes: [
@@ -25,7 +31,7 @@ module.exports = {
     },
     {
       method: 'POST',
-      path: '/orders/check-multidelivery/',
+      path: '/orders/check-multidelivery',
       handler: 'order.checkMultidelivery',
     },
     {
@@ -45,7 +51,7 @@ module.exports = {
     },
     {
       method: 'POST',
-      path: '/orders/pdf/',
+      path: '/orders/pdf',
       handler: 'order.pdfmultiple',
     },
   ],
