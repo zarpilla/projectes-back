@@ -12,6 +12,7 @@ const https = require('https');
 const path = require('path');
 const { createVerifactuInvoice } = require('verifactu-node-lib');
 const _ = require('lodash');
+const { relationId } = require('../../../../services/relation-input');
 // A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
 // so the rule that rejected the write never reaches the user. ApplicationError
 // answers 400 with the message, which the views already display.
@@ -27,7 +28,13 @@ const sendVerifactu = async () => {
     const pendingInvoices = await strapi.db.query('api::verifactu-chain.verifactu-chain').findMany({
       where: { state: { $in: ['ko', 'pending', 'okwitherrors'] }, mode: verifactu.mode },
       orderBy: { id: 'asc' },
-      populate: { emitted_invoice: { populate: { lines: true } } },
+      // `contact` and `serial` are read off the invoice below. v3 populated
+      // emitted_invoice one level deep, which left its own relations as FK ids;
+      // v5 omits them entirely, so both lookups sent `where: { id: undefined }`
+      // and knex threw "Undefined binding(s) detected when compiling WHERE".
+      populate: {
+        emitted_invoice: { populate: { lines: true, contact: true, serial: true } },
+      },
     });
     // const okInvoices = await strapi.db.query('api::verifactu-chain.verifactu-chain').findMany({ where: { //   state: "ok", //   _limit: 1, //   _sort: "id:desc", // } });
 
@@ -52,9 +59,16 @@ const sendVerifactu = async () => {
           populate: { emitted_invoice: true },
         });
       const previousId = okInvoices.find((inv) => inv.id < invoice.id);
-      const contact = await strapi.db
-        .query('api::contact.contact')
-        .findOne({ where: { id: invoice.emitted_invoice.contact } });
+      const contactId = relationId(invoice.emitted_invoice.contact);
+      const contact = contactId
+        ? await strapi.db.query('api::contact.contact').findOne({ where: { id: contactId } })
+        : null;
+      if (!contact) {
+        strapi.log.warn(
+          `[verifactu] chain ${invoice.id}: invoice ${invoice.emitted_invoice.id} has no contact; skipping`,
+        );
+        continue;
+      }
       let previousInvoice = previousId
         ? {
             issuerIrsId: me.nif,
@@ -66,9 +80,16 @@ const sendVerifactu = async () => {
 
       const notSpain = contact.country && contact.country.length === 2 && contact.country !== 'ES';
 
-      const serial = await strapi.db
-        .query('api::serie.serie')
-        .findOne({ where: { id: invoice.emitted_invoice.serial } });
+      const serialId = relationId(invoice.emitted_invoice.serial);
+      const serial = serialId
+        ? await strapi.db.query('api::serie.serie').findOne({ where: { id: serialId } })
+        : null;
+      if (!serial) {
+        strapi.log.warn(
+          `[verifactu] chain ${invoice.id}: invoice ${invoice.emitted_invoice.id} has no serie; skipping`,
+        );
+        continue;
+      }
 
       const recipient =
         contact.country && contact.country.length === 2

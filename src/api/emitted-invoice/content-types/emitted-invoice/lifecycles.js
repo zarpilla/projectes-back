@@ -112,7 +112,11 @@ module.exports = {
     const verifactu = await strapi.documents('api::verifactu.verifactu').findFirst();
     const invoice = await strapi.db
       .query('api::emitted-invoice.emitted-invoice')
-      .findOne({ where: event.params.where });
+      // `contact` gates the FACe enqueue below and `user_real` is stamped on the
+      // VeriFactu chain row. v3 got both from its automatic first-level populate;
+      // without this `invoice.contact` is undefined, so `contact` stays null and
+      // the FACe queue item is never created at all.
+      .findOne({ where: event.params.where, populate: { contact: true, user_real: true } });
 
     if (
       verifactu &&
@@ -125,12 +129,7 @@ module.exports = {
         .query('api::verifactu-chain.verifactu-chain')
         .findMany({ where: { emitted_invoice: invoice.id } });
       if (chains.length === 0) {
-        const user =
-          invoice.user_real && typeof invoice.user_real === 'object'
-            ? invoice.user_real && invoice.user_real.id
-              ? invoice.user_real.id
-              : 0
-            : invoice.user_real;
+        const user = relationId(invoice.user_real) || 0;
         await strapi.db.query('api::verifactu-chain.verifactu-chain').create({
           data: {
             emitted_invoice: invoice.id,
@@ -149,7 +148,7 @@ module.exports = {
     const faceEnabled = me && (me.face === 'test' || me.face === 'real');
     let contact = null;
     if (invoice && invoice.contact) {
-      const contactId = typeof invoice.contact === 'object' ? invoice.contact.id : invoice.contact;
+      const contactId = relationId(invoice.contact);
       if (contactId) {
         contact = await strapi.db.query('api::contact.contact').findOne({ where: { id: contactId } });
       }

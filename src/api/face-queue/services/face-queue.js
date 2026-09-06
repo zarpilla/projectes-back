@@ -24,6 +24,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
 const { signFacturaeXml } = require('../utils/sign-facturae');
+const { relationId } = require('../../../services/relation-input');
 
 const { createCoreService } = require('@strapi/strapi').factories;
 const { getMe } = require('../../../services/me-settings');
@@ -951,7 +952,14 @@ const startFaceProcess = async (faceQueueInput) => {
     return;
   }
 
-  const faceQueue = await strapi.db.query(FACE_QUEUE_UID).findOne({ where: { id: faceQueueId } });
+  const faceQueue = await strapi.db.query(FACE_QUEUE_UID).findOne({
+    where: { id: faceQueueId },
+    // `emitted_invoice` is read below. v3's strapi.query().findOne() populated
+    // first-level relations; v5 omits an unpopulated relation entirely, which
+    // made every submission fall straight into the "no emitted invoice linked"
+    // error branch without ever reaching FACe.
+    populate: { emitted_invoice: true },
+  });
 
   if (!faceQueue) {
     strapi.log.warn(`[face-queue] startFaceProcess queue not found id=${faceQueueId}`);
@@ -960,7 +968,7 @@ const startFaceProcess = async (faceQueueInput) => {
 
   strapi.log.info(`[face-queue] startFaceProcess id=${faceQueue.id}`);
 
-  const emittedInvoiceId = faceQueue.emitted_invoice;
+  const emittedInvoiceId = relationId(faceQueue.emitted_invoice);
 
   if (!emittedInvoiceId) {
     strapi.log.warn(`[face-queue] missing emitted_invoice id=${faceQueue.id}`);
@@ -1003,7 +1011,9 @@ const startFaceProcess = async (faceQueueInput) => {
   const me = await strapi.documents(ME_UID).findFirst({
     populate: { bank_account_default: true, face_certificate: true },
   });
-  const contactId = invoice.contact;
+  // `contact` is populated on the invoice above, so this is an object, not an
+  // id — v3 handled both shapes here and the port dropped that.
+  const contactId = relationId(invoice.contact);
   const contact = contactId
     ? await strapi.db.query(CONTACT_UID).findOne({ where: { id: contactId } })
     : null;
