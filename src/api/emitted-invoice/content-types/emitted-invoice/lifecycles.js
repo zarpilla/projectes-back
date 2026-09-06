@@ -208,9 +208,15 @@ module.exports = {
     if (orders && orders.length > 0) {
       const orderIds = orders.map((o) => o.id);
       const placeholders = orderIds.map(() => '?').join(',');
+      // v3 cleared an FK column here; in v5 the relation is a link table row.
       await rawExecute(
         strapi,
-        `UPDATE orders SET emitted_invoice = NULL, status = 'delivered', updated_at = NOW() WHERE id IN (${placeholders})`,
+        `UPDATE orders SET status = 'delivered', updated_at = NOW() WHERE id IN (${placeholders})`,
+        orderIds,
+      );
+      await rawExecute(
+        strapi,
+        `DELETE FROM orders_emitted_invoice_lnk WHERE order_id IN (${placeholders})`,
         orderIds,
       );
     }
@@ -280,13 +286,37 @@ async function handleState(data, stored) {
   }
 }
 
+/**
+ * Returns the invoice lines with their VALUES.
+ *
+ * v5 inserts the component rows before the db lifecycle runs and replaces the
+ * payload's objects with bare references — `{ id, __pivot }` — so `data.lines`
+ * no longer carries `base`, `quantity` or `vat` by the time beforeCreate sees
+ * it. v3 handed the model the raw objects, which is why the same arithmetic
+ * worked there and silently produced 0.00 totals on every invoice here.
+ *
+ * The component rows are already persisted at this point, so read them back.
+ */
+async function resolveLines(lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return [];
+  const refs = lines.filter((l) => l && l.id !== undefined && l.base === undefined);
+  if (refs.length === 0) return lines;
+  const rows = await strapi.db
+    .query('invoice-line.invoice-line')
+    .findMany({ where: { id: { $in: refs.map((l) => l.id) } } });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  // Keep any line that already carried its values (a caller passing raw objects).
+  return lines.map((l) => (l && l.base === undefined && byId.has(l.id) ? byId.get(l.id) : l));
+}
+
 async function calculateTotals(data) {
   if (data._internal) return;
   if (data.lines) {
+    const lines = await resolveLines(data.lines);
     let total_base = 0;
     let total_vat = 0;
     let total_irpf = 0;
-    data.lines.forEach((i) => {
+    lines.forEach((i) => {
       let base = (i.base ? i.base : 0) * (i.quantity ? i.quantity : 0);
       if (i.discount) {
         base = base * (1 - i.discount / 100.0);

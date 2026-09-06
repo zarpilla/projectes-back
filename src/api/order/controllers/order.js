@@ -279,6 +279,12 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
     const ordersEntities = await strapi.db.query('api::order.order').findMany({
       where: { id: { $in: orderIds } },
+      // v3's strapi.query().find() auto-populated first-level relations, so
+      // `o.owner.id` and `o.route.name` just worked. v5 omits an unpopulated
+      // relation entirely: without this every order had `owner === undefined`,
+      // uniqueOwners came out empty, and the endpoint cheerfully created zero
+      // invoices — the per-owner loop that would have raised an error never ran.
+      populate: { owner: true, route: true },
     });
     log('ORDERS_FETCHED', `${ordersEntities.length} orders loaded`);
 
@@ -288,7 +294,11 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     const paymentMethods = await strapi.db.query('api::payment-method.payment-method').findMany({});
     const paymentMethod = paymentMethods.length > 0 ? paymentMethods[0].id : null;
 
-    const allContacts = await strapi.db.query('api::contact.contact').findMany({});
+    // `users_permissions_user` is the field the owner lookup below matches on,
+    // so it has to be populated for the same reason as the orders above.
+    const allContacts = await strapi.db.query('api::contact.contact').findMany({
+      populate: { users_permissions_user: true },
+    });
     log('CONTACTS_FETCHED', `${allContacts.length} contacts fetched`);
 
     const contactsByOwnerId = {};
@@ -364,15 +374,30 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     );
     log('INVOICES_CREATED', `${invoicesByOwner.length} invoices created`);
 
-    // Bulk update order status via parameterized raw SQL (lifecycle bypass)
+    // Bulk update order status via parameterized raw SQL (lifecycle bypass).
+    // `emitted_invoice` was an FK column on `orders` in v3; in v5 the relation
+    // lives in orders_emitted_invoice_lnk and the column no longer exists, so
+    // the link has to be rewritten separately from the scalar columns.
     for (const { invoice, contactOrders } of invoicesByOwner) {
       const ids = contactOrders.map((o) => o.id);
       if (ids.length === 0) continue;
       const placeholders = ids.map(() => '?').join(',');
       await rawExecute(
         strapi,
-        `UPDATE orders SET emitted_invoice = ?, emitted_invoice_datetime = NOW(), status = 'invoiced', updated_at = NOW() WHERE id IN (${placeholders})`,
-        [invoice.id, ...ids],
+        `UPDATE orders SET emitted_invoice_datetime = NOW(), status = 'invoiced', updated_at = NOW() WHERE id IN (${placeholders})`,
+        ids,
+      );
+      await rawExecute(
+        strapi,
+        `DELETE FROM orders_emitted_invoice_lnk WHERE order_id IN (${placeholders})`,
+        ids,
+      );
+      await rawExecute(
+        strapi,
+        `INSERT INTO orders_emitted_invoice_lnk (order_id, emitted_invoice_id) VALUES ${ids
+          .map(() => '(?, ?)')
+          .join(', ')}`,
+        ids.flatMap((id) => [id, invoice.id]),
       );
     }
 
