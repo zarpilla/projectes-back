@@ -113,7 +113,12 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
   // v5: Bookshelf fetchAll replaced by db.query findMany with nested populate
   // (same shape & filters as findWithPhases so the source data is identical).
   const projectsCollection = await strapi.db.query('api::project.project').findMany({
-    select: ['id', 'name', 'trashed', 'project_type', 'project_likelihood'],
+    // `select` takes SCALAR columns only. project_type / project_likelihood were
+    // FK columns in v3 but are relations in v5, living in link tables — naming
+    // them here makes the query select `t0.project_type`, which does not exist
+    // ("Unknown column 't0.project_type' in 'field list'"). They come back via
+    // `populate` below.
+    select: ['id', 'name', 'trashed'],
     where: { project_state: { $in: projectStateIds.map((s) => parseInt(s, 10)) } },
     populate: {
       [phaseType]: {
