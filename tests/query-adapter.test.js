@@ -228,8 +228,19 @@ describe('adaptCtxQuery (v3 REST compatibility for core find)', () => {
     expect(ctx.query).toEqual({
       filters: { mother: 5 },
       sort: ['name:asc'],
-      pagination: { limit: -1 },
+      // -1 is resolved to maxLimit here, not passed through: assigning ctx.query
+      // stringifies it, and Strapi's "no limit" branch is a strict `=== -1`
+      // that '-1' misses, after which Math.max(limit, 1) clamps it to a single row.
+      pagination: { limit: 100000 },
     });
+  });
+
+  test('_limit=-1 becomes maxLimit, never the string that clamps to 1', () => {
+    const { restPagination } = require('../src/services/query-adapter');
+    expect(restPagination({ limit: -1 })).toEqual({ limit: 100000 });
+    expect(restPagination({ limit: -1, start: 0 })).toEqual({ limit: 100000, start: 0 });
+    expect(restPagination({ limit: 25 })).toEqual({ limit: 25 });
+    expect(restPagination({ start: 10 })).toEqual({ start: 10 });
   });
 
   test('translates _where and published_at_null', () => {

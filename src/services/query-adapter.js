@@ -350,6 +350,32 @@ const V5_REST_PARAMS = new Set([
 ]);
 
 /**
+ * Assigning `ctx.query` runs it through `qs.stringify`, so every value arrives
+ * at the REST layer as a STRING. Strapi's "no limit" check is a strict
+ * `pagination.limit === -1`, which `'-1'` misses — and the next step clamps with
+ * `Math.max(limit, 1)`, so v3's `_limit=-1` ("everything") silently returned a
+ * SINGLE row on every core list endpoint.
+ *
+ * Resolve it here instead: -1 becomes the configured `api.rest.maxLimit`, which
+ * is what Strapi's own -1 branch would have substituted.
+ */
+const FALLBACK_MAX_LIMIT = 100000;
+
+function restMaxLimit() {
+  try {
+    // eslint-disable-next-line no-undef
+    return Number(strapi.config.get('api.rest.maxLimit')) || FALLBACK_MAX_LIMIT;
+  } catch (e) {
+    return FALLBACK_MAX_LIMIT;
+  }
+}
+
+function restPagination(pagination) {
+  if (pagination.limit === undefined || pagination.limit >= 0) return pagination;
+  return { ...pagination, limit: restMaxLimit() };
+}
+
+/**
  * In-place v3->v5 translation of ctx.query for core find overrides (P9).
  * Rewrites v3-style queries into native v5 REST params so the frontend can
  * keep sending the exact query strings it sent to v3. v5-native queries and
@@ -376,7 +402,7 @@ function adaptCtxQuery(ctx, opts = {}) {
     const [field, dir] = Object.entries(entry)[0];
     return `${field}:${dir}`;
   });
-  if (adapted.pagination) next.pagination = adapted.pagination;
+  if (adapted.pagination) next.pagination = restPagination(adapted.pagination);
   if (adapted.status) next.status = adapted.status;
   if (adapted.populate) next.populate = adapted.populate;
   ctx.query = next;
@@ -386,6 +412,7 @@ module.exports = {
   adaptQuery,
   adaptCtxQuery,
   dbLimit,
+  restPagination,
   expandPopulate,
   v3FindArgs,
   // exported for testing
