@@ -304,6 +304,47 @@ function dbLimit(opts) {
 }
 
 /**
+ * Converts an `adaptQuery` RESULT into the arguments `strapi.db.query().findMany()`
+ * expects. The two shapes are NOT interchangeable, and the difference is not
+ * cosmetic:
+ *
+ *   - `adaptQuery` answers the REST/Document Service shape: `filters`, `sort`,
+ *     `pagination`.
+ *   - `db.query` wants `where`, `orderBy`, `limit`, `offset`. It *does* accept a
+ *     `filters` key, which is why passing the REST shape straight through looks
+ *     like it works — but `filters` is Strapi's cascading filter: it is copied
+ *     into every populate subquery (see getPopulateValue in
+ *     @strapi/database query/helpers/populate/apply). `where` is not.
+ *
+ * Handing v3 field filters over as `filters` therefore applies them to the
+ * populated relations as well, which 500'd /api/projects/economic-detail with
+ * "Unknown column 't0.trashed' in 'where clause'" — the project's own
+ * `trashed` / `project_state` filters were being applied to `project_states`.
+ * The dropped `sort`/`pagination` are the quieter half of the same mistake.
+ *
+ * @param {object} opts       an `adaptQuery` result
+ * @param {object} [populate] db.query populate object; defaults to opts.populate
+ */
+function toDbArgs(opts, populate) {
+  const where = (opts && opts.filters) || {};
+  // db.query has no `status`; adaptQuery already expresses "not trashed" as a
+  // `trashed` filter, so nothing extra is needed here.
+  if (opts && opts.status === 'published' && where.trashed === undefined) {
+    where.trashed = false;
+  }
+  const args = { where };
+  const pop = populate !== undefined ? populate : opts && opts.populate;
+  if (pop) args.populate = pop;
+  const limit = dbLimit(opts);
+  if (limit !== undefined) args.limit = limit;
+  if (opts && opts.pagination && opts.pagination.start !== undefined) {
+    args.offset = opts.pagination.start;
+  }
+  if (opts && opts.sort && opts.sort.length) args.orderBy = opts.sort;
+  return args;
+}
+
+/**
  * v3 `strapi.query(uid).find(v3Query, populatePaths)` in one call: translates a
  * v3 query object plus a dotted populate list into the argument object
  * `strapi.db.query(uid).findMany()` expects.
@@ -316,21 +357,7 @@ function dbLimit(opts) {
  * @param {string[]} [populatePaths] v3 dotted populate paths
  */
 function v3FindArgs(query, populatePaths) {
-  const opts = adaptQuery(query);
-  const where = opts.filters || {};
-  // db.query has no `status`; adaptQuery already expresses "not trashed" as a
-  // `trashed` filter, so nothing extra is needed here.
-  if (opts.status === 'published' && where.trashed === undefined) {
-    where.trashed = false;
-  }
-  const args = { where };
-  const populate = expandPopulate(populatePaths);
-  if (populate) args.populate = populate;
-  const limit = dbLimit(opts);
-  if (limit !== undefined) args.limit = limit;
-  if (opts.pagination && opts.pagination.start !== undefined) args.offset = opts.pagination.start;
-  if (opts.sort) args.orderBy = opts.sort;
-  return args;
+  return toDbArgs(adaptQuery(query), expandPopulate(populatePaths));
 }
 
 /**
@@ -414,6 +441,7 @@ module.exports = {
   dbLimit,
   restPagination,
   expandPopulate,
+  toDbArgs,
   v3FindArgs,
   // exported for testing
   _internal: { splitFieldOp, coerceValue, coerceScalar, translateWhere, applyOp },

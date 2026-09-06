@@ -7,6 +7,7 @@ const {
   adaptQuery,
   adaptCtxQuery,
   expandPopulate,
+  toDbArgs,
   v3FindArgs,
 } = require('../../../services/query-adapter');
 const { numericId } = require('../../../middlewares/v3-compat');
@@ -426,7 +427,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
 
     // only published
     projects = await strapi.db.query('api::project.project').findMany(
-      adaptQuery({ ...ctx.query, published_at_null: false }, { searchFields: ['name'] })
+      toDbArgs(adaptQuery({ ...ctx.query, published_at_null: false }, { searchFields: ['name'] }))
     );
 
     // Removing some info
@@ -641,28 +642,39 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     //console.log('query', query, year)
     const year = ctx.query && ctx.query._where && ctx.query._where.year_eq ? ctx.query._where.year_eq : null;
 
+    // `_where` on this endpoint carries its own control params — `year_eq`
+    // selects the reporting year and `project_state_in`/`_eq` the state filter.
+    // Neither is a column on `projects`, so the whole ctx.query must never be
+    // handed to adaptQuery: `year` reached the projects table as a field filter
+    // and answered "Unknown column 't0.year' in 'where clause'". Build the
+    // project query explicitly instead, on both branches.
+    const projectQuery = { _limit: -1, published_at_null: false };
+
+    // Handle project_state filtering
+    if (ctx.query && ctx.query._where) {
+      if (ctx.query._where.project_state_eq) {
+        projectQuery.project_state = ctx.query._where.project_state_eq;
+      } else if (ctx.query._where.project_state_in) {
+        // Convert comma-separated string to array of integers for Strapi _in filter
+        const stateIds =
+          typeof ctx.query._where.project_state_in === 'string'
+            ? ctx.query._where.project_state_in.split(',').map((s) => parseInt(s))
+            : ctx.query._where.project_state_in;
+        projectQuery.project_state_in = stateIds;
+      }
+    }
+
     if (ctx.query._q) {
       promises.push(
         strapi.db
           .query('api::project.project')
-          .findMany(adaptQuery(ctx.query, { searchFields: ['name'] }))
+          .findMany(
+            toDbArgs(
+              adaptQuery({ ...projectQuery, _q: ctx.query._q }, { searchFields: ['name'] })
+            )
+          )
       );
     } else {
-      const projectQuery = { _limit: -1, published_at_null: false };
-
-      // Handle project_state filtering
-      if (ctx.query && ctx.query._where) {
-        if (ctx.query._where.project_state_eq) {
-          projectQuery.project_state = ctx.query._where.project_state_eq;
-        } else if (ctx.query._where.project_state_in) {
-          // Convert comma-separated string to array of integers for Strapi _in filter
-          const stateIds =
-            typeof ctx.query._where.project_state_in === 'string'
-              ? ctx.query._where.project_state_in.split(',').map((s) => parseInt(s))
-              : ctx.query._where.project_state_in;
-          projectQuery.project_state_in = stateIds;
-        }
-      }
 
       // TODO check why this filter removes some projects that have activities in the given year
       // if (year) {
@@ -672,46 +684,44 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       promises.push(
         strapi.db
           .query('api::project.project')
-          .findMany({ ...adaptQuery(projectQuery, {
-            populate: {
-              project_state: true,
-              activities: true,
-              project_scope: true,
-              project_likelihood: true,
-              project_type: true,
-              leader: true,
-              project_phases: {
-                populate: {
-                  incomes: {
-                    populate: {
-                      estimated_hours: { populate: { users_permissions_user: true } },
-                      income_type: true,
-                      invoice: true,
-                      income: true,
-                    },
-                  },
-                  expenses: {
-                    populate: { expense_type: true, invoice: true, expense: true },
+          .findMany(toDbArgs(adaptQuery(projectQuery), {
+            project_state: true,
+            activities: true,
+            project_scope: true,
+            project_likelihood: true,
+            project_type: true,
+            leader: true,
+            project_phases: {
+              populate: {
+                incomes: {
+                  populate: {
+                    estimated_hours: { populate: { users_permissions_user: true } },
+                    income_type: true,
+                    invoice: true,
+                    income: true,
                   },
                 },
-              },
-              project_original_phases: {
-                populate: {
-                  incomes: {
-                    populate: {
-                      estimated_hours: { populate: { users_permissions_user: true } },
-                      income_type: true,
-                      invoice: true,
-                      income: true,
-                    },
-                  },
-                  expenses: {
-                    populate: { expense_type: true, invoice: true, expense: true },
-                  },
+                expenses: {
+                  populate: { expense_type: true, invoice: true, expense: true },
                 },
               },
             },
-          }) }),
+            project_original_phases: {
+              populate: {
+                incomes: {
+                  populate: {
+                    estimated_hours: { populate: { users_permissions_user: true } },
+                    income_type: true,
+                    invoice: true,
+                    income: true,
+                  },
+                },
+                expenses: {
+                  populate: { expense_type: true, invoice: true, expense: true },
+                },
+              },
+            },
+          })),
       );
     }
 
