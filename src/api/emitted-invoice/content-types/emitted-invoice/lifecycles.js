@@ -20,6 +20,10 @@ const { scheduleFromEntityProjects } = require('../../../project/services/totals
 const { rawExecute } = require('../../../../services/raw-sql');
 const { getMe } = require('../../../../services/me-settings');
 const { relationId } = require('../../../../services/relation-input');
+// A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
+// so the rule that rejected the write never reaches the user. ApplicationError
+// answers 400 with the message, which the views already display.
+const { errors: { ApplicationError } } = require('@strapi/utils');
 
 module.exports = {
   async beforeCreate(event) {
@@ -61,7 +65,7 @@ module.exports = {
       .findOne({ where: event.params.where });
 
     if (invoice && invoice.updatable === false && !(data.updatable_admin === true)) {
-      throw new Error('emitted-invoice NOT updatable');
+      throw new ApplicationError('emitted-invoice NOT updatable');
     }
 
     cleanupUserFields(data);
@@ -92,7 +96,7 @@ module.exports = {
 
     if (!data._internal) {
       data.updatable_admin = false;
-      await handleState(data);
+      await handleState(data, invoice);
       await calculateTotals(data);
     } else {
       delete data.user_real;
@@ -195,7 +199,7 @@ module.exports = {
       .query('api::emitted-invoice.emitted-invoice')
       .findOne({ where: event.params.where });
     if (invoice && invoice.state === 'real') {
-      throw new Error('Cannot delete a real invoice');
+      throw new ApplicationError('Cannot delete a real invoice');
     }
     // Bulk-unlink orders via raw SQL (no lifecycle re-entry) — parameter-bound.
     const orders = await strapi.db
@@ -229,15 +233,32 @@ function cleanupUserFields(data) {
   }
 }
 
-async function handleState(data) {
+/**
+ * Draft -> real conversion ("Emetre factura").
+ *
+ * @param {object} data    the incoming payload
+ * @param {object} [stored] the row as currently persisted (update only)
+ *
+ * The trigger is the STORED state, not the code the client happens to be
+ * holding. v3 keyed off `data.code === 'ESBORRANY'`, which wedges the invoice
+ * if the conversion ever fails after the client has already updated its own
+ * copy: the form then sends the assigned code back, no branch matches, and the
+ * button silently does nothing for good. Anything not yet real that is asked to
+ * become real is a conversion.
+ */
+async function handleState(data, stored) {
   if (data._internal) return;
 
-  if (data.code === 'ESBORRANY' && data.state === 'real') {
+  const becomingReal = data.state === 'real' && (!stored || stored.state !== 'real');
+  if (becomingReal || (data.code === 'ESBORRANY' && data.state === 'real')) {
     data.user_real = data.user_last;
-    const serialId = relationId(data.serial);
+    const serialId = relationId(data.serial) || (stored && relationId(stored.serial));
     const serial = await strapi.db.query('api::serie.serie').findOne({ where: { id: serialId } });
     if (serial) {
-      if (!data.number) {
+      const existingNumber = data.number || (stored && stored.number);
+      if (existingNumber) {
+        data.number = existingNumber;
+      } else {
         const nextNumber = serial.emitted_invoice_number + 1;
         await strapi.db
           .query('api::serie.serie')
@@ -248,7 +269,9 @@ async function handleState(data) {
       const places = serial.leadingZeros || 1;
       data.code = `${serial.name}-${zeroPad(data.number, places)}`;
     }
-  } else if (data.state === 'draft' || !data.state) {
+  } else if ((data.state === 'draft' || !data.state) && !(stored && stored.state === 'real')) {
+    // Never walk a real invoice back to draft: a partial save that simply omits
+    // `state` would otherwise reset its code to ESBORRANY and lose the number.
     data.state = 'draft';
     data.code = 'ESBORRANY';
   }

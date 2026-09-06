@@ -1,5 +1,9 @@
 'use strict';
 /* global strapi */
+// A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
+// so the rule that rejected the write never reaches the user. ApplicationError
+// answers 400 with the message, which the views already display.
+const { errors: { ApplicationError } } = require('@strapi/utils');
 
 /**
  * contact lifecycles (v5). Ported from v3 api/contacts/models/contacts.js.
@@ -23,7 +27,7 @@ module.exports = {
     ]);
 
     if (refs.some(Boolean)) {
-      throw new Error('You cannot delete this contact');
+      throw new ApplicationError('You cannot delete this contact');
     }
   },
 };

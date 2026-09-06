@@ -12,6 +12,10 @@ const https = require('https');
 const path = require('path');
 const { createVerifactuInvoice } = require('verifactu-node-lib');
 const _ = require('lodash');
+// A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
+// so the rule that rejected the write never reaches the user. ApplicationError
+// answers 400 with the message, which the views already display.
+const { errors: { ApplicationError } } = require('@strapi/utils');
 
 const sendVerifactu = async () => {
   const me = await strapi.db.query('api::me.me').findOne();
@@ -254,12 +258,12 @@ const sendToAEAT = async (xml, endpoint, certificateRelativePath, certificatePas
   try {
     // Read certificate file
     if (!certificateRelativePath) {
-      throw new Error('Certificate relative path is required.');
+      throw new ApplicationError('Certificate relative path is required.');
     }
     const certificatePath = path.join(strapi.dirs.static.public, certificateRelativePath);
 
     if (!certificatePath || !fs.existsSync(certificatePath)) {
-      throw new Error(`Certificate file not found: ${certificatePath}`);
+      throw new ApplicationError(`Certificate file not found: ${certificatePath}`);
     }
 
     const pfx = fs.readFileSync(certificatePath);

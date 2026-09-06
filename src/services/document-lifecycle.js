@@ -33,6 +33,10 @@
  */
 const { scheduleFromEntityProjects } = require('../api/project/services/totalsRefreshScheduler');
 const { relationId } = require('./relation-input');
+// A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
+// so the rule that rejected the write never reaches the user. ApplicationError
+// answers 400 with the message, which the views already display.
+const { errors: { ApplicationError } } = require('@strapi/utils');
 
 function createDocumentLifecycles({
   uid,
@@ -56,7 +60,7 @@ function createDocumentLifecycles({
       const data = event.params.data;
       const existing = await strapi.db.query(uid).findOne({ where: event.params.where });
       if (existing && existing.updatable === false && !(data.updatable_admin === true)) {
-        throw new Error(`${entity} NOT updatable`);
+        throw new ApplicationError(`${entity} NOT updatable`);
       }
       if (withPaymentMethod && existing) {
         await applyPaymentMethod(data, existing.payment_method);
@@ -76,7 +80,7 @@ function createDocumentLifecycles({
     async beforeDelete(event) {
       const existing = await strapi.db.query(uid).findOne({ where: event.params.where });
       if (existing && existing.updatable === false) {
-        throw new Error(`${entity} NOT updatable`);
+        throw new ApplicationError(`${entity} NOT updatable`);
       }
       scheduleFromEntityProjects(existing);
     },

@@ -7,6 +7,10 @@
  */
 const service = require('../../../project/services/projectCache');
 const { relationId } = require('../../../../services/relation-input');
+// A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
+// so the rule that rejected the write never reaches the user. ApplicationError
+// answers 400 with the message, which the views already display.
+const { errors: { ApplicationError } } = require('@strapi/utils');
 
 module.exports = {
   async beforeCreate(event) {
@@ -20,7 +24,7 @@ module.exports = {
     );
     if (invalids.length) {
       console.error('daily-dedication overlaps', invalids);
-      throw new Error('daily-dedication overlaps');
+      throw new ApplicationError('daily-dedication overlaps');
     }
     service.setDailyDedicationsDirty(true);
     await updateActivitiesPrice(data);
@@ -39,7 +43,7 @@ module.exports = {
     );
     if (invalids.length) {
       console.error('daily-dedication overlaps', invalids);
-      throw new Error('daily-dedication overlaps');
+      throw new ApplicationError('daily-dedication overlaps');
     }
     service.setDailyDedicationsDirty(true);
     await updateActivitiesPrice(data);
