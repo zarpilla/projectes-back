@@ -42,7 +42,9 @@
     "logo": {
       "type": "media",
       "relation": "oneToOne",
-      "allowedTypes": ["images"]
+      "allowedTypes": [
+        "images"
+      ]
     },
     "quote_footer": {
       "type": "text"
@@ -94,10 +96,15 @@
     },
     "verifactu": {
       "type": "enumeration",
-      "enum": ["no", "test", "real"]
+      "enum": [
+        "no",
+        "test",
+        "real"
+      ]
     },
     "certificate_pwd": {
-      "type": "password"
+      "type": "string",
+      "private": true
     },
     "bank_account_payroll": {
       "type": "relation",
@@ -127,19 +134,28 @@
     "google_credentials": {
       "type": "media",
       "relation": "oneToOne",
-      "allowedTypes": ["files"]
+      "allowedTypes": [
+        "files"
+      ]
     },
     "face": {
       "type": "enumeration",
-      "enum": ["no", "test", "real"]
+      "enum": [
+        "no",
+        "test",
+        "real"
+      ]
     },
     "face_certificate": {
       "type": "media",
       "relation": "oneToOne",
-      "allowedTypes": ["files"]
+      "allowedTypes": [
+        "files"
+      ]
     },
     "face_certificate_password": {
-      "type": "password"
+      "type": "string",
+      "private": true
     },
     "face_test_endpoint": {
       "type": "string"
@@ -150,7 +166,10 @@
     "face_invoice_format": {
       "type": "enumeration",
       "default": "facturae",
-      "enum": ["ubl", "facturae"]
+      "enum": [
+        "ubl",
+        "facturae"
+      ]
     },
     "front_url": {
       "type": "string"
@@ -163,13 +182,15 @@
       "type": "string"
     },
     "dir3_api_token": {
-      "type": "password"
+      "type": "string",
+      "private": true
     },
     "invoice_parser_api_url": {
       "type": "string"
     },
     "invoice_parser_api_token": {
-      "type": "password"
+      "type": "string",
+      "private": true
     }
   }
 }

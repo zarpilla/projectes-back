@@ -1245,7 +1245,7 @@ export interface ApiMeMe extends Struct.SingleTypeSchema {
     bank_account_ss: Schema.Attribute.Relation<'oneToOne', 'api::bank-account.bank-account'>;
     bank_account_vat: Schema.Attribute.Relation<'oneToOne', 'api::bank-account.bank-account'>;
     ccc: Schema.Attribute.String;
-    certificate_pwd: Schema.Attribute.Password;
+    certificate_pwd: Schema.Attribute.String & Schema.Attribute.Private;
     city: Schema.Attribute.String;
     contact_form_email: Schema.Attribute.String;
     contact_form_text: Schema.Attribute.RichText;
@@ -1253,12 +1253,12 @@ export interface ApiMeMe extends Struct.SingleTypeSchema {
     country: Schema.Attribute.String;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
-    dir3_api_token: Schema.Attribute.Password;
+    dir3_api_token: Schema.Attribute.String & Schema.Attribute.Private;
     dir3_api_url: Schema.Attribute.String;
     email: Schema.Attribute.Email;
     face: Schema.Attribute.Enumeration<['no', 'test', 'real']>;
     face_certificate: Schema.Attribute.Media<'files'>;
-    face_certificate_password: Schema.Attribute.Password;
+    face_certificate_password: Schema.Attribute.String & Schema.Attribute.Private;
     face_invoice_format: Schema.Attribute.Enumeration<['ubl', 'facturae']> &
       Schema.Attribute.DefaultTo<'facturae'>;
     face_real_endpoint: Schema.Attribute.String;
@@ -1268,7 +1268,7 @@ export interface ApiMeMe extends Struct.SingleTypeSchema {
     ical: Schema.Attribute.String;
     invoice_email: Schema.Attribute.String;
     invoice_footer: Schema.Attribute.Text;
-    invoice_parser_api_token: Schema.Attribute.Password;
+    invoice_parser_api_token: Schema.Attribute.String & Schema.Attribute.Private;
     invoice_parser_api_url: Schema.Attribute.String;
     invoice_subject: Schema.Attribute.String;
     invoice_template: Schema.Attribute.Text;
@@ -2782,7 +2782,7 @@ export interface ApiVerifactuVerifactu extends Struct.SingleTypeSchema {
   };
   attributes: {
     certificate: Schema.Attribute.Media<'files'>;
-    certificate_password: Schema.Attribute.Password;
+    certificate_password: Schema.Attribute.String & Schema.Attribute.Private;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     locale: Schema.Attribute.String & Schema.Attribute.Private;

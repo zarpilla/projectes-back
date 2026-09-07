@@ -13,15 +13,22 @@
   "attributes": {
     "mode": {
       "type": "enumeration",
-      "enum": ["no", "test", "real"]
+      "enum": [
+        "no",
+        "test",
+        "real"
+      ]
     },
     "certificate": {
       "type": "media",
       "relation": "oneToOne",
-      "allowedTypes": ["files"]
+      "allowedTypes": [
+        "files"
+      ]
     },
     "certificate_password": {
-      "type": "password"
+      "type": "string",
+      "private": true
     },
     "software_developerName": {
       "type": "string"
