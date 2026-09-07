@@ -129,17 +129,24 @@ module.exports = {
         .query('api::verifactu-chain.verifactu-chain')
         .findMany({ where: { emitted_invoice: invoice.id } });
       if (chains.length === 0) {
-        const user = relationId(invoice.user_real) || 0;
-        await strapi.db.query('api::verifactu-chain.verifactu-chain').create({
-          data: {
-            emitted_invoice: invoice.id,
-            users_permissions_user: user,
-            invoice_json: JSON.stringify(invoice),
-            state: 'pending',
-            mode: verifactu.mode,
-            publishedAt: new Date(),
-          },
-        });
+        const chain = {
+          emitted_invoice: invoice.id,
+          invoice_json: JSON.stringify(invoice),
+          state: 'pending',
+          mode: verifactu.mode,
+          publishedAt: new Date(),
+        };
+        // v3 fell back to `users_permissions_user: 0` when the invoice had no
+        // user_real, and stored the 0 harmlessly because Strapi 3 created no
+        // foreign keys. v5 puts the relation in a link table WITH a constraint,
+        // so writing 0 fails with "a foreign key constraint fails" — which
+        // aborted the whole chain insert and left the invoice reading MISSING.
+        // Leave the relation unset instead.
+        const userId = relationId(invoice.user_real);
+        if (userId) {
+          chain.users_permissions_user = userId;
+        }
+        await strapi.db.query('api::verifactu-chain.verifactu-chain').create({ data: chain });
       }
     }
 

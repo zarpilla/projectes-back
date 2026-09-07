@@ -5,6 +5,11 @@
  * verifactu-chain lifecycles (v5). Ported from v3 api/verifactu-chain/models/verifactu-chain.js.
  * sendVerifactu: builds the signed VeriFactu invoice (verifactu-node-lib), chains to the
  * previous OK hash, posts to AEAT, updates chain state + QR on the invoice.
+ *
+ * Every write below carries `_internal: true`, exactly as v3 did. afterUpdate
+ * re-runs sendVerifactu for anything that is NOT flagged, so an unflagged chain
+ * write re-enters the whole routine, which writes again — the run never settles
+ * and its nested writes deadlock against the invoice transaction that started it.
  */
 const fs = require('fs');
 const axios = require('axios');
@@ -217,6 +222,7 @@ const sendVerifactu = async () => {
           hash,
           xml,
           request_url: endpoint,
+          _internal: true,
         },
       });
 
@@ -237,6 +243,7 @@ const sendVerifactu = async () => {
               response_text: soapResponse.body,
               state: 'ok',
               actions: 'none',
+              _internal: true,
             },
           });
 
@@ -252,6 +259,7 @@ const sendVerifactu = async () => {
               response_text: soapResponse.body,
               state: 'okwitherrors',
               actions: 'none',
+              _internal: true,
             },
           });
 
@@ -263,6 +271,7 @@ const sendVerifactu = async () => {
               response_text: soapResponse.body,
               state: 'ko',
               actions: 'none',
+              _internal: true,
             },
           });
 
@@ -327,7 +336,9 @@ const updateInvoiceQr = async (invoiceId, qrCode) => {
   try {
     await strapi.db
       .query('api::emitted-invoice.emitted-invoice')
-      .update({ where: { id: invoiceId }, data: { qr: qrCode } });
+      // `_internal` keeps this out of the emitted-invoice lifecycle, which would
+      // otherwise treat a QR write as a user edit and re-run the whole enqueue.
+      .update({ where: { id: invoiceId }, data: { qr: qrCode, _internal: true } });
   } catch (error) {
     console.error('Error updating invoice QR code:', error);
   }

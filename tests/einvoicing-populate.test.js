@@ -124,3 +124,45 @@ describe('relationId over the shapes these paths see', () => {
     expect(relationId(null)).toBeUndefined();
   });
 });
+
+describe('verifactu-chain writes', () => {
+  const source = read(
+    'api', 'verifactu-chain', 'content-types', 'verifactu-chain', 'lifecycles.js',
+  );
+
+  it('flag every write internal, so afterUpdate does not re-run sendVerifactu', () => {
+    // afterUpdate calls sendVerifactu() for anything not flagged. An unflagged
+    // chain write therefore re-enters the whole routine, which writes again:
+    // the run never settles and its nested writes deadlock against the invoice
+    // transaction that started it. v3 carried five of these flags; the port
+    // carried none, and emitting a VeriFactu invoice hung until MySQL's lock
+    // timeout. One flag per write, matching v3 site for site.
+    const offsets = [];
+    let at = source.indexOf('.update(');
+    while (at !== -1) {
+      offsets.push(at);
+      at = source.indexOf('.update(', at + 1);
+    }
+    expect(offsets.length).toBeGreaterThanOrEqual(5);
+    const unflagged = offsets
+      .map((o) => source.slice(o, o + 400))
+      .filter((chunk) => !chunk.includes('_internal: true'))
+      .map((chunk) => chunk.split('\n').slice(0, 3).join(' ').trim());
+    expect(unflagged).toEqual([]);
+  });
+});
+
+describe('verifactu-chain enqueue', () => {
+  const source = read(
+    'api', 'emitted-invoice', 'content-types', 'emitted-invoice', 'lifecycles.js',
+  );
+
+  it('never writes a zero user id into the link table', () => {
+    // v3 fell back to `users_permissions_user: 0` and got away with it because
+    // Strapi 3 created no foreign keys. v5's link table has a constraint, so a 0
+    // aborts the insert — no chain row, and the invoice reads MISSING.
+    expect(source).not.toMatch(/users_permissions_user:\s*user\b/);
+    expect(source).not.toMatch(/relationId\(invoice\.user_real\)\s*\|\|\s*0/);
+    expect(source).toContain('if (userId) {');
+  });
+});
