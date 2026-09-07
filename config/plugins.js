@@ -10,6 +10,14 @@
  */
 const path = require('path');
 
+// PKCS#12 keystores, uploaded into me.face_certificate and verifactu.certificate.
+// Both e-invoicing paths consume this format and only this format —
+// https.Agent({ pfx }), forge.pkcs12 and `openssl pkcs12` — so the list stays
+// narrow rather than opening up certificates generally. `.p12` and `.pfx` both
+// resolve to application/x-pkcs12; application/pkcs12 is the IANA name that
+// some clients send instead.
+const allowedCertificateTypes = ['application/x-pkcs12', 'application/pkcs12'];
+
 const allowedMediaTypes = [
   'image/*',
   'video/*',
@@ -19,6 +27,7 @@ const allowedMediaTypes = [
   'application/vnd.openxmlformats-officedocument.*',
   'text/plain',
   'text/csv',
+  ...allowedCertificateTypes,
 ];
 
 const deniedExecutableTypes = [
