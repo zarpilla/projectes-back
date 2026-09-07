@@ -143,7 +143,9 @@ describe('verifactu-chain writes', () => {
       offsets.push(at);
       at = source.indexOf('.update(', at + 1);
     }
-    expect(offsets.length).toBeGreaterThanOrEqual(5);
+    // A floor only so the scan failing to match anything cannot pass silently;
+    // the invariant being tested is that EVERY write is flagged.
+    expect(offsets.length).toBeGreaterThanOrEqual(3);
     const unflagged = offsets
       .map((o) => source.slice(o, o + 400))
       .filter((chunk) => !chunk.includes('_internal: true'))

@@ -18,6 +18,7 @@ const path = require('path');
 const { createVerifactuInvoice } = require('verifactu-node-lib');
 const _ = require('lodash');
 const { relationId } = require('../../../../services/relation-input');
+const { chainStateFromResponse } = require('../../services/aeat-response');
 const { decryptSecret } = require('../../../../services/secret-crypto');
 // A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
 // so the rule that rejected the write never reaches the user. ApplicationError
@@ -233,49 +234,26 @@ const sendVerifactu = async () => {
       try {
         const soapResponse = await sendToAEAT(xml, endpoint, certificateRelativePath, certificatePassphrase);
 
-        if (
-          soapResponse.statusCode === 200 &&
-          soapResponse.body &&
-          soapResponse.body.includes('EstadoEnvio>Correcto<')
-        ) {
-          await strapi.db.query('api::verifactu-chain.verifactu-chain').update({
-            where: { id: invoice.id },
-            data: {
-              response_text: soapResponse.body,
-              state: 'ok',
-              actions: 'none',
-              _internal: true,
-            },
-          });
+        const state = chainStateFromResponse(soapResponse.body);
+        const accepted = soapResponse.statusCode === 200 && (state === 'ok' || state === 'okwitherrors');
 
-          await updateInvoiceQr(invoice.emitted_invoice.id, qr);
-        } else if (
-          soapResponse.statusCode === 200 &&
-          soapResponse.body &&
-          soapResponse.body.includes('>AceptadaConErrores<')
-        ) {
-          await strapi.db.query('api::verifactu-chain.verifactu-chain').update({
-            where: { id: invoice.id },
-            data: {
-              response_text: soapResponse.body,
-              state: 'okwitherrors',
-              actions: 'none',
-              _internal: true,
-            },
-          });
+        await strapi.db.query('api::verifactu-chain.verifactu-chain').update({
+          where: { id: invoice.id },
+          data: {
+            response_text: soapResponse.body,
+            state: accepted ? state : 'ko',
+            actions: 'none',
+            _internal: true,
+          },
+        });
 
+        if (accepted) {
+          // AEAT registered the invoice, with or without remarks, so the QR is
+          // valid and belongs on the invoice (and therefore on its PDF).
           await updateInvoiceQr(invoice.emitted_invoice.id, qr);
         } else {
-          await strapi.db.query('api::verifactu-chain.verifactu-chain').update({
-            where: { id: invoice.id },
-            data: {
-              response_text: soapResponse.body,
-              state: 'ko',
-              actions: 'none',
-              _internal: true,
-            },
-          });
-
+          // Stop the run: the chain is ordered, so a rejected record must not be
+          // followed by later ones hashing onto it.
           break;
         }
       } catch (error) {
