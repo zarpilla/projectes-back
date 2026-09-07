@@ -5,6 +5,7 @@
  * received-expense controllers (same Z.ai pipeline for both document types).
  * Extracted to a service so neither controller depends on the other.
  */
+const { decryptSecret } = require('./secret-crypto');
 const fs = require('fs');
 const os = require('os');
 const axios = require('axios');
@@ -70,7 +71,7 @@ async function proxyUpload(strapi, ctx) {
     form.append('file', pdfBuffer, { filename: 'invoice.pdf', contentType: 'application/pdf' });
 
     const response = await axios.post(`${baseUrl}/api/parse`, form, {
-      headers: { 'X-API-Key': meSettings.invoice_parser_api_token, ...form.getHeaders() },
+      headers: { 'X-API-Key': decryptSecret(meSettings.invoice_parser_api_token), ...form.getHeaders() },
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
       responseType: 'json',

@@ -8,6 +8,7 @@
  * and token stored on the `me` record. The v3 axios logic is preserved verbatim;
  * only the data-access changes to Document Service.
  */
+const { decryptSecret } = require('../../../services/secret-crypto');
 const axios = require('axios');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
@@ -39,7 +40,7 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
 
       const response = await axios.get(
         `${meSettings.dir3_api_url}/api/search/nif/${encodeURIComponent(nif)}`,
-        { headers: { 'X-API-Key': meSettings.dir3_api_token } },
+        { headers: { 'X-API-Key': decryptSecret(meSettings.dir3_api_token) } },
       );
       return response.data;
     } catch (error) {
@@ -73,7 +74,7 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
       }
 
       const response = await axios.get(url, {
-        headers: { 'X-API-Key': meSettings.dir3_api_token },
+        headers: { 'X-API-Key': decryptSecret(meSettings.dir3_api_token) },
       });
       return response.data;
     } catch (error) {

@@ -18,6 +18,7 @@ const path = require('path');
 const { createVerifactuInvoice } = require('verifactu-node-lib');
 const _ = require('lodash');
 const { relationId } = require('../../../../services/relation-input');
+const { decryptSecret } = require('../../../../services/secret-crypto');
 // A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
 // so the rule that rejected the write never reaches the user. ApplicationError
 // answers 400 with the message, which the views already display.
@@ -227,7 +228,7 @@ const sendVerifactu = async () => {
       });
 
       const certificateRelativePath = verifactu.certificate ? verifactu.certificate.url : '';
-      const certificatePassphrase = verifactu.certificate_password || '';
+      const certificatePassphrase = decryptSecret(verifactu.certificate_password) || '';
 
       try {
         const soapResponse = await sendToAEAT(xml, endpoint, certificateRelativePath, certificatePassphrase);

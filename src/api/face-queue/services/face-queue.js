@@ -25,6 +25,7 @@ const crypto = require('crypto');
 const { execSync } = require('child_process');
 const { signFacturaeXml } = require('../utils/sign-facturae');
 const { relationId } = require('../../../services/relation-input');
+const { decryptSecret } = require('../../../services/secret-crypto');
 
 const { createCoreService } = require('@strapi/strapi').factories;
 const { getMe } = require('../../../services/me-settings');
@@ -825,10 +826,10 @@ const submitInvoiceToFace = async ({ xml, nif: _nif, dir3: _dir3, mode, me }) =>
 
     const certificatePath = resolveCertificatePath(me);
 
-    const httpsAgent = createFaceHttpsAgent(certificatePath, me.face_certificate_password);
+    const httpsAgent = createFaceHttpsAgent(certificatePath, decryptSecret(me.face_certificate_password));
 
     // Generate JWT token for authentication (valid for 5 minutes)
-    const jwtToken = generateFaceJWT(certificatePath, me.face_certificate_password);
+    const jwtToken = generateFaceJWT(certificatePath, decryptSecret(me.face_certificate_password));
 
     // FACe API expects JSON with base64-encoded XML, not multipart/form-data
     const xmlBase64 = Buffer.from(xml, "utf-8").toString("base64");
@@ -901,10 +902,10 @@ const checkInvoiceStatus = async ({ registrationNumber, mode, me }) => {
 
     const certificatePath = resolveCertificatePath(me);
 
-    const httpsAgent = createFaceHttpsAgent(certificatePath, me.face_certificate_password);
+    const httpsAgent = createFaceHttpsAgent(certificatePath, decryptSecret(me.face_certificate_password));
 
     // Generate JWT token for authentication (valid for 5 minutes)
-    const jwtToken = generateFaceJWT(certificatePath, me.face_certificate_password);
+    const jwtToken = generateFaceJWT(certificatePath, decryptSecret(me.face_certificate_password));
 
     const config = {
       method: "GET",
@@ -1127,7 +1128,7 @@ const startFaceProcess = async (faceQueueInput) => {
     }
     try {
       const certificatePath = resolveCertificatePath(me);
-      signedXml = await signFacturaeXml(xml, certificatePath, me.face_certificate_password);
+      signedXml = await signFacturaeXml(xml, certificatePath, decryptSecret(me.face_certificate_password));
       strapi.log.info(`[face-queue] Facturae XAdES-BES signed queue=${faceQueue.id} bytes=${signedXml.length}`);
     } catch (signError) {
       strapi.log.error(`[face-queue] sign error queue=${faceQueue.id}:`, signError);

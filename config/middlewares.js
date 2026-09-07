@@ -29,6 +29,9 @@ module.exports = ({ env }) => [
   'strapi::body',
   'strapi::session',
   'strapi::favicon',
+  // Must precede strapi::public: uploads are served straight off disk, and that
+  // exposed the PKCS#12 certificate to anonymous download. See the middleware.
+  'global::block-key-material',
   'strapi::public',
   // v3 -> v5 REST transport compat (P9): numeric id -> documentId on core
   // routes, and v3's default first-level populate. Must run before the router.
