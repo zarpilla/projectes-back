@@ -1,5 +1,8 @@
 'use strict';
 
+// Connection details come from .env, the same file the app uses.
+require('dotenv').config();
+
 /**
  * ETL: migrate one tenant's data from a v3 database to a v5 database (P7.2).
  * See tools/etl/DESIGN.md for the storage-model mapping.
@@ -31,6 +34,48 @@ if (!FROM || !TO) {
 
 // v3 admin audit columns (created_by/updated_by) are not migrated — different admin user tables.
 
+/**
+ * Pairs a v5 column with the v3 column holding the same data.
+ *
+ * Strapi derives the column name from the attribute name, and its snake_case
+ * splits digit groups and camelCase words that Bookshelf stored verbatim:
+ *
+ *     face_dir3_oc  -> face_dir_3_oc      costByHour -> cost_by_hour
+ *     less15        -> less_15            from10to20 -> from_10_to_20
+ *
+ * Matching on the exact string therefore skipped those columns without a word
+ * of warning. That is how the FACe DIR3 codes and every price in route_rates
+ * were dropped. Compare with separators removed, and select the v3 column into
+ * the v5 one.
+ */
+const squash = (name) => name.replace(/_/g, '').toLowerCase();
+
+function pairColumns(names, v3Cols, v5Cols) {
+  const index = (cols) => {
+    const map = new Map();
+    // First wins, so an exact name is never displaced by a squashed one.
+    for (const col of cols) if (!map.has(squash(col))) map.set(squash(col), col);
+    return map;
+  };
+  const v3Index = index(v3Cols);
+  const v5Index = index(v5Cols);
+
+  const pairs = [];
+  const seen = new Set();
+  // `names` may be written in either spelling — the schema-derived lists use
+  // v5 attribute names, the hand-written user list uses v3 column names — so
+  // resolve both ends rather than assuming one side matches exactly.
+  for (const name of names) {
+    const key = squash(name);
+    const to = v5Cols.has(name) ? name : v5Index.get(key);
+    const from = v3Cols.has(name) ? name : v3Index.get(key);
+    if (!to || !from || seen.has(to)) continue;
+    seen.add(to);
+    pairs.push({ to, from });
+  }
+  return pairs;
+}
+
 async function main() {
   const { contentTypes, components } = loadRegistry();
   // uid -> collectionName, so a relation can be traced from its OTHER side:
@@ -56,7 +101,7 @@ async function main() {
     (v3Columns[TABLE_NAME] = v3Columns[TABLE_NAME] || new Set()).add(COLUMN_NAME);
   }
 
-  const stats = { copied: [], skippedMissing: [], relations: [], relationsNoSource: [], components: 0 };
+  const stats = { copied: [], skippedMissing: [], relations: [], relationsNoSource: [], components: 0, warnings: [] };
 
   if (!DRY) {
     await conn.query(`SET FOREIGN_KEY_CHECKS=0`);
@@ -82,17 +127,16 @@ async function main() {
         .filter(([name, def]) => !['relation', 'component', 'dynamiczone', 'media'].includes(def.type))
         .map(([name]) => name);
 
-      const shared = scalarAttrs.filter((a) => v3Cols.has(a) && v5Cols.has(a));
       // `published_at` is now a declared attribute on the types that used Draft &
-      // Publish, so it can already be in `shared` — dedupe or MySQL rejects the
-      // INSERT with "Column 'published_at' specified twice".
-      const colList = [
-        ...new Set(['id', ...shared, 'created_at', 'updated_at', 'published_at']),
-      ].filter((c) => v3Cols.has(c) && v5Cols.has(c));
-
-      const selectExprs = colList.map((c) =>
-        c === 'id' ? 'id' : `\`${c}\``,
+      // Publish, so it can already be among the scalars — pairColumns dedupes,
+      // or MySQL rejects the INSERT with "Column 'published_at' specified twice".
+      const pairs = pairColumns(
+        ['id', ...scalarAttrs, 'created_at', 'updated_at', 'published_at'],
+        v3Cols,
+        v5Cols,
       );
+      const colList = pairs.map((p) => p.to);
+      const selectExprs = pairs.map((p) => (p.to === 'id' ? 'id' : `\`${p.from}\``));
       // v3 kept the live/trashed state in `published_at` (null = trashed). v5
       // owns that column, so the five formerly Draft & Publish types carry a
       // `trashed` boolean instead — derive it here.
@@ -131,13 +175,13 @@ async function main() {
         [TO, comp.table],
       );
       const v5Cols = new Set(v5c.map((r) => r.COLUMN_NAME));
-      const colList = ['id', ...scalarAttrs.filter((a) => v3Cols.has(a) && v5Cols.has(a))]
-        .filter((c) => v3Cols.has(c) && v5Cols.has(c));
+      const pairs = pairColumns(['id', ...scalarAttrs], v3Cols, v5Cols);
+      const colList = pairs.map((p) => p.to);
       if (!colList.includes('id')) continue;
 
       const sql =
         `INSERT INTO \`${TO}\`.\`${comp.table}\` (${colList.map((c) => `\`${c}\``).join(', ')}) ` +
-        `SELECT ${colList.map((c) => `\`${c}\``).join(', ')} FROM \`${FROM}\`.\`${comp.table}\``;
+        `SELECT ${pairs.map((p) => `\`${p.from}\``).join(', ')} FROM \`${FROM}\`.\`${comp.table}\``;
       if (DRY) {
         console.log(`[dry] ${comp.table}: component copy`);
       } else {
@@ -313,13 +357,40 @@ async function main() {
         if (v3TableNames.has('upload_file_morph')) {
           // related_id must fit v5's INT UNSIGNED: skip orphan/corrupt morph
           // rows (some tenants carry related_id = -1 pointing at nothing).
+          // v3 stored `related_type` as the model/table name ("us",
+          // "received_expenses"); v5 wants the content-type UID
+          // ("api::me.me"). Copying it verbatim leaves every attachment
+          // orphaned: the media relation resolves to null, so invoice logos,
+          // certificates and expense documents all silently disappear.
+          const tableToUid = new Map();
+          for (const ct of contentTypes) {
+            if (ct.table && ct.uid) tableToUid.set(ct.table, ct.uid);
+          }
+          const caseArms = [...tableToUid.entries()]
+            .map(([table, uid]) => `WHEN ${conn.escape(table)} THEN ${conn.escape(uid)}`)
+            .join(' ');
+          const relatedTypeExpr = caseArms
+            ? `CASE related_type ${caseArms} ELSE related_type END`
+            : 'related_type';
+
           const morphSql =
             `INSERT INTO \`${TO}\`.\`files_related_mph\` (file_id, related_id, related_type, field) ` +
-            `SELECT upload_file_id, related_id, related_type, field FROM \`${FROM}\`.upload_file_morph ` +
+            `SELECT upload_file_id, related_id, ${relatedTypeExpr}, field FROM \`${FROM}\`.upload_file_morph ` +
             `WHERE related_id IS NOT NULL AND related_id > 0`;
           if (!DRY) {
             await q(conn, `TRUNCATE TABLE \`${TO}\`.\`files_related_mph\``);
             await q(conn, morphSql);
+            const [unmapped] = await conn.query(
+              `SELECT related_type, COUNT(*) n FROM \`${TO}\`.\`files_related_mph\` ` +
+                `WHERE related_type NOT LIKE 'api::%' AND related_type NOT LIKE 'plugin::%' ` +
+                `GROUP BY related_type`,
+            );
+            for (const row of unmapped) {
+              stats.warnings.push(
+                `files_related_mph: ${row.n} row(s) still point at "${row.related_type}" — ` +
+                  `no v5 content type uses that table, so those attachments stay unlinked`,
+              );
+            }
           } else {
             console.log('[dry] files_related_mph');
           }
@@ -336,15 +407,20 @@ async function main() {
       const v5Cols = new Set(v5c.map((r) => r.COLUMN_NAME));
       const v3Cols = v3Columns['users-permissions_user'];
       // Scalar user columns (role is a relation -> lnk)
-      const userScalars = [
+      const userPairs = pairColumns(
+        [
         'id', 'username', 'email', 'provider', 'password', 'resetPasswordToken',
         'confirmationToken', 'confirmed', 'blocked', 'hidden', 'cost_by_hour',
         'monthly_salary', 'monthly_tax', 'ical', 'excel_decimal', 'fullname',
         'identity_number', 'naf', 'multidelivery_discount', 'created_at', 'updated_at',
-      ].filter((c) => v3Cols.has(c) && v5Cols.has(c));
+      ],
+        v3Cols,
+        v5Cols,
+      );
+      const userScalars = userPairs.map((p) => p.to);
       const sql =
         `INSERT INTO \`${TO}\`.\`users-permissions_user\` (document_id, ${userScalars.map((c) => `\`${c}\``).join(', ')}) ` +
-        `SELECT UUID(), ${userScalars.map((c) => `\`${c}\``).join(', ')} FROM \`${FROM}\`.\`users-permissions_user\``;
+        `SELECT UUID(), ${userPairs.map((p) => `\`${p.from}\``).join(', ')} FROM \`${FROM}\`.\`users-permissions_user\``;
       if (DRY) {
         console.log(`[dry] users: ${userScalars.length} cols`);
       } else {
@@ -397,6 +473,10 @@ async function main() {
   }
   console.log(`Component rows: ${stats.components}`);
   console.log(`Skipped (missing in v3): ${stats.skippedMissing.length}`);
+  if (stats.warnings.length) {
+    console.log(`\nWarnings (${stats.warnings.length}):`);
+    for (const warning of stats.warnings) console.log(`  ! ${warning}`);
+  }
   if (DRY) console.log(`Relation lnk tables (dry): ${stats.relations.length}`);
   if (!DRY) {
     for (const c of stats.copied.sort((a, b) => b.rows - a.rows).slice(0, 15)) {

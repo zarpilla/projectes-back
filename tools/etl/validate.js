@@ -1,5 +1,8 @@
 'use strict';
 
+// Connection details come from .env, the same file the app uses.
+require('dotenv').config();
+
 /**
  * Post-migration validation (P7.5). Compares a v3 source DB against a migrated
  * v5 DB: per-table row counts + relation-link counts + sample-row scalar diffs.

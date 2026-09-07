@@ -30,7 +30,12 @@ module.exports = createCoreController(FACE_QUEUE_UID, ({ strapi }) => ({
    * GET /api/face-queues/verify-setup
    */
   async verifySetup(ctx) {
-    const me = await strapi.documents(ME_UID).findFirst();
+    // `face_certificate` is a media relation; v5 omits it unless populated, so
+    // without this the diagnostic reported "Certificate not uploaded" for a
+    // certificate that was uploaded and linked.
+    const me = await strapi.documents(ME_UID).findFirst({
+      populate: { face_certificate: true },
+    });
     const checks = {
       overall: true,
       details: {}
