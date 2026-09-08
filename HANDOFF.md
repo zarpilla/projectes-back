@@ -142,7 +142,16 @@ cd projectes-v5 && DATABASE_NAME=projectes_v5_<tenant> npm run start
 # 3. migrate + validate (needs env: set -a; source .env; set +a)
 node tools/etl/migrate.js  --from <tenant> --to projectes_v5_<tenant>
 node tools/etl/validate.js --from <tenant> --to projectes_v5_<tenant>
+node tools/etl/nullcheck.js --from <tenant> --to projectes_v5_<tenant>
 ```
+
+`nullcheck.js` joins v3/v5 rows by id per table and reports any column that
+was populated in v3 but is NULL in v5 (pairs Strapi-renamed columns like
+face_dir3_oc → face_dir_3_oc the same way the ETL does). Verified clean on
+diligencia and arrandeterra (104 tables each, zero lost values).
+`scripts/repair-v3-migration.js` (added by the P9 session) repairs
+renamed-column/media-link defects in place for already-migrated tenants —
+prefer re-running the ETL when possible.
 
 Admin users port (bcrypt hashes are compatible v3→v5; role 1 = Super Admin):
 
