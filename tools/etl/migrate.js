@@ -455,6 +455,64 @@ async function main() {
         }
       }
     }
+
+    // ── 7. Admin panel accounts (strapi_administrator -> admin_users) ──────
+    // Without this a migrated tenant has no admin at all and the panel sends
+    // you to /admin/auth/register-admin. The API users above are a different
+    // table and a different login, so they do not help. v3 and v5 both store
+    // bcrypt, and both name the roles strapi-super-admin / -editor / -author,
+    // so the accounts carry over with their existing passwords.
+    if ((!ONLY || ONLY.includes('admin')) && v3TableNames.has('strapi_administrator')) {
+      const [v5c] = await conn.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = ? AND table_name = 'admin_users'`,
+        [TO],
+      );
+      const v5Cols = new Set(v5c.map((r) => r.COLUMN_NAME));
+      const v3Cols = v3Columns['strapi_administrator'];
+      // isActive -> is_active, resetPasswordToken -> reset_password_token, …
+      const pairs = pairColumns(['id', ...v3Cols], v3Cols, v5Cols);
+
+      const sql =
+        `INSERT INTO \`${TO}\`.\`admin_users\` (document_id, ${pairs.map((p) => `\`${p.to}\``).join(', ')}) ` +
+        `SELECT UUID(), ${pairs.map((p) => `\`${p.from}\``).join(', ')} FROM \`${FROM}\`.\`strapi_administrator\``;
+
+      if (DRY) {
+        console.log(`[dry] admin_users: ${pairs.length} cols from strapi_administrator`);
+      } else {
+        await conn.query(`TRUNCATE TABLE \`${TO}\`.\`admin_users_roles_lnk\``);
+        await conn.query(`TRUNCATE TABLE \`${TO}\`.\`admin_users\``);
+        const [res] = await q(conn, sql);
+        stats.copied.push({ table: 'admin_users', rows: res.affectedRows });
+
+        // Roles are matched by CODE: both versions bootstrap their own rows, so
+        // the ids are not guaranteed to line up even though they usually do.
+        if (v3TableNames.has('strapi_users_roles') && v3TableNames.has('strapi_role')) {
+          const roleSql =
+            `INSERT INTO \`${TO}\`.\`admin_users_roles_lnk\` (user_id, role_id) ` +
+            `SELECT ur.user_id, r5.id FROM \`${FROM}\`.\`strapi_users_roles\` ur ` +
+            `JOIN \`${FROM}\`.\`strapi_role\` r3 ON r3.id = ur.role_id ` +
+            `JOIN \`${TO}\`.\`admin_roles\` r5 ON r5.code = r3.code ` +
+            `JOIN \`${TO}\`.\`admin_users\` u5 ON u5.id = ur.user_id`;
+          const [lnkRes] = await q(conn, roleSql);
+          stats.copied.push({ table: 'admin_users_roles_lnk', rows: lnkRes.affectedRows });
+
+          const [orphans] = await conn.query(
+            `SELECT COUNT(*) n FROM \`${TO}\`.\`admin_users\` u ` +
+              `LEFT JOIN \`${TO}\`.\`admin_users_roles_lnk\` l ON l.user_id = u.id ` +
+              `WHERE l.user_id IS NULL`,
+          );
+          if (orphans[0].n > 0) {
+            stats.warnings.push(
+              `admin_users: ${orphans[0].n} account(s) have no role and cannot sign in to the panel`,
+            );
+          }
+        } else {
+          stats.warnings.push(
+            'admin_users copied but v3 has no strapi_users_roles/strapi_role — the accounts have no role and cannot sign in',
+          );
+        }
+      }
+    }
   } finally {
     if (!DRY) await conn.query(`SET FOREIGN_KEY_CHECKS=1`);
     await conn.end();
