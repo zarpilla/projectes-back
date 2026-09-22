@@ -253,8 +253,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         // `form.periodification.length` unguarded — so the whole auxiliary-data
         // setup threw on every load.
         'periodification',
-        'grantable_years',
-        'grantable_contacts',
+        // Populating a component does NOT populate the relations inside it, so
+        // the `year` and `contact` need naming explicitly. Without them the
+        // component came back with its amounts but no `year` key at all, and
+        // ProjectGrantableYears' <b-select> had nothing to match its options
+        // against — the "Imports per any" dropdown rendered blank.
+        'grantable_years.year',
+        'grantable_contacts.contact',
         ]),
       });
 
@@ -1529,8 +1534,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         // `form.periodification.length` unguarded — so the whole auxiliary-data
         // setup threw on every load.
         'periodification',
-        'grantable_years',
-        'grantable_contacts',
+        // Populating a component does NOT populate the relations inside it, so
+        // the `year` and `contact` need naming explicitly. Without them the
+        // component came back with its amounts but no `year` key at all, and
+        // ProjectGrantableYears' <b-select> had nothing to match its options
+        // against — the "Imports per any" dropdown rendered blank.
+        'grantable_years.year',
+        'grantable_contacts.contact',
         ]),
       });
 
@@ -1606,8 +1616,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         // `form.periodification.length` unguarded — so the whole auxiliary-data
         // setup threw on every load.
         'periodification',
-        'grantable_years',
-        'grantable_contacts',
+        // Populating a component does NOT populate the relations inside it, so
+        // the `year` and `contact` need naming explicitly. Without them the
+        // component came back with its amounts but no `year` key at all, and
+        // ProjectGrantableYears' <b-select> had nothing to match its options
+        // against — the "Imports per any" dropdown rendered blank.
+        'grantable_years.year',
+        'grantable_contacts.contact',
         ]),
       });
 
