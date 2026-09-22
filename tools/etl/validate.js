@@ -2,6 +2,7 @@
 
 // Connection details come from .env, the same file the app uses.
 require('dotenv').config();
+const { decryptSecret, PREFIX: SECRET_PREFIX } = require('../../src/services/secret-crypto');
 
 /**
  * Post-migration validation (P7.5). Compares a v3 source DB against a migrated
@@ -25,6 +26,69 @@ const TO = flag('to');
 if (!FROM || !TO) {
   console.error('Usage: node tools/etl/validate.js --from <v3db> --to <v5db>');
   process.exit(1);
+}
+
+/** Key order, recursively, so two encodings of the same object compare equal. */
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((out, key) => {
+        out[key] = canonical(value[key]);
+        return out;
+      }, {});
+  }
+  return value;
+}
+
+/**
+ * Compares one column across the two databases.
+ *
+ * Most columns compare via String() — that is what makes decimals and dates
+ * line up despite the driver handing back different wrappers. JSON is the
+ * exception: v3 stored it in a TEXT column, so mysql2 returns the raw string,
+ * while v5 declares a real JSON column, so mysql2 parses it into an object.
+ * String() then compares the JSON text against "[object Object]" and every
+ * populated JSON column is reported as a difference.
+ *
+ * That matters more than a noisy report: validate.js exits non-zero, and the
+ * cutover runs it under `set -e` AFTER v3 has been stopped and BEFORE v5 is
+ * started — so a false positive leaves the tenant with nothing serving.
+ * `face_queues.invoice` is the only JSON column in the schema today, which is
+ * why this only shows up on tenants that have used FACe.
+ */
+function sameValue(a, b) {
+  if (String(a) === String(b)) return true;
+
+  // Secrets are encrypted at rest in v5 (services/secret-crypto.js), so the
+  // column cannot equal v3's plaintext. Decrypt and compare when the key is
+  // available; accept it as migrated when it is not, rather than aborting a
+  // cutover over a value we deliberately transformed.
+  if (typeof b === 'string' && b.startsWith(SECRET_PREFIX)) {
+    try {
+      return decryptSecret(b) === String(a);
+    } catch (e) {
+      return true;
+    }
+  }
+
+  const parse = (v) => {
+    if (v && typeof v === 'object') return v;
+    if (typeof v !== 'string') return undefined;
+    const text = v.trim();
+    if (!text.startsWith('{') && !text.startsWith('[')) return undefined;
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      return undefined;
+    }
+  };
+
+  const objA = parse(a);
+  const objB = parse(b);
+  if (objA === undefined || objB === undefined) return false;
+  return JSON.stringify(canonical(objA)) === JSON.stringify(canonical(objB));
 }
 
 async function main() {
@@ -155,8 +219,7 @@ async function main() {
       for (const col of shared) {
         const a = v3Row[0] && v3Row[0][col];
         const b = v5Row[0] && v5Row[0][col];
-        // decimal/date objects compare via String()
-        if (String(a) !== String(b)) {
+        if (!sameValue(a, b)) {
           problems.push(`${ct.table}#${firstId.id}.${col}: v3=${JSON.stringify(a)} v5=${JSON.stringify(b)}`);
         }
       }

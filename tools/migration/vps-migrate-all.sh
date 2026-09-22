@@ -53,7 +53,10 @@ configs() {
   done
   for a in $(printf '%s\n' "${all[@]}" | sort); do
     local skip=0
-    for t in $ordered; do [ "$a" = "$t" ] && skip=1; done
+    # Unquoted "$ordered" expands to the FIRST element only, so everything but
+    # the first priority tenant was added twice — and with --auto that means
+    # migrating it twice.
+    for t in ${ordered[@]+"${ordered[@]}"}; do [ "$a" = "$t" ] && skip=1; done
     [ $skip -eq 0 ] && ordered+=("$a")
   done
   printf '%s\n' "${ordered[@]}"
@@ -93,7 +96,13 @@ for tenant in $(configs); do
     echo "    reminder: deploy this tenant's P9 frontend build together with this step."
   fi
 
-  if "$TENANT_SCRIPT" "$cfg" ${action:+--cutover}; then
+  # `${action:+--cutover}` expanded to --cutover for ANY non-empty action, so
+  # choosing "prepare" ran a full cutover: it stopped v3, re-ran the ETL and
+  # started v5. Pass the flag only for an actual cutover.
+  tenant_args=("$cfg")
+  [ "$action" = "cutover" ] && tenant_args+=("--cutover")
+
+  if "$TENANT_SCRIPT" "${tenant_args[@]}"; then
     DONE+=("$tenant:$action")
   else
     FAILED+=("$tenant:$action")
