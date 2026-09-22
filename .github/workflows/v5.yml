@@ -1,0 +1,66 @@
+name: Build and Publish Backend Docker image (v5)
+
+# The Strapi v5 backend. Pairs with esstrapis-front:v5 — the frontend's compat
+# layer assumes the v3-compat middleware and the ported controllers in this
+# image, and a mismatch 404s every request rather than failing loudly.
+#
+# The v3 backend (zarpilla/projectes) is a different repository, so this needs
+# no branch of its own: `main` here IS v5.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The suite is static and unit-level — no database or running server — so
+      # it gates the image cheaply. It covers the v3 -> v5 traps that cost the
+      # most to find: relations that must be populated, `select` lists that must
+      # name only scalars, lifecycle writes that must carry `_internal`, secrets
+      # that must not be hashed, and the ETL's column pairing.
+      - name: Run tests
+        run: npm test
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Backend Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          # Same pairing as the frontend: `v5` is what deployments follow, and
+          # the sha-pinned tag is what a single tenant rolls back to.
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/esstrapis-back:v5
+            ${{ secrets.DOCKERHUB_USERNAME }}/esstrapis-back:v5-${{ github.sha }}
