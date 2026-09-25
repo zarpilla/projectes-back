@@ -160,6 +160,12 @@ if [ "$CUTOVER" != "--cutover" ]; then
       DATABASE_NAME: process.argv[4],
       DATABASE_POOL_MIN: "0",
       DATABASE_POOL_MAX: "8", // 16 instances x 8 = 128 < max_connections 151
+      // Every tenant sits behind nginx, so Koa has to trust X-Forwarded-Proto
+      // (config/server.js -> server.proxy.koa). Without it the secure
+      // refresh-token cookie users-permissions sets on a successful login
+      // throws and POST /api/auth/local returns 500. Not a secret: always set,
+      // never carried over.
+      IS_PROXIED: "true",
       APP_KEYS: keep("APP_KEYS", () => [b64(16), b64(16), b64(16)].join(",")),
       API_TOKEN_SALT: keep("API_TOKEN_SALT", () => b64(16)),
       ADMIN_JWT_SECRET: keep("ADMIN_JWT_SECRET", () => b64(16)),
