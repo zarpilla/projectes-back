@@ -318,8 +318,19 @@ echo "==> 11. starting v5 ($V5_NAME on port $PORT — nginx untouched)"
 pm2 start "$V5_CONFIG_FILE" && pm2 save
 
 echo "==> 12. health check"
-sleep 10
-STATUS="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/api/logos?_limit=1" || true)"
+# Strapi 5 takes appreciably longer than 10s to accept connections — the
+# prepare boot above allows five minutes for the same thing. A single curl
+# after a fixed sleep reported HTTP 000 (curl could not connect) on an app that
+# was merely still starting, which reads as a failed cutover. Poll instead.
+STATUS="000"
+for i in $(seq 1 60); do
+  STATUS="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$PORT/api/logos?_limit=1" || true)"
+  case "$STATUS" in 200|403) break ;; esac
+  # A crash loop is worth failing fast on: pm2 keeps restarting it, so uptime
+  # never grows and there is nothing to wait for.
+  if ! pm2 pid "$V5_NAME" >/dev/null 2>&1; then break; fi
+  sleep 5
+done
 pm2 ls | grep -E "$V3_NAME|$V5_NAME" || true
 if [ "$STATUS" = "200" ] || [ "$STATUS" = "403" ]; then
   trap - ERR   # v5 is up; stop guarding
