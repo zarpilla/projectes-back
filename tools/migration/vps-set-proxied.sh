@@ -18,6 +18,16 @@ set -euo pipefail
 
 [ "$#" -gt 0 ] || { echo "usage: vps-set-proxied.sh <v5-pm2-config.js>..." >&2; exit 1; }
 
+# The tenants pin Node 20 via app.interpreter and an app.env.PATH prefix, but a
+# Node 16 login shell is how this script's predecessor broke webcoop. Refuse to
+# run from one rather than risk leaking it into the restart.
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+if [ "$NODE_MAJOR" -lt 20 ]; then
+  echo "!! node on PATH is $(node -v 2>/dev/null || echo 'missing') — need >= 20." >&2
+  echo "   run: nvm use 20" >&2
+  exit 1
+fi
+
 RESTART="${RESTART:-1}"
 
 for CONFIG_FILE in "$@"; do
@@ -66,14 +76,30 @@ for CONFIG_FILE in "$@"; do
   fi
 
   if [ "$RESTART" = "1" ]; then
-    # --update-env is what actually re-reads app.env; a plain restart reuses
-    # the environment pm2 captured at start.
-    pm2 restart "$APP_NAME" --update-env
-    echo "   restarted $APP_NAME"
+    # Restart from the CONFIG FILE, never from the app name.
+    #
+    # pm2 restart <name> --update-env does NOT read the config file
+    # (lib/API.js: only Common.isConfigFile(cmd) reaches _startJson), so the
+    # IS_PROXIED edit above would never be applied -- and worse, _operate()
+    # then does `new_env = Object.assign({}, process.env)`, replacing the app
+    # environment with the calling shell's. That wipes the Node 20 PATH prefix
+    # vps-migrate-tenant.sh sets, npm start resolves Node 16, and Strapi 5
+    # refuses to boot ("Invalid regular expression flags" in node-ical).
+    #
+    # delete + start is used rather than `pm2 restart <file>` so interpreter,
+    # env and PATH all come from the file with nothing inherited.
+    pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
+    pm2 start "$CONFIG_FILE"
+    echo "   restarted $APP_NAME from $CONFIG_FILE"
   else
-    echo "   restart skipped (RESTART=0) — run: pm2 restart $APP_NAME --update-env"
+    echo "   restart skipped (RESTART=0) — run: pm2 delete $APP_NAME; pm2 start $CONFIG_FILE"
   fi
 done
+
+if [ "$RESTART" = "1" ]; then
+  # delete + start rewrites the process list; persist it or a reboot loses them.
+  pm2 save
+fi
 
 echo
 echo "Done. Verify a login returns 200:"
