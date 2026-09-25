@@ -174,14 +174,34 @@ if [ "$CUTOVER" != "--cutover" ]; then
   # A4. database
   echo "==> creating $V5_DB"
   # The only step that needs more than the tenant's own credentials.
-  $MYSQL_ADMIN -e "CREATE DATABASE IF NOT EXISTS \`$V5_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-                   GRANT ALL PRIVILEGES ON \`$V5_DB\`.* TO '$DB_USER'@'127.0.0.1'; FLUSH PRIVILEGES;" \
-    || { echo ""
-         echo "MYSQL_ADMIN ('$MYSQL_ADMIN') cannot CREATE DATABASE / GRANT."
-         echo "Re-run with an admin client, e.g.:"
-         echo "  MYSQL_ADMIN=\"sudo mysql\" $0 $CONFIG_FILE"
-         echo "or put credentials in ~/.my.cnf. Nothing has been changed."
-         exit 1; }
+  admin_fail() {
+    echo ""
+    echo "MYSQL_ADMIN ('$MYSQL_ADMIN') cannot $1."
+    echo "Re-run with a client that can, e.g. a dedicated option file:"
+    echo "  printf '[client]\\nuser=admin\\npassword=...\\n' > ~/.my-admin.cnf && chmod 600 ~/.my-admin.cnf"
+    echo "  MYSQL_ADMIN=\"mysql --defaults-extra-file=\$HOME/.my-admin.cnf\" $0 $CONFIG_FILE"
+    echo ""
+    echo "Do NOT put those credentials in ~/.my.cnf [client]: it applies to every"
+    echo "mysql invocation here, and an option-file password overrides MYSQL_PWD,"
+    echo "which would break the tenant reads this script depends on."
+    echo "Nothing has been changed."
+    exit 1
+  }
+
+  $MYSQL_ADMIN -e "CREATE DATABASE IF NOT EXISTS \`$V5_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" \
+    || admin_fail "CREATE DATABASE"
+
+  # Grant to the host(s) the tenant account actually exists under. Granting to a
+  # hard-coded '127.0.0.1' fails on MySQL 8 when the account is defined as
+  # @'localhost' — GRANT will not create an account that does not exist.
+  GRANT_HOSTS="$($MYSQL_ADMIN -N -B -e "SELECT host FROM mysql.user WHERE user = '$DB_USER'" 2>/dev/null)" \
+    || admin_fail "read mysql.user"
+  [ -n "$GRANT_HOSTS" ] || { echo "no MySQL account found for user '$DB_USER' — aborting."; exit 1; }
+  for h in $GRANT_HOSTS; do
+    echo "    granting on $V5_DB to '$DB_USER'@'$h'"
+    $MYSQL_ADMIN -e "GRANT ALL PRIVILEGES ON \`$V5_DB\`.* TO '$DB_USER'@'$h';" || admin_fail "GRANT"
+  done
+  $MYSQL_ADMIN -e "FLUSH PRIVILEGES;" || admin_fail "FLUSH PRIVILEGES"
 
   # A5. schema + permission seeds (temp port, then stop)
   echo "==> one-time schema boot on port $TMP_PORT"
