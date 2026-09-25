@@ -89,11 +89,21 @@ node -v >/dev/null 2>&1 || true
 NODE_MAJOR="$(node -p "process.versions.node.split('.')[0]")"
 [ "$NODE_MAJOR" -ge 20 ] || { echo "Node 20+ required (found $(node -v)). nvm use 20 first."; exit 1; }
 
-# Sanity: the tenant must be a projectes v3 schema before we touch it.
-$MYSQL_ADMIN -N -e "SELECT 1 FROM \`$V3_DB\`.projects, \`$V3_DB\`.orders, \`$V3_DB\`.\`users-permissions_user\` LIMIT 1" >/dev/null \
-  || { echo "$V3_DB does not look like a projectes v3 database (projects/orders/users tables) — aborting."; exit 1; }
-
+# Everything this script reads from the tenant's database uses the tenant's own
+# credentials, straight out of its pm2 config. MYSQL_ADMIN is needed for ONE
+# statement (CREATE DATABASE + GRANT, in prepare) and nothing else — the
+# cutover needs no admin rights at all.
 tenant_mysql() { MYSQL_PWD="$DB_PASS" mysql -h 127.0.0.1 -u "$DB_USER" "$@"; }
+
+# Connectivity first, so an auth failure does not masquerade as a schema
+# mismatch — a bare `mysql` connects as the OS user with no password, and the
+# resulting 1045 used to be reported as "not a projectes v3 database".
+tenant_mysql -N -e "SELECT 1" >/dev/null 2>&1 \
+  || { echo "cannot connect to MySQL as '$DB_USER' with the password from $CONFIG_FILE — aborting."; exit 1; }
+
+# Sanity: the tenant must be a projectes v3 schema before we touch it.
+tenant_mysql -N -e "SELECT 1 FROM \`$V3_DB\`.projects, \`$V3_DB\`.orders, \`$V3_DB\`.\`users-permissions_user\` LIMIT 1" >/dev/null 2>&1 \
+  || { echo "$V3_DB does not look like a projectes v3 database (projects/orders/users tables) — aborting."; exit 1; }
 
 # ── Phase A ──────────────────────────────────────────────────────────────────
 if [ "$CUTOVER" != "--cutover" ]; then
@@ -154,8 +164,15 @@ if [ "$CUTOVER" != "--cutover" ]; then
 
   # A4. database
   echo "==> creating $V5_DB"
+  # The only step that needs more than the tenant's own credentials.
   $MYSQL_ADMIN -e "CREATE DATABASE IF NOT EXISTS \`$V5_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-                   GRANT ALL PRIVILEGES ON \`$V5_DB\`.* TO '$DB_USER'@'127.0.0.1'; FLUSH PRIVILEGES;"
+                   GRANT ALL PRIVILEGES ON \`$V5_DB\`.* TO '$DB_USER'@'127.0.0.1'; FLUSH PRIVILEGES;" \
+    || { echo ""
+         echo "MYSQL_ADMIN ('$MYSQL_ADMIN') cannot CREATE DATABASE / GRANT."
+         echo "Re-run with an admin client, e.g.:"
+         echo "  MYSQL_ADMIN=\"sudo mysql\" $0 $CONFIG_FILE"
+         echo "or put credentials in ~/.my.cnf. Nothing has been changed."
+         exit 1; }
 
   # A5. schema + permission seeds (temp port, then stop)
   echo "==> one-time schema boot on port $TMP_PORT"
@@ -186,7 +203,8 @@ fi
 echo "==> 7. backup v3 db"
 mkdir -p ~/backups-v3
 BACKUP_FILE=~/backups-v3/"$V3_DB"-$(date +%Y%m%d-%H%M).sql.gz
-$MYSQLDUMP --single-transaction --no-tablespaces --routines "$V3_DB" | gzip > "$BACKUP_FILE"
+MYSQL_PWD="$DB_PASS" $MYSQLDUMP -h 127.0.0.1 -u "$DB_USER" \
+  --single-transaction --no-tablespaces "$V3_DB" | gzip > "$BACKUP_FILE"
 # An empty dump silently passes through gzip, so check before trusting it.
 BACKUP_BYTES=$(gunzip -c "$BACKUP_FILE" | head -c 4096 | wc -c)
 [ "$BACKUP_BYTES" -gt 0 ] || { echo "backup is empty: $BACKUP_FILE — aborting before stopping v3"; exit 1; }
