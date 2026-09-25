@@ -151,14 +151,23 @@ if [ "$CUTOVER" != "--cutover" ]; then
   fi
   (cd "$V5_DIR" && npm ci --no-audit --no-fund && npm run build)
 
-  # ETL tooling reads .env — write the connection block (runtime uses pm2 env)
+  # .env mirrors the v5 pm2 env in full.
+  #
+  # Two things read it: the ETL/maintenance scripts (which need the connection
+  # block and SECRETS_KEY), and the one-time schema boot below — that runs
+  # `npm run start`, which is a normal Strapi boot and refuses to start without
+  # APP_KEYS ("App keys are required", @strapi/core session middleware). A
+  # connection-only .env got as far as the boot and then failed there.
+  #
+  # Writing the whole env also keeps .env and the pm2 config from drifting.
+  # Same secrets, same machine, same 0600 mode as the config itself.
   node -e '
     const fs = require("fs");
-    const env = require(process.argv[1]).apps[0].env;
-    // SECRETS_KEY included: scripts/encrypt-secrets.js and tools/etl/validate.js
-    // read it from .env, not from the pm2 env.
-    const keep = ["DATABASE_CLIENT","DATABASE_HOST","DATABASE_PORT","DATABASE_NAME","DATABASE_USERNAME","DATABASE_PASSWORD","SECRETS_KEY"];
-    fs.writeFileSync(process.argv[2] + "/.env", keep.map((k) => k + "=" + env[k]).join("\n") + "\n");
+    const env = require(process.argv[1]).apps[0].env || {};
+    const lines = Object.keys(env)
+      .filter((k) => env[k] !== undefined && env[k] !== null)
+      .map((k) => k + "=" + String(env[k]));
+    fs.writeFileSync(process.argv[2] + "/.env", lines.join("\n") + "\n");
   ' "$V5_CONFIG_FILE" "$V5_DIR"
   chmod 600 "$V5_DIR/.env"
 
