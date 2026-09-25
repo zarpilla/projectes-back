@@ -117,8 +117,21 @@ if [ "$CUTOVER" != "--cutover" ]; then
       const b64 = (n) => require("crypto").randomBytes(n).toString("base64");
       app.name = process.argv[2];
       app.cwd = process.argv[3];
+      // pm2 runs an app with the node its DAEMON was started under, and that
+      // daemon has to stay on Node 16 while v3 tenants are still served —
+      // Strapi 3 does not run on 20. So the v5 app must name its own
+      // interpreter, or pm2 boots it under 16, package.json engines rejects it
+      // and the app dies. That happens at step 11, with v3 already stopped.
+      //
+      // process.execPath is Node >= 20 here: the preflight above refuses to run
+      // otherwise. PATH is prefixed with the same bin directory so anything the
+      // app shells out to (npm, strapi) resolves the same node.
+      const nodeBin = process.execPath;
+      const nodeDir = require("path").dirname(nodeBin);
+      app.interpreter = nodeBin;
       app.env = {
         ...app.env,
+        PATH: nodeDir + ":" + (app.env.PATH || process.env.PATH || "/usr/local/bin:/usr/bin:/bin"),
         DATABASE_NAME: process.argv[4],
         DATABASE_POOL_MIN: "0",
         DATABASE_POOL_MAX: "8", // 16 instances x 8 = 128 < max_connections 151
