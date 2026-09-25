@@ -266,9 +266,15 @@ mkdir -p ~/backups-v3
 BACKUP_FILE=~/backups-v3/"$V3_DB"-$(date +%Y%m%d-%H%M).sql.gz
 MYSQL_PWD="$DB_PASS" $MYSQLDUMP -h 127.0.0.1 -u "$DB_USER" \
   --single-transaction --no-tablespaces "$V3_DB" | gzip > "$BACKUP_FILE"
-# An empty dump silently passes through gzip, so check before trusting it.
-BACKUP_BYTES=$(gunzip -c "$BACKUP_FILE" | head -c 4096 | wc -c)
-[ "$BACKUP_BYTES" -gt 0 ] || { echo "backup is empty: $BACKUP_FILE — aborting before stopping v3"; exit 1; }
+# An empty dump passes through gzip without complaint, so check before trusting
+# it. Read the whole stream: `gunzip -c ... | head -c N` closes the pipe early,
+# gunzip takes SIGPIPE, and with `set -o pipefail` that killed this script with
+# status 141 before it printed anything — a valid backup looking like a failure.
+gzip -t "$BACKUP_FILE" 2>/dev/null \
+  || { echo "backup is not readable gzip: $BACKUP_FILE — aborting before stopping v3"; exit 1; }
+BACKUP_BYTES=$(gunzip -c "$BACKUP_FILE" | wc -c)
+[ "$BACKUP_BYTES" -gt 1024 ] \
+  || { echo "backup is empty ($BACKUP_BYTES bytes of SQL): $BACKUP_FILE — aborting before stopping v3"; exit 1; }
 echo "    backup: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
 
 # From here until v5 is confirmed up, any failure leaves the tenant with
