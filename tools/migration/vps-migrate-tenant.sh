@@ -49,6 +49,10 @@ MYSQL_ADMIN="${MYSQL_ADMIN:-mysql}"
 # into gzip produced a 20-byte file containing no SQL at all: the backup that
 # the cutover leans on did not exist.
 MYSQLDUMP="${MYSQLDUMP:-mysqldump}"
+# Frontend: each tenant has a sibling docker/ dir whose compose file pins the
+# image tag (see deploy/deploy-projectes-front.sh).
+FRONTEND_IMAGE="${FRONTEND_IMAGE:-webcoop/esstrapis-front}"
+FRONTEND_TAG="${FRONTEND_TAG:-v5}"
 
 [ -f "$CONFIG_FILE" ] || { echo "config not found: $CONFIG_FILE"; exit 1; }
 
@@ -77,6 +81,7 @@ DB_PASS="$(node -e "console.log(JSON.parse(process.argv[1]).dbPass)" "$JSON_CFG"
 V5_NAME="${V3_NAME}-v5"
 V5_DB="${V3_DB}_v5"
 V5_DIR="$(dirname "$V3_CWD")/projectes-v5"
+FRONT_DIR="$(dirname "$V3_CWD")/docker"
 V5_CONFIG_FILE="$(dirname "$CONFIG_FILE")/$(basename "$CONFIG_FILE" .config.js)-v5.config.js"
 TMP_PORT=$((PORT + 1000))
 
@@ -334,8 +339,31 @@ done
 pm2 ls | grep -E "$V3_NAME|$V5_NAME" || true
 if [ "$STATUS" = "200" ] || [ "$STATUS" = "403" ]; then
   trap - ERR   # v5 is up; stop guarding
+
+  # ── 13. frontend ──────────────────────────────────────────────────────────
+  # The v3 build asks for /me, /projects, … while v5 serves everything under
+  # /api, so a tenant left on the v3 image 404s every request and cannot even
+  # log in. The two have to move together.
+  #
+  # Only this tenant's compose file is touched. `latest` is deliberately left
+  # alone: the tenants still on v3 follow it, and repointing it would break
+  # all of them at once.
+  echo "==> 13. switching the frontend to :$FRONTEND_TAG"
+  if [ "${SKIP_FRONTEND:-0}" = "1" ]; then
+    echo "    skipped (SKIP_FRONTEND=1) — the v3 frontend 404s every request against v5"
+  elif ! FRONTEND_TAG="$FRONTEND_TAG" "$SCRIPT_DIR/vps-switch-frontend.sh" "$CONFIG_FILE"; then
+    # The backend IS migrated; a frontend hiccup must not read as a failed
+    # cutover, and must not prompt a backend rollback.
+    echo ""
+    echo "    !! the frontend did not switch. The BACKEND cutover SUCCEEDED —"
+    echo "       do not roll the backend back for this. Retry with:"
+    echo "         $SCRIPT_DIR/vps-switch-frontend.sh $CONFIG_FILE"
+  fi
+
+  echo ""
   echo "✓ v5 answering (HTTP $STATUS). Rollback if needed:"
   echo "  pm2 stop $V5_NAME && pm2 start $CONFIG_FILE && pm2 save"
+  echo "  cp $FRONT_DIR/docker-compose.yml.pre-v5 $FRONT_DIR/docker-compose.yml && (cd $FRONT_DIR && docker compose up -d --force-recreate)"
 else
   trap - ERR
   echo "!! unexpected health status: $STATUS — check: pm2 logs $V5_NAME"
