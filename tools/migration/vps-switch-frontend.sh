@@ -65,10 +65,19 @@ for cfg in "${CONFIGS[@]}"; do
 
   # Keep the first original, so a rollback has something to restore.
   [ -f "$COMPOSE_FILE.pre-v5" ] || cp -p "$COMPOSE_FILE" "$COMPOSE_FILE.pre-v5"
-  sed -i -E "s|($FRONTEND_IMAGE):[A-Za-z0-9._-]+|\1:$TAG|g" "$COMPOSE_FILE"
+  # The tag is OPTIONAL in the pattern: these compose files pin the image as
+  # plain `webcoop/esstrapis-front`, which docker resolves to :latest. A regex
+  # that required `:tag` matched nothing, so the file was left alone and the
+  # container was recreated on :latest — a switch that silently did nothing.
+  sed -i -E "s|($FRONTEND_IMAGE)(:[A-Za-z0-9._-]+)?|\1:$TAG|g" "$COMPOSE_FILE"
   # `grep | head` again: head closes the pipe, grep takes SIGPIPE, pipefail
   # propagates it. -m1 stops grep itself instead.
   echo "  $COMPOSE_FILE -> $(grep -m1 -oE "$FRONTEND_IMAGE:[A-Za-z0-9._-]+" "$COMPOSE_FILE")"
+  # These files live in directories all called "docker", so every tenant shares
+  # one compose project and `ps` lists them all. Each file should still define
+  # only its own service; say so if not, because `up` would restart the others.
+  SERVICES="$(grep -cE '^  [A-Za-z0-9_-]+:' "$COMPOSE_FILE" || true)"
+  [ "$SERVICES" -le 1 ] || echo "  note: this file defines $SERVICES services — `up` will recreate all of them"
 
   if (cd "$FRONT_DIR" && docker compose pull && docker compose up -d --force-recreate); then
     echo "  ✓ recreated"
