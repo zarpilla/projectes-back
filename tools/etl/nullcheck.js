@@ -36,6 +36,37 @@ if (!FROM || !TO) {
 
 const squash = (name) => name.replace(/_/g, '').toLowerCase();
 
+// Pairs v3 columns onto v5 columns in TWO passes, exact names first.
+//
+// A single pass is order-dependent, and MySQL's column order decided the
+// result. resilience's v3 user table carries both `costbyhour` (a fossil from
+// an older schema, which the v3 app does not read -- its model declares
+// cost_by_hour) and the live `cost_by_hour`. v5 has only `cost_by_hour`.
+// squash() makes both v3 names collide, so whichever came first claimed the v5
+// column: the fossil won, the live column was skipped, and the audit reported
+// "LOST VALUES ... costbyhour (renamed to cost_by_hour)" on a tenant whose data
+// had in fact copied correctly. That false positive aborted the cutover.
+//
+// Resolving exact matches first makes the outcome independent of column order:
+// a renamed column may only claim a v5 column that nothing matched exactly.
+function pairForAudit(v3Cols, v5Cols, v5BySquash) {
+  const pairs = [];
+  const seen = new Set();
+  for (const c of v3Cols) {
+    if (c === 'id' || !v5Cols.has(c)) continue;
+    seen.add(c);
+    pairs.push({ from: c, to: c });
+  }
+  for (const c of v3Cols) {
+    if (c === 'id' || v5Cols.has(c)) continue;
+    const to = v5BySquash.get(squash(c));
+    if (!to || seen.has(to)) continue;
+    seen.add(to);
+    pairs.push({ from: c, to });
+  }
+  return pairs;
+}
+
 // Tables whose rows don't keep v3 ids (join tables, morph tables, v5 system
 // tables) — a per-row comparison there is meaningless.
 const SKIP_TABLE =
@@ -96,15 +127,7 @@ async function main() {
     // Pair columns: exact name first, then squashed (renamed) fallback.
     const v5BySquash = new Map();
     for (const c of v5Cols) if (!v5BySquash.has(squash(c))) v5BySquash.set(squash(c), c);
-    const colPairs = [];
-    const seen = new Set();
-    for (const c of v3Cols) {
-      if (c === 'id') continue;
-      const to = v5Cols.has(c) ? c : v5BySquash.get(squash(c));
-      if (!to || seen.has(to)) continue;
-      seen.add(to);
-      colPairs.push({ from: c, to });
-    }
+    const colPairs = pairForAudit(v3Cols, v5Cols, v5BySquash);
     if (colPairs.length === 0) continue;
     checked++;
 
