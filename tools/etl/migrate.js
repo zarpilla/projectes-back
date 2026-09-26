@@ -50,6 +50,21 @@ if (!FROM || !TO) {
  */
 const squash = (name) => name.replace(/_/g, '').toLowerCase();
 
+// Compares text across the v3 and v5 databases.
+//
+// The two schemas do not agree on collation, and it varies per tenant: every
+// v3 database defaults to utf8mb4_0900_ai_ci and every v5 one to
+// utf8mb4_unicode_ci, but what MySQL actually uses is the COLUMN collation.
+// Most tenants happen to have strapi_role.code in utf8mb4_unicode_ci, so the
+// join worked; resilience has it in utf8mb4_0900_ai_ci and the cutover died
+// with "Illegal mix of collations ... for operation '='".
+//
+// CONVERT() first, so this also holds for a column that is not utf8mb4 at all
+// (applying COLLATE utf8mb4_* directly to a latin1 column is an error).
+const sameText = (a, b) =>
+  `CONVERT(${a} USING utf8mb4) COLLATE utf8mb4_unicode_ci = ` +
+  `CONVERT(${b} USING utf8mb4) COLLATE utf8mb4_unicode_ci`;
+
 function pairColumns(names, v3Cols, v5Cols) {
   const index = (cols) => {
     const map = new Map();
@@ -491,7 +506,7 @@ async function main() {
             `INSERT INTO \`${TO}\`.\`admin_users_roles_lnk\` (user_id, role_id) ` +
             `SELECT ur.user_id, r5.id FROM \`${FROM}\`.\`strapi_users_roles\` ur ` +
             `JOIN \`${FROM}\`.\`strapi_role\` r3 ON r3.id = ur.role_id ` +
-            `JOIN \`${TO}\`.\`admin_roles\` r5 ON r5.code = r3.code ` +
+            `JOIN \`${TO}\`.\`admin_roles\` r5 ON ${sameText('r5.code', 'r3.code')} ` +
             `JOIN \`${TO}\`.\`admin_users\` u5 ON u5.id = ur.user_id`;
           const [lnkRes] = await q(conn, roleSql);
           stats.copied.push({ table: 'admin_users_roles_lnk', rows: lnkRes.affectedRows });
