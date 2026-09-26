@@ -204,14 +204,9 @@ if [ "$CUTOVER" != "--cutover" ]; then
   #
   # Writing the whole env also keeps .env and the pm2 config from drifting.
   # Same secrets, same machine, same 0600 mode as the config itself.
-  node -e '
-    const fs = require("fs");
-    const env = require(process.argv[1]).apps[0].env || {};
-    const lines = Object.keys(env)
-      .filter((k) => env[k] !== undefined && env[k] !== null)
-      .map((k) => k + "=" + String(env[k]));
-    fs.writeFileSync(process.argv[2] + "/.env", lines.join("\n") + "\n");
-  ' "$V5_CONFIG_FILE" "$V5_DIR"
+  # Values are quoted (tools/migration/write-env.js): a `#` in a password would
+  # otherwise be read by dotenv as the start of a comment.
+  node "$SCRIPT_DIR/write-env.js" "$V5_CONFIG_FILE" "$V5_DIR/.env"
   chmod 600 "$V5_DIR/.env"
 
   # A4. database
