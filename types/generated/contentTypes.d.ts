@@ -724,7 +724,7 @@ export interface ApiDietDiet extends Struct.CollectionTypeSchema {
     contact_invoice_number: Schema.Attribute.String;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
-    documents: Schema.Attribute.Media<'images' | 'files' | 'videos'>;
+    documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
     lines: Schema.Attribute.Component<'invoice-line.ticket-line', true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -794,7 +794,7 @@ export interface ApiEmittedGrantEmittedGrant extends Struct.CollectionTypeSchema
     contact_grant_number: Schema.Attribute.String;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
-    documents: Schema.Attribute.Media<'images' | 'files' | 'videos'>;
+    documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::emitted-grant.emitted-grant'> &
@@ -839,7 +839,7 @@ export interface ApiEmittedInvoiceEmittedInvoice extends Struct.CollectionTypeSc
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     deductible_vat_pct: Schema.Attribute.Decimal;
     document_concept: Schema.Attribute.String;
-    documents: Schema.Attribute.Media<'images' | 'files' | 'videos'>;
+    documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
     estimated_payment: Schema.Attribute.Date;
     face: Schema.Attribute.Boolean;
@@ -1887,7 +1887,7 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     description: Schema.Attribute.RichText;
     diets: Schema.Attribute.Relation<'oneToMany', 'api::diet.diet'>;
     dirty: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
-    documents: Schema.Attribute.Media<'images' | 'files' | 'videos'>;
+    documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted_grants: Schema.Attribute.Relation<'oneToMany', 'api::emitted-grant.emitted-grant'>;
     emitted_invoices: Schema.Attribute.Relation<'oneToMany', 'api::emitted-invoice.emitted-invoice'>;
     estimated_balance: Schema.Attribute.Decimal & Schema.Attribute.DefaultTo<0>;
@@ -2043,7 +2043,7 @@ export interface ApiReceivedExpenseReceivedExpense extends Struct.CollectionType
     deductible_vat_pct: Schema.Attribute.Decimal;
     document_concept: Schema.Attribute.String;
     document_type: Schema.Attribute.Relation<'oneToOne', 'api::document-type.document-type'>;
-    documents: Schema.Attribute.Media<'images' | 'files' | 'videos'>;
+    documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
     lines: Schema.Attribute.Component<'invoice-line.ticket-line', true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -2091,7 +2091,7 @@ export interface ApiReceivedGrantReceivedGrant extends Struct.CollectionTypeSche
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     department: Schema.Attribute.String;
-    documents: Schema.Attribute.Media<'images' | 'files' | 'videos'>;
+    documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::received-grant.received-grant'> &
@@ -2137,7 +2137,7 @@ export interface ApiReceivedIncomeReceivedIncome extends Struct.CollectionTypeSc
     deductible_vat_pct: Schema.Attribute.Decimal;
     document_concept: Schema.Attribute.String;
     document_type: Schema.Attribute.Relation<'oneToOne', 'api::document-type.document-type'>;
-    documents: Schema.Attribute.Media<'images' | 'files' | 'videos'>;
+    documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
     estimated_payment: Schema.Attribute.Date;
     lines: Schema.Attribute.Component<'invoice-line.ticket-line', true>;
@@ -2189,7 +2189,7 @@ export interface ApiReceivedInvoiceReceivedInvoice extends Struct.CollectionType
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     deductible_vat_pct: Schema.Attribute.Decimal;
     document_concept: Schema.Attribute.String;
-    documents: Schema.Attribute.Media<'images' | 'files' | 'videos'>;
+    documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
     lines: Schema.Attribute.Component<'invoice-line.invoice-line-expenses', true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -2508,7 +2508,7 @@ export interface ApiTaskTask extends Struct.CollectionTypeSchema {
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     description: Schema.Attribute.RichText;
-    documents: Schema.Attribute.Media<'images' | 'files' | 'videos'>;
+    documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     due_date: Schema.Attribute.Date;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::task.task'> & Schema.Attribute.Private;
@@ -2539,7 +2539,7 @@ export interface ApiTicketTicket extends Struct.CollectionTypeSchema {
     contact_invoice_number: Schema.Attribute.String;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
-    documents: Schema.Attribute.Media<'images' | 'files' | 'videos'>;
+    documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
     lines: Schema.Attribute.Component<'invoice-line.ticket-line', true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
