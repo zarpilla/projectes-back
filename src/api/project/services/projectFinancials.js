@@ -18,6 +18,7 @@
 
 const _ = require('lodash');
 const moment = require('moment');
+const { adaptQuery, toDbArgs } = require('../../../services/query-adapter');
 /* global strapi */ // strapi injected at runtime for the stored-totals refresh functions.
 
 const noPhaseInfo = { phase: '-', subphase: '-' };
@@ -1067,16 +1068,16 @@ const refreshStoredTotals = async (id) => {
 const refreshAllStoredTotals = async (opts = {}) => {
   const { onlyPublished = true, progressEvery = 25, limit } = opts;
 
-  const findArgs = { _limit: -1, _sort: 'id:asc' };
-  if (onlyPublished) findArgs.published_at_null = false;
-  if (limit && limit > 0) {
-    delete findArgs._limit;
-    findArgs._limit = limit;
-  }
+  // These are v3 query params, not columns. Passing them straight to db.query
+  // as `where` made MySQL look for columns named `_limit`, `_sort` and
+  // `published_at_null`. Run them through the adapter, which also knows that
+  // v3's published_at_null maps onto v5's `trashed` flag.
+  const v3Args = { _limit: limit && limit > 0 ? limit : -1, _sort: 'id:asc' };
+  if (onlyPublished) v3Args.published_at_null = false;
 
   const projects = await strapi.db
     .query('api::project.project')
-    .findMany({ where: findArgs, limit: limit || -1 });
+    .findMany(toDbArgs(adaptQuery(v3Args)));
   const ids = projects.map((p) => p.id);
 
   let processed = 0;

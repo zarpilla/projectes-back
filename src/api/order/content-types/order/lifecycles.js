@@ -16,6 +16,11 @@ const { relationId } = require('../../../../services/relation-input');
  * Safely extract ID from a value that could be a number, string, or object with an id property
  * Returns null if the value is not a valid ID
  */
+// Statuses that make an order untouchable. A collection order in
+// delivered/lastmile/processed/pending is still reusable; only these two are
+// final. Named once so the four call sites cannot drift apart.
+const CLOSED_STATUSES = ['cancelled', 'invoiced'];
+
 const extractId = (value) => {
   if (value === null || value === undefined) {
     return null;
@@ -312,7 +317,7 @@ const calculateRouteForCollectionPoint = async (collectionPointContact) => {
   // Get the first active route
   const routes = await strapi.db
     .query('api::route.route')
-    .findMany({ where: { id_in: routeIds, active: true }, limit: 1 });
+    .findMany({ where: { id: { $in: routeIds }, active: true }, limit: 1 });
 
   return routes && routes.length > 0 ? routes[0] : null;
 };
@@ -718,15 +723,19 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
   // Search for existing collection orders with any status EXCEPT cancelled and invoiced
   // Collection orders in delivered/lastmile/processed/pending status should all be reusable
   // Only cancelled and invoiced orders are truly "closed" and shouldn't be reused
+  // v3 flat operators (`status_nin`) and query params (`_sort`) are not
+  // understood by v5's db.query: they were passed through verbatim as column
+  // names, so this threw "Unknown column 't0.status_nin' in 'where clause'" and
+  // every collection order creation returned 500.
   const existingCollectionOrdersRaw = await strapi.db.query('api::order.order').findMany({
     where: {
       is_collection_order: true,
       owner: ownerId,
       contact: collectionPointId,
       route: route.id,
-      status_nin: ['cancelled', 'invoiced'],
-      _sort: 'id:ASC',
+      status: { $notIn: CLOSED_STATUSES },
     },
+    orderBy: { id: 'asc' },
   });
 
   const existingCollectionOrdersByDate = (existingCollectionOrdersRaw || []).filter((co) => {
@@ -741,7 +750,7 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
   for (const co of existingCollectionOrdersByDate) {
     const linkedOrders = await strapi.db
       .query('api::order.order')
-      .findMany({ where: { collection_order: co.id, status_nin: ['cancelled', 'invoiced'] } });
+      .findMany({ where: { collection_order: co.id, status: { $notIn: CLOSED_STATUSES } } });
 
     const hasMixedLinkedDates = (linkedOrders || []).some((linkedOrder) => {
       const linkedPickupDate = normalizeOrderDate(
@@ -934,7 +943,7 @@ const checkAndUpdateCollectionOrderStatus = async (collectionOrderId) => {
 
   // Get all related orders (exclude cancelled and invoiced orders)
   const relatedOrders = await strapi.db.query('api::order.order').findMany({
-    where: { collection_order: collectionOrderId, status_nin: ['cancelled', 'invoiced'] },
+    where: { collection_order: collectionOrderId, status: { $notIn: CLOSED_STATUSES } },
   });
 
   if (!relatedOrders || relatedOrders.length === 0) {
@@ -980,7 +989,7 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
 
   // Get all related orders (exclude cancelled and invoiced orders from aggregation)
   const relatedOrders = await strapi.db.query('api::order.order').findMany({
-    where: { collection_order: collectionOrderId, status_nin: ['cancelled', 'invoiced'] },
+    where: { collection_order: collectionOrderId, status: { $notIn: CLOSED_STATUSES } },
   });
 
   // If no related orders and status is pending, deposited, or processed, reset aggregates to 0
