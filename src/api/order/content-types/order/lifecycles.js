@@ -980,10 +980,17 @@ const checkAndUpdateCollectionOrderStatus = async (collectionOrderId) => {
  * Update collection order with aggregated data from its collection_orders
  */
 const updateCollectionOrderAggregates = async (collectionOrderId) => {
-  // Get the collection order with its related orders
-  const collectionOrder = await strapi.db
-    .query('api::order.order')
-    .findOne({ where: { id: collectionOrderId } });
+  // Get the collection order with its related orders.
+  //
+  // contact, route and delivery_type all have to be populated: `contact` is
+  // dereferenced below to refresh the pickup discount (unpopulated it read as
+  // undefined and the discount was rewritten to 0), and
+  // calculateCollectionOrderRouteRate returns early on `!collectionOrder.route`
+  // — which is why these collection orders ended up with price NULL.
+  const collectionOrder = await strapi.db.query('api::order.order').findOne({
+    where: { id: collectionOrderId },
+    populate: { contact: true, route: true, delivery_type: true },
+  });
 
   if (!collectionOrder) {
     return;
