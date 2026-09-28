@@ -49,6 +49,9 @@ const V3_PARAM = /(?:^|[{,\s])(_sort|_limit|_start|_where|_q)\s*:/;
 // than rewritten, because a `delete()` with no `where` is worth nobody making
 // executable by accident. Matched on text so it survives line moves.
 const KNOWN_DEAD = [
+  // same function, v3 create signature
+  "const newIncome = await strapi.db.query('api::phase-income.phase-income').create(data);",
+  "const newExpense = await strapi.db.query('api::phase-expense.phase-expense').create(data);",
   "await strapi.db.query('api::estimated-hour.estimated-hour').delete({ _limit: -1 });",
   "await strapi.db.query('api::phase-income.phase-income').delete({ _limit: -1 });",
   "await strapi.db.query('api::phase-expense.phase-expense').delete({ _limit: -1 });",
@@ -125,5 +128,44 @@ describe('order lifecycles collection-order queries', () => {
   it('filters route ids with $in', () => {
     expect(source).not.toMatch(/id_in\s*:/);
     expect(source).toContain('id: { $in: routeIds }');
+  });
+});
+
+/**
+ * v5's db.query takes { data } for create and { where, data } for update; v3
+ * took the values directly. A bare create leaves event.params.data undefined,
+ * so the model's own beforeCreate throws — which is how a collection order
+ * died on `data.route_date`. Where the call sits inside a try/catch that only
+ * logs (order tracking did), it fails silently instead.
+ */
+describe('db.query write signatures', () => {
+  const offending = [];
+  for (const file of jsFiles(SRC)) {
+    const rel = path.relative(SRC, file);
+    const source = fs.readFileSync(file, 'utf8');
+    // `.create(` on a db.query chain, argument not an object literal
+    const re = /\.query\([^)]*\)\s*\n?\s*\.?create\(\s*([A-Za-z_$][\w$]*)\s*\)/g;
+    let m;
+    while ((m = re.exec(source)) !== null) {
+      const line = source.slice(0, m.index).split('\n').length;
+      const text = source.split('\n')[line - 1].trim();
+      if (KNOWN_DEAD.includes(text)) continue;
+      offending.push(`${rel}:${line}  ${text.slice(0, 90)}`);
+    }
+  }
+
+  it('every db.query create passes { data }', () => {
+    expect(offending).toEqual([]);
+  });
+
+  it('the collection order and tracking creates use the v5 shape', () => {
+    const source = fs.readFileSync(
+      path.join(SRC, 'api', 'order', 'content-types', 'order', 'lifecycles.js'),
+      'utf8'
+    );
+    expect(source).toContain('.create({ data: createData })');
+    expect(source).toContain('.create({ data: trackingData })');
+    expect(source).not.toMatch(/\.create\(createData\)/);
+    expect(source).not.toMatch(/\.create\(trackingData\)/);
   });
 });

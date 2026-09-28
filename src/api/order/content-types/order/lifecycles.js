@@ -909,7 +909,13 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
       createData.collection_orders = [orderId];
     }
 
-    const newCollectionOrder = await strapi.db.query('api::order.order').create(createData);
+    // v5 takes { data }, v3 took the values directly. Passing them bare left
+    // event.params.data undefined, and beforeCreate died on `data.route_date`
+    // -> "Cannot read properties of undefined" and a 500 on every collection
+    // order.
+    const newCollectionOrder = await strapi.db
+      .query('api::order.order')
+      .create({ data: createData });
 
     // Update the original order with the collection_order reference
     if (orderId && newCollectionOrder) {
@@ -1193,7 +1199,12 @@ const createOrderTracking = async (orderId, status, user) => {
       }
     }
 
-    await strapi.db.query('api::orders-tracking.orders-tracking').create(trackingData);
+    // Same v3 signature. This one sits inside a try/catch that only logs, so
+    // order tracking had been failing silently since the cutover rather than
+    // surfacing.
+    await strapi.db
+      .query('api::orders-tracking.orders-tracking')
+      .create({ data: trackingData });
   } catch (error) {
     // Log error but don't fail the order operation
     console.error('Error creating order tracking:', error);
