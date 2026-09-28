@@ -224,7 +224,7 @@ async function importSeedPermissions() {
     route: ['find'],
     'route-rate': ['find'],
     city: ['find', 'findOne', 'create'],
-    'city-route': ['find', 'findOne', 'create', 'delete'],
+    'city-route': ['find', 'findOne', 'create', 'delete', 'basic'],
     'form-submission': ['create'],
     'route-festive': ['find', 'findOne', 'create', 'delete'],
     'project-phases': ['find', 'findOne', 'create', 'update', 'delete'],
