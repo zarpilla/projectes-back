@@ -111,10 +111,12 @@ async function importSeedPermissions() {
   // updateRole() REPLACES a role's permission set, so the users-permissions
   // actions Strapi grants Public by default are wiped unless they are listed
   // here — without them POST /api/auth/local answers 403 and nobody can log in.
-  // Same six the v3 public role had (v3 `users-permissions_permission`, role 2).
+  // Same six the v3 public role had (v3 `users-permissions_permission`, role 2),
+  // plus `refresh`: v5 runs jwtManagement 'refresh', and the frontend renews
+  // its expired access token with no Bearer header, i.e. as Public.
   await setPermissions('public', {
     logos: ['find'],
-    auth: ['callback', 'connect', 'forgotPassword', 'resetPassword'],
+    auth: ['callback', 'connect', 'forgotPassword', 'resetPassword', 'refresh'],
     user: ['me'],
   });
 
@@ -258,6 +260,8 @@ async function importSeedPermissions() {
     // users-permissions plugin actions for authenticated users
     // (merged into the SAME call because updateRole REPLACES the role's set)
     user: ['find', 'findOne', 'create', 'update', 'count', 'me'],
+    // POST /api/auth/logout revokes the refresh session (needs a Bearer token).
+    auth: ['logout'],
     // v3 "userspermissions: getroles" -> the roles read action
     role: ['find'],
     // Core upload plugin -> POST /api/upload.
