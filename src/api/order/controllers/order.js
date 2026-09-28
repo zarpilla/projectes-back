@@ -19,6 +19,7 @@ const QRCode = require('qrcode');
 const PDFMerge = require('pdf-merge');
 const MicroInvoiceOrder = require('../../../../utils/microinvoice-order');
 const { createCoreController } = require('@strapi/strapi').factories;
+const { applyFinalPrice, applyFinalPriceToAll } = require('../services/final-price');
 const { adaptQuery, adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { rawExecute } = require('../../../services/raw-sql');
 const { getMe } = require('../../../services/me-settings');
@@ -116,7 +117,10 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       offset: opts.pagination?.start,
       orderBy: opts.sort,
     });
-    return entities;
+    // The orders list reads this endpoint, and its Preu column renders
+    // `finalPrice`. v3 got it from an afterFind hook that ran on every query;
+    // without this the column showed "?" on every row.
+    return applyFinalPriceToAll(entities);
   },
 
   /**
@@ -713,14 +717,3 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   },
 }));
 
-/**
- * Computes finalPrice: base price with multidelivery + pickup discounts (percent)
- * and volume discount (fixed) — ported verbatim from the v3 afterFind hook.
- */
-function applyFinalPrice(order) {
-  let price = order.price || 0;
-  price = price * (1 - (order.multidelivery_discount || 0) / 100);
-  price = price * (1 - (order.contact_pickup_discount || 0) / 100);
-  price = price - (order.volume_discount || 0);
-  order.finalPrice = price;
-}
