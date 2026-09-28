@@ -59,21 +59,27 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
 
     const orders = await strapi.db.query('api::order.order').findMany({
       where: { estimated_delivery_date: { $gte: oneYearAgo } },
-      populate: { contact: true },
+      // `owner` has to be populated. v3 returned it as an FK column, so
+      // `order.owner` was the user id; v5 leaves an unpopulated relation
+      // undefined, the branch below never ran, and every contact came back
+      // with an empty `owners` -- the Sòcies column showed "-" for all of
+      // them. `routes` further down is matched on contact.city, a scalar,
+      // which is why that column kept working and this one did not.
+      populate: { contact: true, owner: true },
     });
-
-    const owners = await strapi.db.query('plugin::users-permissions.user').findMany({});
 
     for (const order of orders) {
       if (order.contact) {
         const contact = contactsWithOwner.find((c) => c.id === order.contact.id);
         if (contact) {
           contact.num_orders = (contact.num_orders || 0) + 1;
-          if (order.owner) {
+          // Populated, so this is the user row itself rather than an id. Taking
+          // the name from it also drops a findMany over the whole user table.
+          const owner = order.owner;
+          if (owner) {
             contact.owners = contact.owners || [];
-            if (!contact.owners.find((o) => o.id === order.owner)) {
-              const owner = owners.find((o) => o.id === order.owner);
-              contact.owners.push({ id: order.owner, name: owner?.username || 'Unknown' });
+            if (!contact.owners.find((o) => o.id === owner.id)) {
+              contact.owners.push({ id: owner.id, name: owner.username || 'Unknown' });
             }
           }
         } else {
@@ -115,7 +121,10 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
     }
     const orders = await strapi.db.query('api::order.order').findMany({
       where,
-      populate: { contact: true },
+      // ContactsTable pushes any contact from here that the /basic list did
+      // not already contain, so these rows are rendered by the same columns
+      // and need the same relations.
+      populate: { contact: { populate: BASIC_POPULATE } },
     });
 
     const contacts = [];
