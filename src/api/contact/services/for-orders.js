@@ -43,11 +43,14 @@ const FOR_ORDERS_POPULATE = { legal_form: true, sector: true };
 // read, so the relations are selected down rather than populated whole.
 const SOCIES_POPULATE = {
   ...FOR_ORDERS_POPULATE,
+  // Only `.id` is ever read off this one.
   users_permissions_user: { select: ['id'] },
-  // `city` as well as the id: OrdersForm resolves a collection point's city
-  // NAME against the cities list to work out the pickup city. `city` is a
-  // plain column on contact, not a relation, so it selects cleanly.
-  collection_points: { select: ['id', 'city'] },
+  // Whole rows, deliberately. These feed the "Punt de recollida en finca"
+  // buttons, and trimming the select kept losing a field the UI needed:
+  // first `city` (used to resolve the pickup city), then `name` (rendered on
+  // the button). Only 29 of the 60 socies have collection points at all, so
+  // the saving was never worth re-learning which fields matter.
+  collection_points: true,
 };
 
 module.exports = { FOR_ORDERS_FIELDS, FOR_ORDERS_POPULATE, SOCIES_POPULATE };
