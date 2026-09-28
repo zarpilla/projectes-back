@@ -33,6 +33,7 @@ const CORE_PATH = /^\/api\/([a-z0-9-]+)(?:\/([^/?]+))?$/;
  * authorization model reads `me.permissions.map(p => p.permission)`.
  */
 const PLUGIN_USER_PATH = /^\/api\/users(?:\/(?:me|\d+))?$/;
+const UPLOAD_PATH = /^\/api\/upload\/?$/;
 // Exactly what v3's /users/me returned. `*` would also drag in `tasks` and the
 // other reverse relations — 38KB per call, and the views delete them anyway.
 const USER_POPULATE = ['role', 'permissions'];
@@ -61,6 +62,59 @@ function getRouteMap(strapi) {
     }
   }
   return routeMap;
+}
+
+let refMap = null;
+
+/**
+ * v3 model name -> v5 UID, for the `ref` field of an upload.
+ *
+ * Indexes BOTH names: the frontend passes whatever the component was given,
+ * and those are a mix -- FileUpload is used with "orders-imports" and
+ * "contacts" (plural) but also "task" and "project" (singular). getRouteMap
+ * only indexes collection types by their plural, so it cannot answer this.
+ */
+function getRefMap(strapi) {
+  if (refMap) return refMap;
+  refMap = new Map();
+  const add = (key, uid) => {
+    if (key && !refMap.has(key)) refMap.set(key, uid);
+  };
+  // Sorted so a name claimed by two content types resolves the same way on
+  // every boot rather than following object key order.
+  for (const uid of Object.keys(strapi.contentTypes).sort()) {
+    if (!uid.startsWith('api::')) continue;
+    const info = strapi.contentTypes[uid].info || {};
+    add(info.pluralName, uid);
+    add(info.singularName, uid);
+  }
+  if (strapi.contentTypes['plugin::users-permissions.user']) {
+    add('user', 'plugin::users-permissions.user');
+  }
+  return refMap;
+}
+
+/**
+ * POST /api/upload: v3 sent the model NAME in `ref`, v5 wants the UID.
+ *
+ * Strapi resolves `ref` through db.metadata while attaching the morph
+ * relation, and an unknown value throws before anything is written:
+ *
+ *   Error: Metadata for "orders-imports" not found
+ *     at getMorphToManyRowsLinkedToMorphOne (morph-relations.js)
+ *     at Object.create (entity-manager)  -> POST /api/upload 500
+ *
+ * Every upload that targets an entity hits this, so it is left as a transport
+ * concern here rather than a change in each frontend call site.
+ */
+function normalizeUploadRef(ctx, strapi) {
+  const body = ctx.request.body;
+  if (!body || typeof body !== 'object') return;
+  const ref = body.ref;
+  // Already a UID, absent, or sent twice (array) -- leave it alone.
+  if (typeof ref !== 'string' || ref.includes('::')) return;
+  const uid = getRefMap(strapi).get(ref);
+  if (uid) body.ref = uid;
 }
 
 /**
@@ -260,6 +314,11 @@ module.exports = (config, { strapi }) => async (ctx, next) => {
     return next();
   }
 
+  if (UPLOAD_PATH.test(ctx.path || '')) {
+    if (ctx.method === 'POST') normalizeUploadRef(ctx, strapi);
+    return next();
+  }
+
   const match = CORE_PATH.exec(ctx.path || '');
   if (!match) return next();
 
@@ -319,3 +378,13 @@ function numericId(ctx) {
 module.exports.numericId = numericId;
 // exported for testing
 module.exports._internal = { cleanPayload, isEmptyRelationRef };
+
+// getRefMap caches for the process lifetime, which is right for a running
+// server but wrong for tests that swap the content-type set between cases.
+module.exports.__test__ = {
+  normalizeUploadRef,
+  getRefMap,
+  resetRefMap: () => {
+    refMap = null;
+  },
+};
