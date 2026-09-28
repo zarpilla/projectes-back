@@ -352,6 +352,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           'clients',
           'activity_types',
           'global_activity_types',
+          // ModalBoxDedication ("Entrada hores") preselects "Tipus dedicació"
+          // from this, and DedicationEstPivot renders it as a column. v3 kept
+          // it as an FK column so it was always on the row; unpopulated in v5
+          // it is absent entirely, and the frontend's
+          // `default_dedication_type === null` branch never matches undefined,
+          // so nothing was ever preselected.
+          'default_dedication_type',
           // v3 kept relations as FK columns, so `mother` was on every row even
           // unpopulated; v5 omits an unpopulated relation entirely. Views read
           // `p.mother === null` (JornadaDiaria, ModalBoxMoveProject,
@@ -373,6 +380,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           'clients',
           'activity_types',
           'global_activity_types',
+          // ModalBoxDedication ("Entrada hores") preselects "Tipus dedicació"
+          // from this, and DedicationEstPivot renders it as a column. v3 kept
+          // it as an FK column so it was always on the row; unpopulated in v5
+          // it is absent entirely, and the frontend's
+          // `default_dedication_type === null` branch never matches undefined,
+          // so nothing was ever preselected.
+          'default_dedication_type',
           // v3 kept relations as FK columns, so `mother` was on every row even
           // unpopulated; v5 omits an unpopulated relation entirely. Views read
           // `p.mother === null` (JornadaDiaria, ModalBoxMoveProject,
