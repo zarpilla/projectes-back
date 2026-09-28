@@ -61,11 +61,13 @@ async function setPermissions(roleType, controllers) {
     const ctls = content?.controllers || {};
     for (const [controllerName, actions] of Object.entries(ctls)) {
       for (const actionName of Object.keys(actions)) {
-        lookup.set(`${controllerName}.${actionName}`.toLowerCase(), {
-          typeName,
-          controllerName,
-          actionName,
-        });
+        const hit = { typeName, controllerName, actionName };
+        lookup.set(`${controllerName}.${actionName}`.toLowerCase(), hit);
+        // Also index fully qualified. Plugin controllers can share a generic
+        // name -- the upload plugin's is literally "content-api" -- so the
+        // matrix can say 'plugin::upload.content-api' and bind to exactly one
+        // action instead of whichever plugin registered that name first.
+        lookup.set(`${typeName}.${controllerName}.${actionName}`.toLowerCase(), hit);
       }
     }
   }
@@ -258,6 +260,15 @@ async function importSeedPermissions() {
     user: ['find', 'findOne', 'create', 'update', 'count', 'me'],
     // v3 "userspermissions: getroles" -> the roles read action
     role: ['find'],
+    // Core upload plugin -> POST /api/upload.
+    //
+    // Every tenant's v3 database has exactly one upload permission enabled for
+    // authenticated (upload.upload.upload); find/findOne/destroy/count/search/
+    // getsettings/updatesettings are all enabled=0, and public has none. It was
+    // granted through the admin UI and never written into the v3 seed, so the
+    // matrix ported from that seed did not carry it and /api/upload answered
+    // 403 on v5. Granting only `upload` keeps v3 parity.
+    'plugin::upload.content-api': ['upload'],
   });
 }
 
