@@ -15,6 +15,11 @@ module.exports = {
   routes: [
     {
       method: 'GET',
+      path: '/contacts/for-orders',
+      handler: 'contact.forOrders',
+    },
+    {
+      method: 'GET',
       path: '/contacts/basic',
       handler: 'contact.basic',
     },

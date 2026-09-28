@@ -187,7 +187,7 @@ async function importSeedPermissions() {
       'createPhasesForAllProjects',
     ],
     quote: ['create', 'find', 'findOne', 'update', 'delete'],
-    contacts: ['create', 'find', 'findOne', 'update', 'delete', 'basic', 'withorders', 'orders', 'unify'],
+    contacts: ['create', 'find', 'findOne', 'update', 'delete', 'basic', 'withorders', 'orders', 'unify', 'forOrders'],
     'festive-type': ['find'],
     festive: ['create', 'find', 'findOne', 'update', 'delete'],
     'daily-dedication': ['create', 'find', 'findOne', 'update', 'delete'],

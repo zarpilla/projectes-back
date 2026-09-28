@@ -10,6 +10,11 @@ const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { BASIC_POPULATE } = require('../services/contact-populate');
+const {
+  FOR_ORDERS_FIELDS,
+  FOR_ORDERS_POPULATE,
+  SOCIES_POPULATE,
+} = require('../services/for-orders');
 
 module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -43,6 +48,23 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
       orderBy: opts.sort,
     });
     return contacts.map(({ projects, projectes, ...item }) => item);
+  },
+
+  /**
+   * GET /api/contacts/for-orders
+   * The contact list the orders page needs, and nothing more.
+   *
+   * `?socies=1` narrows to contacts linked to a user and adds the two
+   * relations the collection-point lookup walks.
+   */
+  async forOrders(ctx) {
+    const socies = ctx.query.socies === '1' || ctx.query.socies === 'true';
+    return strapi.db.query('api::contact.contact').findMany({
+      select: FOR_ORDERS_FIELDS,
+      where: socies ? { users_permissions_user: { $notNull: true } } : {},
+      populate: socies ? SOCIES_POPULATE : FOR_ORDERS_POPULATE,
+      orderBy: { trade_name: 'asc' },
+    });
   },
 
   /**
