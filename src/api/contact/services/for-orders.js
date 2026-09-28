@@ -44,7 +44,10 @@ const FOR_ORDERS_POPULATE = { legal_form: true, sector: true };
 const SOCIES_POPULATE = {
   ...FOR_ORDERS_POPULATE,
   users_permissions_user: { select: ['id'] },
-  collection_points: { select: ['id'] },
+  // `city` as well as the id: OrdersForm resolves a collection point's city
+  // NAME against the cities list to work out the pickup city. `city` is a
+  // plain column on contact, not a relation, so it selects cleanly.
+  collection_points: { select: ['id', 'city'] },
 };
 
 module.exports = { FOR_ORDERS_FIELDS, FOR_ORDERS_POPULATE, SOCIES_POPULATE };

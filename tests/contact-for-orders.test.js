@@ -68,7 +68,9 @@ describe('for-orders populate', () => {
 
   it('the socies variant adds the two relations the collection-point lookup walks', () => {
     expect(SOCIES_POPULATE.users_permissions_user).toEqual({ select: ['id'] });
-    expect(SOCIES_POPULATE.collection_points).toEqual({ select: ['id'] });
+    // `city` too: OrdersForm matches a collection point's city name against
+    // the cities list. Narrowing it to the id alone left that undefined.
+    expect(SOCIES_POPULATE.collection_points).toEqual({ select: ['id', 'city'] });
     expect(attrs.users_permissions_user.type).toBe('relation');
     expect(attrs.collection_points.type).toBe('relation');
   });
