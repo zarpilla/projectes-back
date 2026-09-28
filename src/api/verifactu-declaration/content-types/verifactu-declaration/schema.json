@@ -16,6 +16,7 @@
     },
     "pdf": {
       "type": "media",
+      "multiple": false,
       "relation": "oneToOne",
       "allowedTypes": ["files"]
     },

@@ -21,6 +21,7 @@
     },
     "certificate": {
       "type": "media",
+      "multiple": false,
       "relation": "oneToOne",
       "allowedTypes": [
         "files"

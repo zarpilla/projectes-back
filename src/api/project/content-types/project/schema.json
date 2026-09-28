@@ -285,6 +285,7 @@
     },
     "documents": {
       "type": "media",
+      "multiple": true,
       "relation": "oneToMany",
       "allowedTypes": [
         "images",

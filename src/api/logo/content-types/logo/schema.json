@@ -16,6 +16,7 @@
     },
     "logo": {
       "type": "media",
+      "multiple": false,
       "relation": "oneToOne",
       "allowedTypes": [
         "images"

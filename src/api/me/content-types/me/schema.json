@@ -41,6 +41,7 @@
     },
     "logo": {
       "type": "media",
+      "multiple": false,
       "relation": "oneToOne",
       "allowedTypes": [
         "images"
@@ -133,6 +134,7 @@
     },
     "google_credentials": {
       "type": "media",
+      "multiple": false,
       "relation": "oneToOne",
       "allowedTypes": [
         "files"
@@ -148,6 +150,7 @@
     },
     "face_certificate": {
       "type": "media",
+      "multiple": false,
       "relation": "oneToOne",
       "allowedTypes": [
         "files"
