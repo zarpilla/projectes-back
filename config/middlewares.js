@@ -12,7 +12,10 @@ module.exports = ({ env }) => [
   {
     name: 'strapi::cors',
     config: {
-      headers: '*',
+      // Explicit list, not '*': the frontend sends credentials (refresh-token
+      // cookie) and browsers treat a wildcard Allow-Headers literally on
+      // credentialed requests, failing the preflight for Authorization etc.
+      headers: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
     },
   },
   'strapi::poweredBy',
