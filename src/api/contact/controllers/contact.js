@@ -9,6 +9,7 @@
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
+const { BASIC_POPULATE } = require('../services/contact-populate');
 
 module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -27,7 +28,16 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
     const opts = adaptQuery(ctx.query);
     const contacts = await strapi.db.query('api::contact.contact').findMany({
       where: opts.filters || {},
-      populate: { projects: false },
+      // v3 returned every single-valued relation as an FK column, so the
+      // frontend got them for free; v5 omits a relation entirely unless it is
+      // populated, and `{ projects: false }` populates NOTHING. ContactsTable
+      // renders `row.sector.name`, `row.owner.fullname` and builds its type
+      // column from `contact_types`, so all of those came out empty -- the
+      // Sector column showed "-" on every row.
+      //
+      // The heavy collections this endpoint exists to avoid (projects,
+      // projectes, collection_points) stay unpopulated.
+      populate: BASIC_POPULATE,
       limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
