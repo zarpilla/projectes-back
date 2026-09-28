@@ -265,7 +265,9 @@ const enforceCollectionOrderFields = async (data, previousOrder = null) => {
     return;
   }
 
-  const route = await strapi.db.query('api::route.route').findOne({ where: { id: routeId } });
+  const route = await strapi.db
+    .query('api::route.route')
+    .findOne({ where: { id: routeId }, populate: { transfer_pickup: true } });
   const transferPickupId = route ? extractId(route.transfer_pickup) : null;
 
   if (transferPickupId) {
@@ -295,7 +297,10 @@ const calculateRouteForCollectionPoint = async (collectionPointContact) => {
   // Find route that serves this city
   const cityRoutes = await strapi.db
     .query('api::city-route.city-route')
-    .findMany({ where: { city: cityId } });
+    // `cr.route` is dereferenced below; unpopulated it is undefined, every id
+    // is filtered out and this returns null ("Could not find route for
+    // collection point").
+    .findMany({ where: { city: cityId }, populate: { route: true } });
   if (!cityRoutes || cityRoutes.length === 0) {
     return null;
   }
@@ -317,7 +322,11 @@ const calculateRouteForCollectionPoint = async (collectionPointContact) => {
   // Get the first active route
   const routes = await strapi.db
     .query('api::route.route')
-    .findMany({ where: { id: { $in: routeIds }, active: true }, limit: 1 });
+    .findMany({
+      where: { id: { $in: routeIds }, active: true },
+      populate: { transfer_pickup: true },
+      limit: 1,
+    });
 
   return routes && routes.length > 0 ? routes[0] : null;
 };
@@ -627,7 +636,11 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
   if (orderData.collection_pickup_route) {
     // Use the route specified by the frontend
     const routeId = extractId(orderData.collection_pickup_route);
-    route = await strapi.db.query('api::route.route').findOne({ where: { id: routeId } });
+    // transfer_pickup is dereferenced further down to choose the collection
+    // order's warehouse.
+    route = await strapi.db
+    .query('api::route.route')
+    .findOne({ where: { id: routeId }, populate: { transfer_pickup: true } });
 
     // Use date from frontend if provided
     if (orderData.collection_pickup_date) {
@@ -735,6 +748,12 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
       route: route.id,
       status: { $notIn: CLOSED_STATUSES },
     },
+    // The filter below compares `collection_pickup_route` / `route` ids off
+    // these rows. v3 returned them as FK columns; unpopulated in v5 they are
+    // undefined, so the match never succeeded, no existing collection order was
+    // ever reused and every order got its own -- "les comandes de recollida no
+    // s'agrupen".
+    populate: { collection_pickup_route: true, route: true },
     orderBy: { id: 'asc' },
   });
 
