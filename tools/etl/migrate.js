@@ -305,12 +305,16 @@ async function main() {
             sql =
               `INSERT INTO \`${TO}\`.\`${v5Lnk}\` (\`${ownerCol}\`, \`${targetCol}\`) ` +
               `SELECT \`${v3OwnerCol}\`, \`${v3TargetCol}\` FROM \`${FROM}\`.\`${joinCandidate}\` ` +
-              `WHERE \`${v3OwnerCol}\` IS NOT NULL AND \`${v3TargetCol}\` IS NOT NULL`;
+              `WHERE \`${v3OwnerCol}\` > 0 AND \`${v3TargetCol}\` > 0`;
           }
         } else if (hasInlineFk) {
           sql =
             `INSERT INTO \`${TO}\`.\`${v5Lnk}\` (\`${ownerCol}\`, \`${targetCol}\`) ` +
-            `SELECT id, \`${attrName}\` FROM \`${FROM}\`.\`${ent.table}\` WHERE \`${attrName}\` IS NOT NULL`;
+            // `> 0`, not just NOT NULL: v3 wrote 0 into an FK column to mean
+            // "unset" (diligencia has 833 contacts with legal_form = 0), and
+            // copying that verbatim produced 830 link rows pointing at a row
+            // that does not exist. In v5 "no value" is the absence of a link.
+            `SELECT id, \`${attrName}\` FROM \`${FROM}\`.\`${ent.table}\` WHERE \`${attrName}\` > 0`;
         }
         if (!sql) {
           stats.relationsNoSource.push(v5Lnk);
