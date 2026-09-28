@@ -16,9 +16,14 @@
 const BASIC_SELECT = ['id'];
 
 const BASIC_POPULATE = {
+  // Only the id is read off the city.
   city: { select: ['id'] },
-  // ContactsTable renders the route name; everyone else needs only the id.
-  route: { select: ['id', 'name'] },
+  // The route comes back WHOLE. Narrowing it to id+name emptied the "Ruta"
+  // picker in OrdersForm: it filters on `cr.route.active`, which a narrowed
+  // select leaves undefined, so every row was rejected. The derived objects
+  // are also handed on as the selected route (checkTransferNeeded reads
+  // transfer_pickup off them), so the whole row has to be here.
+  route: true,
 };
 
 module.exports = { BASIC_SELECT, BASIC_POPULATE };

@@ -42,8 +42,11 @@ describe('city-route basic shape', () => {
     expect(BASIC_POPULATE.city).toEqual({ select: ['id'] });
   });
 
-  it('keeps route.name, which ContactsTable renders', () => {
-    expect(BASIC_POPULATE.route.select).toEqual(expect.arrayContaining(['id', 'name']));
+  it('populates the route whole, not a narrowed select', () => {
+    // Narrowing it to id+name emptied the "Ruta" picker: OrdersForm filters on
+    // `cr.route.active`, and checkTransferNeeded reads `transfer_pickup` off
+    // the same objects. A select drops both silently.
+    expect(BASIC_POPULATE.route).toBe(true);
   });
 
   it('selects nothing that is not an attribute', () => {
