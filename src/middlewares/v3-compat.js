@@ -22,7 +22,7 @@
  * their own query with `adaptQuery` and are left alone.
  */
 
-const { adaptQuery } = require('../services/query-adapter');
+const { adaptQuery, sortEntryToString } = require('../services/query-adapter');
 
 const CORE_PATH = /^\/api\/([a-z0-9-]+)(?:\/([^/?]+))?$/;
 /**
@@ -140,10 +140,7 @@ function adaptUserQuery(ctx) {
   const adapted = adaptQuery(query);
   if (adapted.filters && Object.keys(adapted.filters).length) next.filters = adapted.filters;
   if (adapted.sort) {
-    next.sort = adapted.sort.map((entry) => {
-      const [field, dir] = Object.entries(entry)[0];
-      return `${field}:${dir}`;
-    });
+    next.sort = adapted.sort.map(sortEntryToString);
   }
   // `limit: -1` is the documented "no limit" for this transform, so it can go
   // straight through; `pagination: {}` would be ignored entirely.

@@ -28,6 +28,9 @@ describe('query-adapter (v3 → v5)', () => {
     test('bare field → asc', () => {
       expect(adaptQuery({ _sort: 'created_at' }).sort).toEqual([{ created_at: 'asc' }]);
     });
+    test('relation path → nested orderBy (flat dotted key 500s in db.query)', () => {
+      expect(adaptQuery({ _sort: 'owner.fullname:desc' }).sort).toEqual([{ owner: { fullname: 'desc' } }]);
+    });
   });
 
   describe('bare field → eq', () => {
@@ -233,6 +236,12 @@ describe('adaptCtxQuery (v3 REST compatibility for core find)', () => {
       // that '-1' misses, after which Math.max(limit, 1) clamps it to a single row.
       pagination: { limit: 100000 },
     });
+  });
+
+  test('relation sort goes back to a dotted REST string', () => {
+    const ctx = mkCtx({ _sort: 'owner.fullname:DESC' });
+    adaptCtxQuery(ctx);
+    expect(ctx.query.sort).toEqual(['owner.fullname:desc']);
   });
 
   test('_limit=-1 becomes maxLimit, never the string that clamps to 1', () => {

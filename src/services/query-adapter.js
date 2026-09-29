@@ -217,7 +217,18 @@ function adaptQuery(query, opts = {}) {
     const parts = String(query._sort).split(':');
     const field = parts[0];
     const dir = (parts[1] || 'asc').toLowerCase();
-    if (field) out.sort.push({ [field]: dir });
+    // A dotted field sorts on a relation (`owner.fullname`). db.query's orderBy
+    // looks the key up as an attribute, so a flat 'owner.fullname' key 500s with
+    // "Attribute owner.fullname not found" — it must be nested instead:
+    // { owner: { fullname: 'desc' } }.
+    if (field) {
+      out.sort.push(
+        field
+          .split('.')
+          .reverse()
+          .reduce((acc, segment) => ({ [segment]: acc }), dir),
+      );
+    }
   }
   if (query._q !== undefined) {
     // v3 _q is full-text search. In v5 Document Service there's no direct equivalent
@@ -403,6 +414,22 @@ function restPagination(pagination) {
 }
 
 /**
+ * Turns one adaptQuery sort entry back into the REST 'field:dir' string,
+ * re-joining a nested relation sort ({ owner: { fullname: 'desc' } }) into
+ * 'owner.fullname:desc'.
+ */
+function sortEntryToString(entry) {
+  const path = [];
+  let node = entry;
+  while (node && typeof node === 'object') {
+    const [key, value] = Object.entries(node)[0];
+    path.push(key);
+    node = value;
+  }
+  return `${path.join('.')}:${node}`;
+}
+
+/**
  * In-place v3->v5 translation of ctx.query for core find overrides (P9).
  * Rewrites v3-style queries into native v5 REST params so the frontend can
  * keep sending the exact query strings it sent to v3. v5-native queries and
@@ -425,10 +452,7 @@ function adaptCtxQuery(ctx, opts = {}) {
   if (adapted.filters && Object.keys(adapted.filters).length) next.filters = adapted.filters;
   // REST query validation expects sort as an array of 'field:dir' strings
   // (the object form from adaptQuery is only valid for db.query orderBy).
-  if (adapted.sort) next.sort = adapted.sort.map((entry) => {
-    const [field, dir] = Object.entries(entry)[0];
-    return `${field}:${dir}`;
-  });
+  if (adapted.sort) next.sort = adapted.sort.map(sortEntryToString);
   if (adapted.pagination) next.pagination = restPagination(adapted.pagination);
   if (adapted.status) next.status = adapted.status;
   if (adapted.populate) next.populate = adapted.populate;
@@ -440,6 +464,7 @@ module.exports = {
   adaptCtxQuery,
   dbLimit,
   restPagination,
+  sortEntryToString,
   expandPopulate,
   toDbArgs,
   v3FindArgs,
