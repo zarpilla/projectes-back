@@ -6,21 +6,30 @@ via a custom ETL (Phase 7). See the approved plan for the full phase breakdown.
 
 ## Status
 
-| Phase | Description                                | Status         |
-| ----- | ------------------------------------------ | -------------- |
-| 0     | Pre-flight & environment setup             | 🟡 in progress |
-| 1     | Schema conversion (76 CTs + 26 components) | ⬜ pending     |
-| 2     | Core config & infrastructure port          | ⬜ pending     |
-| 3     | Data-access layer rewrite                  | ⬜ pending     |
-| 4     | Custom endpoints & controllers             | ⬜ pending     |
-| 5     | Lifecycle hooks port                       | ⬜ pending     |
-| 6     | Bootstrap & permissions port               | ⬜ pending     |
-| 7     | Data migration ETL                         | ⬜ pending     |
-| 8     | External integrations verification         | ⬜ pending     |
-| 9     | Frontend rewrite (Vue)                     | ⬜ pending     |
-| 10    | Pilot tenant cutover                       | ⬜ pending     |
-| 11    | Rollout to remaining tenants               | ⬜ pending     |
-| 12    | Docs & handoff                             | ⬜ pending     |
+**The migration is complete.** All 17 tenants were cut over to Strapi v5 on
+2026-09-26; 16 are live and `milvietnams` was retired at the owner's request
+(pm2 apps deleted, configs renamed `.disabled`, databases and files kept).
+
+| Phase | Description                                | Status |
+| ----- | ------------------------------------------ | ------ |
+| 0–9   | Build, ETL, integrations, frontend         | done   |
+| 10    | Pilot tenant cutover (buida, demo, webcoop)| done   |
+| 11    | Rollout to remaining tenants               | done   |
+| 12    | Docs & handoff                             | done   |
+
+Post-cutover fixes ran through 2026-09-29. What was found, and why, is in
+[`docs/V3_TO_V5_TRAPS.md`](docs/V3_TO_V5_TRAPS.md) — read that before debugging
+anything that looks like missing data.
+
+### Where to look
+
+| Question | Doc |
+| -------- | --- |
+| A screen is blank / a value is missing | [`docs/V3_TO_V5_TRAPS.md`](docs/V3_TO_V5_TRAPS.md) |
+| How do I write a query / which access layer? | [`docs/DATA_ACCESS_CONVENTIONS.md`](docs/DATA_ACCESS_CONVENTIONS.md) |
+| How do I ship to the tenants? | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) |
+| How does the ETL work? | [`tools/etl/DESIGN.md`](tools/etl/DESIGN.md) |
+| What was the build plan / v5 gotchas? | [`HANDOFF.md`](HANDOFF.md) |
 
 ## Getting started
 

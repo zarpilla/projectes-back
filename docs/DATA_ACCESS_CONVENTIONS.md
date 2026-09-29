@@ -123,6 +123,35 @@ The v3 app passes operators as flat query params (`field_null`, `field_gt`,
 | `[ 'leader', 'project_state', 'project_phases.incomes.estimated_hours' ]` | `{ populate: [ 'leader', 'project_state', 'project_phases.incomes.estimated_hours' ] }` |
 | `[]` (load nothing)                                                       | `{ populate: [] }` (NOT `*`)                                                            |
 
+### `select:` inside a populate drops every field you do not name
+
+```js
+// each of these shipped a broken screen
+route:             { select: ['id', 'name'] }   // lost .active  -> picker empty
+collection_points: { select: ['id'] }           // lost .city    -> pickup city unresolved
+collection_points: { select: ['id', 'city'] }   // lost .name    -> buttons blank
+```
+
+Knowing which **relations** a caller reads is not enough — it is the **fields
+inside them**. A `select` drops the rest silently, and because these feed UI
+lists the result is an empty screen, not an error.
+
+Populate the relation **whole** unless you have enumerated every field every
+caller reads and can exercise the screen. The payload saving is usually
+irrelevant (0.056 MB either way in the case above); trim rows and whole
+entities instead. See `V3_TO_V5_TRAPS.md` §2.
+
+`select` also takes **scalars only** — a relation name there is silently
+ignored. Guarded by `tests/select-scalars-only.test.js`.
+
+### `populate: '*'` is expensive on list endpoints
+
+The v3-compat middleware adds `populate: '*'` to core routes that ask for none,
+and the content API then sanitises every field of every row — ~90% of the server
+time on a 1000-row list. See `V3_TO_V5_TRAPS.md` §10 before optimising; the
+measured lever is returning fewer fields from a custom route, not populating
+fewer relations.
+
 ---
 
 ## Draft & Publish
