@@ -70,7 +70,7 @@ function createDocumentLifecycles({
       const skipTotals = skipTotalsOnInternal && data._internal === true;
       if (!skipTotals) {
         data.updatable_admin = false;
-        await calculateTotals(data);
+        await calculateTotals(data, true);
       }
     },
     async afterUpdate(event) {
@@ -128,8 +128,36 @@ function createDocumentLifecycles({
     }
   }
 
-  async function calculateTotals(data) {
-    if (hasLines) {
+  /**
+   * Returns the lines with their VALUES.
+   *
+   * v5 inserts the component rows before the db lifecycle runs and replaces the
+   * payload's objects with bare references — `{ id, __pivot }` — so `data.lines`
+   * no longer carries `base`, `quantity` or `vat`. v3 handed the model the raw
+   * objects; run on references, the same arithmetic saved every document with a
+   * 0.00 total (which the treasury and the stats then showed). Same fix as
+   * emitted-invoice's resolveLines, but the component differs per document
+   * type, so it is read from the schema.
+   */
+  async function resolveLines(lines) {
+    if (!Array.isArray(lines) || lines.length === 0) return [];
+    const refs = lines.filter((l) => l && l.id !== undefined && l.base === undefined);
+    if (refs.length === 0) return lines;
+    const ct = strapi.contentTypes[uid];
+    const component = ct && ct.attributes && ct.attributes.lines && ct.attributes.lines.component;
+    if (!component) return lines;
+    const rows = await strapi.db
+      .query(component)
+      .findMany({ where: { id: { $in: refs.map((l) => l.id) } } });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    // Keep any line that already carried its values (a caller passing raw objects).
+    return lines.map((l) => (l && l.base === undefined && byId.has(l.id) ? byId.get(l.id) : l));
+  }
+
+  async function calculateTotals(data, isUpdate) {
+    // A partial update that does not touch the lines (assigning a project, a
+    // payment, …) must keep the stored totals rather than zero them.
+    if (hasLines && !(isUpdate && data.lines === undefined)) {
       data.total_base = 0;
       data.total_vat = 0;
       data.total_irpf = 0;
@@ -154,28 +182,35 @@ function createDocumentLifecycles({
     }
 
     if (hasLines && data.lines) {
-      let total_base = 0;
-      let total_vat = 0;
-      let total_irpf = 0;
-      data.lines.forEach((i) => {
-        let base = (i.base ? i.base : 0) * (i.quantity ? i.quantity : 0);
-        if (i.discount) {
-          base = base * (1 - i.discount / 100.0);
-        }
-        const vat = (base * (i.vat ? i.vat : 0)) / 100.0;
-        const irpf = (base * (i.irpf ? i.irpf : 0)) / 100.0;
-        total_base += base;
-        total_vat += vat;
-        total_irpf += irpf;
-      });
-      data.total_base = total_base;
-      data.total_vat = total_vat;
-      data.total_irpf = total_irpf;
-      data.total = data.total_base + data.total_vat - data.total_irpf;
+      Object.assign(data, computeLineTotals(await resolveLines(data.lines)));
     } else if (!hasLines) {
       data.total = (data.total_base || 0) + (data.total_vat || 0) - (data.total_irpf || 0);
     }
   }
 }
 
-module.exports = { createDocumentLifecycles };
+/**
+ * total_base / total_vat / total_irpf / total from line VALUES (not the bare
+ * `{ id }` references v5 leaves in a lifecycle payload). Shared with the
+ * recalcZeroDocumentTotals startup script so both compute the same numbers.
+ */
+function computeLineTotals(lines) {
+  let total_base = 0;
+  let total_vat = 0;
+  let total_irpf = 0;
+  (lines || []).forEach((i) => {
+    if (!i) return;
+    let base = (i.base ? i.base : 0) * (i.quantity ? i.quantity : 0);
+    if (i.discount) {
+      base = base * (1 - i.discount / 100.0);
+    }
+    const vat = (base * (i.vat ? i.vat : 0)) / 100.0;
+    const irpf = (base * (i.irpf ? i.irpf : 0)) / 100.0;
+    total_base += base;
+    total_vat += vat;
+    total_irpf += irpf;
+  });
+  return { total_base, total_vat, total_irpf, total: total_base + total_vat - total_irpf };
+}
+
+module.exports = { createDocumentLifecycles, computeLineTotals };

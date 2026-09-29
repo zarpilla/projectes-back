@@ -134,6 +134,11 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           },
         },
         periodification: true,
+        // Returned to the frontend as `projects`: TreasuryAnnotationInput reads
+        // `p.mother.id` whenever `p.mother !== null`. v5 omits an unpopulated
+        // relation (undefined, not null), so the render threw and froze the
+        // "Afegir moviment" form with its Enviar button disabled.
+        mother: true,
         // v3 exposed these as FK columns on the row; v5 omits an unpopulated
         // relation entirely, so the state/type/likelihood filters below would
         // see `undefined` for every project and match nothing.
