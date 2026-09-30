@@ -248,6 +248,25 @@ function dropEmptyRelations(value) {
   return isEmptyRelationRef(value) ? null : value;
 }
 
+/**
+ * The frontend binds its selects to the relation's `id` (`v-model="form.project_state.id"`),
+ * so picking another option rewrites `id` but leaves the previously loaded row's
+ * `documentId` (and name) on the object. v5 resolves a relation by `documentId`
+ * when one is present, which silently reconnected the OLD row. The numeric `id`
+ * is the field the user edited, so when it is valid it wins.
+ */
+function preferNumericId(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+  if (!entry.documentId || !/^[1-9]\d*$/.test(String(entry.id))) return entry;
+  const { documentId, ...rest } = entry;
+  return rest;
+}
+
+function normalizeRelationRefs(value) {
+  if (Array.isArray(value)) return value.map(preferNumericId);
+  return preferNumericId(value);
+}
+
 function cleanPayload(value, attributes, strapi, isRoot, depth, keepMarkers) {
   if (depth > 10 || value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) {
@@ -271,7 +290,7 @@ function cleanPayload(value, attributes, strapi, isRoot, depth, keepMarkers) {
     const cleaned = nested
       ? cleanPayload(value[key], nested, strapi, false, depth + 1, keepMarkers)
       : value[key];
-    clean[key] = def.type === 'relation' ? dropEmptyRelations(cleaned) : cleaned;
+    clean[key] = def.type === 'relation' ? normalizeRelationRefs(dropEmptyRelations(cleaned)) : cleaned;
   }
   return clean;
 }

@@ -213,4 +213,18 @@ describe('nested row markers', () => {
     expect(clean({ project_phases: [{ id: 20, name: 'x', assign: false, total_expenses_vat: 9 }] }))
       .toEqual({ project_phases: [{ id: 20, name: 'x' }] });
   });
+
+  // A select bound to `form.leader.id` rewrites only the id; the previously
+  // loaded row's documentId stays on the object and v5 would resolve by it,
+  // reconnecting the OLD row (project state / scope changes were lost).
+  test('a valid numeric id wins over a stale documentId on a relation', () => {
+    expect(clean({ leader: { id: 1, documentId: 'old-doc', username: 'Old' } }))
+      .toEqual({ leader: { id: 1, username: 'Old' } });
+    expect(clean({ project_phases: [{ id: 20, documentId: 'd', name: 'x' }] }))
+      .toEqual({ project_phases: [{ id: 20, name: 'x' }] });
+  });
+
+  test('documentId is kept when there is no usable numeric id', () => {
+    expect(clean({ leader: { documentId: 'doc' } })).toEqual({ leader: { documentId: 'doc' } });
+  });
 });
