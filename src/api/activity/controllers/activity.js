@@ -39,7 +39,17 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
     const opts = adaptQuery(ctx.query);
     const activities = await strapi.db.query('api::activity.activity').findMany({
       where: opts.filters || {},
-      populate: { project: true, users_permissions_user: true },
+      // v3's find() populated every first-level relation. ModalBoxDedication
+      // reopens an entry from this payload and preselects Funció / Tipus
+      // dedicació / Tasca from `activity_type.id`, `dedication_type.id` and
+      // `task.id` — left unpopulated, the saved values looked lost on reopen.
+      populate: {
+        project: true,
+        users_permissions_user: true,
+        activity_type: true,
+        dedication_type: true,
+        task: true,
+      },
       limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
