@@ -352,6 +352,10 @@ function toDbArgs(opts, populate) {
     args.offset = opts.pagination.start;
   }
   if (opts && opts.sort && opts.sort.length) args.orderBy = opts.sort;
+  // v3 `_q` → db.query's own `_q`: a LIKE over id and every string column (plus
+  // numeric columns for a numeric term), ANDed with `where` — what v3's
+  // `.search()` did. Dropping it turned every search into a plain sorted list.
+  if (opts && opts.q !== undefined && opts.q !== '') args._q = opts.q;
   return args;
 }
 
@@ -360,9 +364,8 @@ function toDbArgs(opts, populate) {
  * v3 query object plus a dotted populate list into the argument object
  * `strapi.db.query(uid).findMany()` expects.
  *
- * Note `_q` is not reproduced — v5 has no db-level full-text search, and the
- * ported controllers already ran the same query on both branches of their
- * `if (query._q)` check.
+ * `_q` is carried over as db.query's `_q` search (see toDbArgs), so the ported
+ * controllers' `if (query._q)` branches behave like v3's `.search()` again.
  *
  * @param {object} query v3 ctx.query
  * @param {string[]} [populatePaths] v3 dotted populate paths

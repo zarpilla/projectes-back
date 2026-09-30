@@ -53,6 +53,15 @@ describe('toDbArgs', () => {
     expect('populate' in toDbArgs(adaptQuery({}))).toBe(false);
   });
 
+  it('passes v3 _q through as the db.query search term', () => {
+    const args = v3FindArgs({ _q: 'd22', project_state: '1', _sort: 'name:ASC' });
+    expect(args._q).toBe('d22');
+    expect(args.where).toEqual({ project_state: 1 });
+    expect(args.orderBy).toEqual([{ name: 'asc' }]);
+    expect(toDbArgs(adaptQuery({ _q: '' }))._q).toBeUndefined();
+    expect(toDbArgs(adaptQuery({}))._q).toBeUndefined();
+  });
+
   it('backs v3FindArgs, which expands dotted paths', () => {
     const args = v3FindArgs({ _limit: '-1', contact: '5' }, ['project.leader']);
     expect(args.where).toEqual({ contact: 5 });
