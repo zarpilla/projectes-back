@@ -3,6 +3,7 @@
 const { importSeedPermissions, importSeedRows } = require('./services/bootstrap-permissions');
 const { runStartupScript } = require('./services/startup-scripts');
 const { recalcZeroDocumentTotals } = require('./services/recalc-zero-document-totals');
+const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoice-unique-index');
 
 module.exports = {
   /**
@@ -37,10 +38,16 @@ module.exports = {
 
     // Kept apart from the seed block: a failed data fix must not read as a
     // failed permission seed, nor stop the next fix from running.
-    const fixes = [['recalcZeroDocumentTotals', recalcZeroDocumentTotals]];
-    for (const [name, handler] of fixes) {
+    const fixes = [
+      ['recalcZeroDocumentTotals', recalcZeroDocumentTotals, { runOnce: true }],
+      // Index shape check, not a data migration: rerun on every boot so a
+      // tenant rebuilt by the ETL (which recreates the composite-only unique)
+      // gets the real one-invoice-per-order constraint back.
+      ['ensureOrderInvoiceUniqueIndex', ensureOrderInvoiceUniqueIndex, { runOnce: false }],
+    ];
+    for (const [name, handler, options] of fixes) {
       try {
-        await runStartupScript(name, handler, { runOnce: true });
+        await runStartupScript(name, handler, options);
       } catch (error) {
         strapi.log.error(`[bootstrap] startup script ${name} failed: ${error && error.message}`);
       }
