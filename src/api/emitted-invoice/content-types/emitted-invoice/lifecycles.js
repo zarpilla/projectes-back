@@ -215,9 +215,12 @@ module.exports = {
       const orderIds = orders.map((o) => o.id);
       const placeholders = orderIds.map(() => '?').join(',');
       // v3 cleared an FK column here; in v5 the relation is a link table row.
+      // Clear emitted_invoice_datetime too: it was set when the draft was
+      // created, and leaving it behind made reverted orders look invoiced
+      // while sitting in 'delivered'.
       await rawExecute(
         strapi,
-        `UPDATE orders SET status = 'delivered', updated_at = NOW() WHERE id IN (${placeholders})`,
+        `UPDATE orders SET status = 'delivered', emitted_invoice_datetime = NULL, updated_at = NOW() WHERE id IN (${placeholders})`,
         orderIds,
       );
       await rawExecute(
