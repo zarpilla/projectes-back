@@ -258,188 +258,30 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * POST /api/orders/invoice
    * Generates invoices for multiple orders grouped by owner, bulk-updates order
    * status via raw SQL (lifecycle bypass), and pushes income lines to project phases.
+   *
+   * Serialised through invoiceRunInFlight: a run that overlaps a previous run
+   * on the same orders reads them before the first run has stamped them
+   * 'invoiced', and would create a duplicate draft invoice for orders that
+   * are already invoiced.
    */
   async invoice(ctx) {
-    const { orders: orderIds, project } = ctx.request.body;
-    const startTime = Date.now();
-    const timings = {};
-    const log = (stage, msg = '') => {
-      const elapsed = Date.now() - startTime;
-      console.log(`[INVOICE][${elapsed}ms] ${stage}: ${msg}`);
-      timings[stage] = elapsed;
-    };
-    log('START', `Processing ${orderIds.length} orders`);
-
-    const year = new Date().getFullYear();
-    const serials = await strapi.db.query('api::serie.serie').findMany({ where: { name: year } });
-    if (serials.length === 0) {
-      return ctx.send({ done: false, message: `ERROR. No hi ha sèrie per a l'any ${year}` }, 500);
-    }
-    log('SERIAL_LOADED', `Found serial: ${serials[0].id}`);
-
-    const verifactu = await strapi.documents('api::verifactu.verifactu').findFirst();
-    const verifactuEnabled = verifactu?.mode === 'test' || verifactu?.mode === 'real';
-    log('VERIFACTU_LOADED');
-
-    const ordersEntities = await strapi.db.query('api::order.order').findMany({
-      where: { id: { $in: orderIds } },
-      // v3's strapi.query().find() auto-populated first-level relations, so
-      // `o.owner.id` and `o.route.name` just worked. v5 omits an unpopulated
-      // relation entirely: without this every order had `owner === undefined`,
-      // uniqueOwners came out empty, and the endpoint cheerfully created zero
-      // invoices — the per-owner loop that would have raised an error never ran.
-      populate: { owner: true, route: true },
-    });
-    log('ORDERS_FETCHED', `${ordersEntities.length} orders loaded`);
-
-    const uniqueOwners = [...new Set(ordersEntities.map((o) => o.owner?.id).filter(Boolean))];
-    log('OWNERS_IDENTIFIED', `${uniqueOwners.length} unique owners`);
-
-    const paymentMethods = await strapi.db.query('api::payment-method.payment-method').findMany({});
-    const paymentMethod = paymentMethods.length > 0 ? paymentMethods[0].id : null;
-
-    // `users_permissions_user` is the field the owner lookup below matches on,
-    // so it has to be populated for the same reason as the orders above.
-    const allContacts = await strapi.db.query('api::contact.contact').findMany({
-      populate: { users_permissions_user: true },
-    });
-    log('CONTACTS_FETCHED', `${allContacts.length} contacts fetched`);
-
-    const contactsByOwnerId = {};
-    for (const owner of uniqueOwners) {
-      const ownerContacts = allContacts.filter((c) => c.users_permissions_user?.id === owner);
-      if (ownerContacts.length === 0) {
-        return ctx.send({ done: false, message: `ERROR. No hi ha contactes per a l'usuari ${owner}` }, 500);
-      }
-      contactsByOwnerId[owner] = ownerContacts[0];
-    }
-    log('CONTACTS_MAPPED');
-
-    // Cache project data with phases
-    const projectCache = {};
-    for (const p of [project]) {
-      const projectData = await strapi.db.query('api::project.project').findOne({
-        where: { id: p },
-        populate: {
-          project_phases: { populate: { incomes: { populate: { invoice: true, income: true } } } },
+    if (invoiceRunInFlight) {
+      return ctx.send(
+        {
+          done: false,
+          message: "Ja hi ha una facturació en curs. Espera que acabi i torna-ho a provar.",
         },
-      });
-      if (!projectData?.project_phases?.length) {
-        return ctx.send(
-          { done: false, message: `ERROR. No hi ha fases per al projecte ${projectData?.name}` },
-          500,
-        );
-      }
-      const phase = projectData.project_phases[projectData.project_phases.length - 1];
-      if (!phase.incomes) {
-        return ctx.send(
-          { done: false, message: `ERROR. No hi ha incomes per a la fase del projecte ${projectData.name}` },
-          500,
-        );
-      }
-      projectCache[p] = projectData;
-    }
-    log('PROJECTS_CACHED');
-
-    // Create invoices per owner in parallel
-    log('INVOICE_CREATION_START', `Creating ${uniqueOwners.length} invoices`);
-    const invoicesByOwner = await Promise.all(
-      uniqueOwners.map(async (owner) => {
-        const contact = contactsByOwnerId[owner];
-        const contactOrders = ordersEntities.filter((o) => o.owner?.id === owner);
-        const firstDate = contactOrders[0]?.route_date || new Date();
-        const monthName = moment(firstDate).locale('ca').format('MMMM');
-        const yr = moment(firstDate).format('YYYY');
-        const documentConcept = `Serveis logístics ${monthName} ${yr}`;
-
-        const invoice = await strapi.service('api::emitted-invoice.emitted-invoice').create({
-          data: {
-            emitted: new Date(),
-            serial: serials[0].id,
-            contact: contact.id,
-            verifactu: verifactuEnabled,
-            payment_method: paymentMethod,
-            document_concept: documentConcept,
-            lines: contactOrders.map((o) => ({
-              concept: `Comanda ${o.estimated_delivery_date} | ${o.id.toString().padStart(4, '0')} | ${o.route?.name}`,
-              base: o.price - (o.volume_discount || 0),
-              quantity: 1,
-              price: o.price,
-              vat: 21,
-              irpf: 0,
-              discount: (o.multidelivery_discount || 0) + (o.contact_pickup_discount || 0),
-            })),
-            projects: [project],
-            publishedAt: new Date(),
-          },
-        });
-        return { invoice, contact, contactOrders, owner };
-      }),
-    );
-    log('INVOICES_CREATED', `${invoicesByOwner.length} invoices created`);
-
-    // Bulk update order status via parameterized raw SQL (lifecycle bypass).
-    // `emitted_invoice` was an FK column on `orders` in v3; in v5 the relation
-    // lives in orders_emitted_invoice_lnk and the column no longer exists, so
-    // the link has to be rewritten separately from the scalar columns.
-    for (const { invoice, contactOrders } of invoicesByOwner) {
-      const ids = contactOrders.map((o) => o.id);
-      if (ids.length === 0) continue;
-      const placeholders = ids.map(() => '?').join(',');
-      await rawExecute(
-        strapi,
-        `UPDATE orders SET emitted_invoice_datetime = NOW(), status = 'invoiced', updated_at = NOW() WHERE id IN (${placeholders})`,
-        ids,
-      );
-      await rawExecute(
-        strapi,
-        `DELETE FROM orders_emitted_invoice_lnk WHERE order_id IN (${placeholders})`,
-        ids,
-      );
-      await rawExecute(
-        strapi,
-        `INSERT INTO orders_emitted_invoice_lnk (order_id, emitted_invoice_id) VALUES ${ids
-          .map(() => '(?, ?)')
-          .join(', ')}`,
-        ids.flatMap((id) => [id, invoice.id]),
+        409,
       );
     }
-
-    // Update project phases with income lines
-    for (const p of [project]) {
-      const proj = projectCache[p];
-      const phase = proj.project_phases[proj.project_phases.length - 1];
-      for (const { invoice, contact, contactOrders } of invoicesByOwner) {
-        let price = 0;
-        for (const o of contactOrders) {
-          price +=
-            ((o.price || 0) - (o.volume_discount || 0)) *
-            (1 - (o.multidelivery_discount || 0) / 100) *
-            (1 - (o.contact_pickup_discount || 0) / 100);
-        }
-        if (!phase.incomes) phase.incomes = [];
-        phase.incomes.push({
-          concept: `Factura #${invoice.code}# - ${contact.trade_name || contact.name}`,
-          quantity: 1,
-          amount: price,
-          total_amount: price,
-          date: new Date(),
-          income_type: 1,
-          invoice: invoice.id,
-          paid: true,
-          date_estimate_document: new Date(),
-          vat_pct: 21,
-        });
-      }
-      await strapi.db.query('api::project.project').update({
-        where: { id: p },
-        data: { project_phases: proj.project_phases },
-      });
+    invoiceRunInFlight = true;
+    try {
+      return await invoiceRun(ctx);
+    } finally {
+      invoiceRunInFlight = false;
     }
-    log('COMPLETE', `Total time: ${Date.now() - startTime}ms`);
-
-    return { orders: orderIds, invoices: invoicesByOwner.map((x) => x.invoice), timings };
   },
+
 
   /**
    * POST /api/orders/pdf
@@ -716,4 +558,217 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     return response;
   },
 }));
+
+// Guards order.invoice against overlapping runs (one process per tenant in
+// fork mode, so a module-level flag covers every request).
+let invoiceRunInFlight = false;
+
+/**
+ * POST /api/orders/invoice — actual run, reached only through order.invoice,
+ * which serialises access. Function declaration: hoisted above the factory.
+ */
+async function invoiceRun(ctx) {
+  const { orders: orderIds, project } = ctx.request.body;
+  const startTime = Date.now();
+  const timings = {};
+  const log = (stage, msg = '') => {
+    const elapsed = Date.now() - startTime;
+    console.log(`[INVOICE][${elapsed}ms] ${stage}: ${msg}`);
+    timings[stage] = elapsed;
+  };
+  log('START', `Processing ${orderIds.length} orders`);
+
+  const year = new Date().getFullYear();
+  const serials = await strapi.db.query('api::serie.serie').findMany({ where: { name: year } });
+  if (serials.length === 0) {
+    return ctx.send({ done: false, message: `ERROR. No hi ha sèrie per a l'any ${year}` }, 500);
+  }
+  log('SERIAL_LOADED', `Found serial: ${serials[0].id}`);
+
+  const verifactu = await strapi.documents('api::verifactu.verifactu').findFirst();
+  const verifactuEnabled = verifactu?.mode === 'test' || verifactu?.mode === 'real';
+  log('VERIFACTU_LOADED');
+
+  const ordersEntities = await strapi.db.query('api::order.order').findMany({
+    where: { id: { $in: orderIds } },
+    // v3's strapi.query().find() auto-populated first-level relations, so
+    // `o.owner.id` and `o.route.name` just worked. v5 omits an unpopulated
+    // relation entirely: without this every order had `owner === undefined`,
+    // uniqueOwners came out empty, and the endpoint cheerfully created zero
+    // invoices — the per-owner loop that would have raised an error never ran.
+    populate: { owner: true, route: true, emitted_invoice: true },
+  });
+  log('ORDERS_FETCHED', `${ordersEntities.length} orders loaded`);
+
+  // Never re-invoice. An order that is already invoiced, or still linked to
+  // any invoice, must not enter a new draft: re-running this endpoint on the
+  // same selection created a duplicate draft and silently stole the orders'
+  // link from the first draft; deleting the duplicate later then reset the
+  // shared orders back to 'delivered' (2026-09-30 incident).
+  const invoiceable = ordersEntities.filter(
+    (o) => o.status !== 'invoiced' && !o.emitted_invoice,
+  );
+  const skipped = ordersEntities
+    .filter((o) => o.status === 'invoiced' || o.emitted_invoice)
+    .map((o) => o.id);
+  log('INVOICEABLE', `${invoiceable.length} of ${ordersEntities.length} orders invoiceable`);
+
+  if (invoiceable.length === 0) {
+    return ctx.send(
+      {
+        done: false,
+        message: "Les comandes seleccionades ja estan facturades. No s'ha creat cap factura.",
+      },
+      409,
+    );
+  }
+
+  const uniqueOwners = [...new Set(invoiceable.map((o) => o.owner?.id).filter(Boolean))];
+  log('OWNERS_IDENTIFIED', `${uniqueOwners.length} unique owners`);
+
+  const paymentMethods = await strapi.db.query('api::payment-method.payment-method').findMany({});
+  const paymentMethod = paymentMethods.length > 0 ? paymentMethods[0].id : null;
+
+  // `users_permissions_user` is the field the owner lookup below matches on,
+  // so it has to be populated for the same reason as the orders above.
+  const allContacts = await strapi.db.query('api::contact.contact').findMany({
+    populate: { users_permissions_user: true },
+  });
+  log('CONTACTS_FETCHED', `${allContacts.length} contacts fetched`);
+
+  const contactsByOwnerId = {};
+  for (const owner of uniqueOwners) {
+    const ownerContacts = allContacts.filter((c) => c.users_permissions_user?.id === owner);
+    if (ownerContacts.length === 0) {
+      return ctx.send({ done: false, message: `ERROR. No hi ha contactes per a l'usuari ${owner}` }, 500);
+    }
+    contactsByOwnerId[owner] = ownerContacts[0];
+  }
+  log('CONTACTS_MAPPED');
+
+  // Cache project data with phases
+  const projectCache = {};
+  for (const p of [project]) {
+    const projectData = await strapi.db.query('api::project.project').findOne({
+      where: { id: p },
+      populate: {
+        project_phases: { populate: { incomes: { populate: { invoice: true, income: true } } } },
+      },
+    });
+    if (!projectData?.project_phases?.length) {
+      return ctx.send(
+        { done: false, message: `ERROR. No hi ha fases per al projecte ${projectData?.name}` },
+        500,
+      );
+    }
+    const phase = projectData.project_phases[projectData.project_phases.length - 1];
+    if (!phase.incomes) {
+      return ctx.send(
+        { done: false, message: `ERROR. No hi ha incomes per a la fase del projecte ${projectData.name}` },
+        500,
+      );
+    }
+    projectCache[p] = projectData;
+  }
+  log('PROJECTS_CACHED');
+
+  // Create invoices per owner in parallel
+  log('INVOICE_CREATION_START', `Creating ${uniqueOwners.length} invoices`);
+  const invoicesByOwner = await Promise.all(
+    uniqueOwners.map(async (owner) => {
+      const contact = contactsByOwnerId[owner];
+      const contactOrders = invoiceable.filter((o) => o.owner?.id === owner);
+      const firstDate = contactOrders[0]?.route_date || new Date();
+      const monthName = moment(firstDate).locale('ca').format('MMMM');
+      const yr = moment(firstDate).format('YYYY');
+      const documentConcept = `Serveis logístics ${monthName} ${yr}`;
+
+      const invoice = await strapi.service('api::emitted-invoice.emitted-invoice').create({
+        data: {
+          emitted: new Date(),
+          serial: serials[0].id,
+          contact: contact.id,
+          verifactu: verifactuEnabled,
+          payment_method: paymentMethod,
+          document_concept: documentConcept,
+          lines: contactOrders.map((o) => ({
+            concept: `Comanda ${o.estimated_delivery_date} | ${o.id.toString().padStart(4, '0')} | ${o.route?.name}`,
+            base: o.price - (o.volume_discount || 0),
+            quantity: 1,
+            price: o.price,
+            vat: 21,
+            irpf: 0,
+            discount: (o.multidelivery_discount || 0) + (o.contact_pickup_discount || 0),
+          })),
+          projects: [project],
+          publishedAt: new Date(),
+        },
+      });
+      return { invoice, contact, contactOrders, owner };
+    }),
+  );
+  log('INVOICES_CREATED', `${invoicesByOwner.length} invoices created`);
+
+  // Bulk update order status via parameterized raw SQL (lifecycle bypass).
+  // `emitted_invoice` was an FK column on `orders` in v3; in v5 the relation
+  // lives in orders_emitted_invoice_lnk and the column no longer exists, so
+  // the link has to be rewritten separately from the scalar columns.
+  for (const { invoice, contactOrders } of invoicesByOwner) {
+    const ids = contactOrders.map((o) => o.id);
+    if (ids.length === 0) continue;
+    const placeholders = ids.map(() => '?').join(',');
+    await rawExecute(
+      strapi,
+      `UPDATE orders SET emitted_invoice_datetime = NOW(), status = 'invoiced', updated_at = NOW() WHERE id IN (${placeholders})`,
+      ids,
+    );
+    await rawExecute(
+      strapi,
+      `DELETE FROM orders_emitted_invoice_lnk WHERE order_id IN (${placeholders})`,
+      ids,
+    );
+    await rawExecute(
+      strapi,
+      `INSERT INTO orders_emitted_invoice_lnk (order_id, emitted_invoice_id) VALUES ${ids
+        .map(() => '(?, ?)')
+        .join(', ')}`,
+      ids.flatMap((id) => [id, invoice.id]),
+    );
+  }
+
+  // Update project phases with income lines
+  for (const p of [project]) {
+    const proj = projectCache[p];
+    const phase = proj.project_phases[proj.project_phases.length - 1];
+    for (const { invoice, contact, contactOrders } of invoicesByOwner) {
+      let price = 0;
+      for (const o of contactOrders) {
+        price +=
+          ((o.price || 0) - (o.volume_discount || 0)) *
+          (1 - (o.multidelivery_discount || 0) / 100) *
+          (1 - (o.contact_pickup_discount || 0) / 100);
+      }
+      if (!phase.incomes) phase.incomes = [];
+      phase.incomes.push({
+        concept: `Factura #${invoice.code}# - ${contact.trade_name || contact.name}`,
+        quantity: 1,
+        amount: price,
+        total_amount: price,
+        date: new Date(),
+        income_type: 1,
+        invoice: invoice.id,
+        paid: true,
+        date_estimate_document: new Date(),
+        vat_pct: 21,
+      });
+    }
+    await strapi.db.query('api::project.project').update({
+      where: { id: p },
+      data: { project_phases: proj.project_phases },
+    });
+  }
+  log('COMPLETE', `Total time: ${Date.now() - startTime}ms`);
+
+  return { orders: orderIds, invoices: invoicesByOwner.map((x) => x.invoice), skipped, timings };
+}
 
