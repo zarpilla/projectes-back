@@ -59,7 +59,7 @@ module.exports = {
 
     // If the new project has a mother, flag the mother.
     if (result.mother) {
-      const motherId = result.mother.id || result.mother;
+      const motherId = relationId(result.mother);
       await updateIsMother(motherId);
     }
   },
@@ -73,7 +73,7 @@ module.exports = {
       const current = await strapi.db
         .query('api::project.project')
         .findOne({ where: { id }, populate: { mother: true } });
-      event.state.oldMotherId = current?.mother?.id || current?.mother || null;
+      event.state.oldMotherId = relationId(current?.mother);
     }
 
     // Recompute financials from the FULL project (data only carries changed fields).
@@ -104,7 +104,7 @@ module.exports = {
     if (state.oldMotherId !== undefined) {
       const data = event.params.data || {};
       const oldMotherId = state.oldMotherId;
-      const newMotherId = data.mother?.id || data.mother || null;
+      const newMotherId = relationId(data.mother);
       if (oldMotherId !== newMotherId) {
         if (oldMotherId) await updateIsMother(oldMotherId);
         if (newMotherId) await updateIsMother(newMotherId);
@@ -115,11 +115,27 @@ module.exports = {
   async afterDelete(event) {
     const result = event.result;
     if (result.mother) {
-      const motherId = result.mother.id || result.mother;
+      const motherId = relationId(result.mother);
       await updateIsMother(motherId);
     }
   },
 };
+
+// Numeric id out of a to-one relation value. By the time db lifecycles run, the
+// document service has rewritten the input into `{ set: [{ id }] }` (or
+// connect/disconnect), so `data.mother` is rarely a bare id or `{ id }`.
+function relationId(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number' || typeof value === 'string') return Number(value) || null;
+  if (Array.isArray(value)) return relationId(value[0]);
+  if (typeof value === 'object') {
+    if (value.id !== undefined) return relationId(value.id);
+    if (value.set !== undefined) return relationId(value.set);
+    if (value.connect !== undefined) return relationId(value.connect);
+    if (value.disconnect !== undefined) return null;
+  }
+  return null;
+}
 
 // Set is_mother from the live child count (direct db update: lifecycle bypass).
 async function updateIsMother(motherId) {
