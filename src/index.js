@@ -4,6 +4,7 @@ const { importSeedPermissions, importSeedRows } = require('./services/bootstrap-
 const { runStartupScript } = require('./services/startup-scripts');
 const { recalcZeroDocumentTotals } = require('./services/recalc-zero-document-totals');
 const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoice-unique-index');
+const { registerDateFieldNormalizer } = require('./services/date-fields');
 
 module.exports = {
   /**
@@ -28,6 +29,8 @@ module.exports = {
    *    through the ported v3 startup-scripts guard (services/startup-scripts).
    */
   async bootstrap({ strapi }) {
+    registerDateFieldNormalizer();
+
     try {
       await importSeedPermissions();
       await importSeedRows();
