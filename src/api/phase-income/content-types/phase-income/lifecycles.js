@@ -5,25 +5,36 @@
  * phase-income lifecycles (v5). Ported from v3 api/phase-income/models/phase-income.js.
  * Marks affected projects dirty for the totals-refresh queue (P4.10 scheduler).
  */
-const { scheduleFromPhaseRow } = require('../../../project/services/totalsRefreshScheduler');
+const {
+  projectIdsForPhaseRows,
+  scheduleFromPhaseRows,
+} = require('../../../project/services/totalsRefreshScheduler');
+
+const UID = 'api::phase-income.phase-income';
+
+async function rememberProjects(event) {
+  event.state.previousProjectIds = await projectIdsForPhaseRows(UID, event.params.where);
+}
+
+async function scheduleRemembered(event) {
+  await scheduleFromPhaseRows(UID, null, event.state.previousProjectIds || []);
+}
 
 module.exports = {
   async afterCreate(event) {
-    await scheduleFromPhaseRow(event.result);
+    await scheduleFromPhaseRows(UID, { id: event.result.id });
   },
+  // An update can move the row to another phase (or project): remember the
+  // project(s) it belonged to so both old and new get recomputed.
+  beforeUpdate: rememberProjects,
   async afterUpdate(event) {
-    await scheduleFromPhaseRow(event.result);
-    // If project_phase was reassigned the previous project is reachable
-    // only via the update payload; schedule it too so the old project is recomputed.
-    const data = event.params.data;
-    if (data && (data.project_phase || data.project_original_phase)) {
-      await scheduleFromPhaseRow(data);
-    }
+    const where = event.result ? { id: event.result.id } : event.params.where;
+    await scheduleFromPhaseRows(UID, where, event.state.previousProjectIds || []);
   },
-  async beforeDelete(event) {
-    const row = await strapi.db
-      .query('api::phase-income.phase-income')
-      .findOne({ where: event.params.where });
-    await scheduleFromPhaseRow(row);
-  },
+  // After delete the links are gone, so resolve the projects beforehand.
+  // updatePhases removes rows with deleteMany, hence the *Many hooks.
+  beforeDelete: rememberProjects,
+  afterDelete: scheduleRemembered,
+  beforeDeleteMany: rememberProjects,
+  afterDeleteMany: scheduleRemembered,
 };

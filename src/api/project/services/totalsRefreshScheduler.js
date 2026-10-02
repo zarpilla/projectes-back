@@ -12,7 +12,7 @@
  *   - scheduleRefresh(id)                → mark the project dirty (cheap UPDATE,
  *                                          knex, no lifecycle)
  *   - scheduleFromEntityProjects(entity) → mark all linked projects dirty
- *   - scheduleFromPhaseRow(phaseRow)     → resolve project from a phase row, mark dirty
+ *   - scheduleFromPhaseRows(uid, where)  → resolve projects of phase incomes/expenses, mark dirty
  *   - flushPending() / processDirty()    → refresh ALL dirty projects (used by the
  *                                          cron worker and the admin drain endpoint)
  *
@@ -27,14 +27,21 @@
 const { refreshStoredTotals } = require('./projectFinancials');
 
 /**
- * Mark a single project dirty. Cheap knex UPDATE — no lifecycle, no read.
+ * Mark a single project dirty. Cheap UPDATE — no lifecycle, no read. Goes
+ * through the query builder so it joins the ambient transaction (the project
+ * PUT wraps phase writes and the project update); a raw knex write would wait
+ * on the row lock that transaction holds.
  * @param {number|string} id project id
  */
 const scheduleRefresh = async (id) => {
   const numericId = parseInt(id, 10);
   if (!(numericId > 0)) return;
   try {
-    await strapi.db.connection('projects').where({ id: numericId }).update({ dirty: true });
+    await strapi.db
+      .queryBuilder('api::project.project')
+      .update({ dirty: true })
+      .where({ id: numericId })
+      .execute();
   } catch (e) {
     strapi.log.warn(`[totalsRefreshScheduler] scheduleRefresh(${id}): ${e && e.message}`);
   }
@@ -63,41 +70,43 @@ const scheduleFromEntityProjects = async (entity) => {
   }
 };
 
+const PHASE_PROJECT_POPULATE = {
+  project_phase: { select: ['id'], populate: { project: { select: ['id'] } } },
+  project_original_phase: { select: ['id'], populate: { project: { select: ['id'] } } },
+};
+
 /**
- * Resolve the project of a phase row (project_phases or project_original_phases)
- * and mark it dirty. The phase row may carry a populated project, a bare
- * project id, or nothing (in which case we look the phase up).
- * @param {object} phaseRow
+ * Project ids of the phase-income / phase-expense rows matching `where`, via
+ * their (original) phase. v5 keeps those links in *_lnk tables, so resolve
+ * them through the relations rather than a `project` column.
+ * @param {string} uid api::phase-income.phase-income | api::phase-expense.phase-expense
+ * @param {object} where
+ * @returns {Promise<number[]>}
  */
-const scheduleFromPhaseRow = async (phaseRow) => {
-  if (!phaseRow) return;
-
-  // Direct project reference on the row
-  if (phaseRow.project != null) {
-    if (typeof phaseRow.project === 'object' && phaseRow.project.id != null) {
-      return scheduleRefresh(phaseRow.project.id);
-    }
-    const pid = parseInt(phaseRow.project, 10);
-    if (pid > 0) return scheduleRefresh(pid);
-  }
-
-  // Otherwise resolve via the phase id + table
-  const phaseId = parseInt(phaseRow.id, 10);
-  const isOriginal =
-    phaseRow.model === 'project-original-phases' ||
-    phaseRow.project_original_phase !== undefined ||
-    phaseRow.__original === true;
-  const table = isOriginal ? 'project_original_phases' : 'project_phases';
-  if (!(phaseId > 0)) return;
-
+const projectIdsForPhaseRows = async (uid, where) => {
+  if (!where) return [];
   try {
-    const rows = await strapi.db.connection(table).where({ id: phaseId }).select('project');
-    if (rows.length && rows[0].project) {
-      await scheduleRefresh(rows[0].project);
+    const rows = await strapi.db.query(uid).findMany({ where, select: ['id'], populate: PHASE_PROJECT_POPULATE });
+    const ids = new Set();
+    for (const row of rows) {
+      const pid = row.project_phase?.project?.id || row.project_original_phase?.project?.id;
+      if (pid) ids.add(pid);
     }
+    return [...ids];
   } catch (e) {
-    strapi.log.warn(`[totalsRefreshScheduler] could not resolve ${table}#${phaseId}: ${e && e.message}`);
+    strapi.log.warn(`[totalsRefreshScheduler] could not resolve projects of ${uid}: ${e && e.message}`);
+    return [];
   }
+};
+
+/**
+ * Mark dirty the projects of the phase-income / phase-expense rows matching
+ * `where`, plus any `extraIds` (e.g. the project a row belonged to before an
+ * update moved it to another phase).
+ */
+const scheduleFromPhaseRows = async (uid, where, extraIds = []) => {
+  const ids = new Set([...extraIds, ...(await projectIdsForPhaseRows(uid, where))]);
+  for (const id of ids) await scheduleRefresh(id);
 };
 
 /**
@@ -152,7 +161,8 @@ const getPendingCount = async () => {
 module.exports = {
   scheduleRefresh,
   scheduleFromEntityProjects,
-  scheduleFromPhaseRow,
+  projectIdsForPhaseRows,
+  scheduleFromPhaseRows,
   flushPending,
   processDirty,
   getPendingCount,
