@@ -15,7 +15,8 @@
  *      since --since, classified as described below:
  *
  *        node scripts/fix-shifted-dates.js report --since 2026-09-27 \
- *          [--v3-db <pre-migration v3 database>] [--out shifted-dates.csv]
+ *          [--v3-db <pre-migration v3 database>] [--log <pm2 error log>] \
+ *          [--out shifted-dates.csv]
  *
  *      There is no cut-off at the fix deploy: re-saving a form after the fix
  *      keeps the (already shifted) date it displays, so a later updated_at
@@ -30,6 +31,16 @@
  *                   probably shifted once. suggested = +1 day, apply blank.
  *        new        row not in v3. suggested = +1 day, apply blank.
  *      Values equal to v3 are left out. Without --v3-db every value is `new`.
+ *
+ *      --log <file[,file…]> (the tenant's pm2 error log, covering everything
+ *      since --since) turns the guesswork into evidence. Strapi logged every
+ *      truncation ("Date received: …Z. Date stored: …"); only local-midnight
+ *      timestamps lost a day, so the shifted stored days are known exactly:
+ *        - a `new`/`edited` value never stored from a midnight timestamp was
+ *          not shifted: left out of the report (counted as `ok`);
+ *        - a `shifted` value stays `shifted` only if every day of its chain
+ *          (v3-1 … v3-N) was stored shifted; otherwise it was a real edit and
+ *          becomes `edited`.
  *
  *   2. apply — after reviewing the CSV and setting `apply` to `yes` on the rows
  *      to fix (editing `suggested` where needed):
@@ -49,6 +60,8 @@ require('dotenv').config({ path: path.join(ROOT, '.env') });
 const knex = require('knex');
 
 const MAX_SHIFT_DAYS = 31;
+const DATE_TZ = process.env.APP_TZ || 'Europe/Madrid';
+const TRUNCATION = /Date received: (\S+?)\. Date stored: (\d{4}-\d{2}-\d{2})/g;
 const CSV_COLUMNS = [
   'table', 'id', 'column', 'kind', 'parent', 'updated_at',
   'v3_value', 'v5_value', 'shift_days', 'status', 'suggested', 'apply',
@@ -195,6 +208,25 @@ function ownerResolver(db, cmpsTables, componentTables) {
   return { resolve };
 }
 
+/**
+ * Days Strapi stored one or more days early, from its truncation warnings: the
+ * received timestamp's local day differs from the stored UTC day.
+ * @returns {Set<string>|null}
+ */
+function shiftedDaysFromLogs(files) {
+  if (!files) return null;
+  const days = new Set();
+  for (const file of files.split(',')) {
+    const text = fs.readFileSync(file, 'utf8');
+    for (const [, received, stored] of text.matchAll(TRUNCATION)) {
+      const d = new Date(received);
+      if (Number.isNaN(d.getTime())) continue;
+      if (d.toLocaleDateString('sv-SE', { timeZone: DATE_TZ }) !== stored) days.add(stored);
+    }
+  }
+  return days;
+}
+
 async function report(args) {
   if (!args.since || !/^\d{4}-\d{2}-\d{2}$/.test(args.since)) throw new Error('--since YYYY-MM-DD is required');
   const out = args.out || 'shifted-dates.csv';
@@ -207,7 +239,9 @@ async function report(args) {
   );
   const owners = ownerResolver(db, cmpsTables, componentTables);
   const lines = [CSV_COLUMNS.join(',')];
-  const counts = { shifted: 0, edited: 0, new: 0 };
+  const counts = { shifted: 0, edited: 0, new: 0, ok: 0 };
+  const shiftedDays = shiftedDaysFromLogs(args.log);
+  const wasShifted = (day) => !shiftedDays || shiftedDays.has(day);
 
   try {
     for (const s of schemas) {
@@ -240,18 +274,18 @@ async function report(args) {
           let suggested;
           let apply = '';
           let shift = '';
-          if (!old) {
-            status = 'new';
-            suggested = addDays(v5Value, 1);
-          } else if (v3Value === v5Value) {
-            continue;
-          } else if (v3Value && daysBetween(v5Value, v3Value) >= 1 && daysBetween(v5Value, v3Value) <= MAX_SHIFT_DAYS) {
+          const gap = v3Value ? daysBetween(v5Value, v3Value) : 0;
+          if (old && v3Value === v5Value) continue;
+          if (old && gap >= 1 && gap <= MAX_SHIFT_DAYS && chainShifted(v3Value, gap, wasShifted)) {
             status = 'shifted';
-            shift = daysBetween(v5Value, v3Value);
+            shift = gap;
             suggested = v3Value;
             apply = 'yes';
+          } else if (!wasShifted(v5Value)) {
+            counts.ok++;
+            continue;
           } else {
-            status = 'edited';
+            status = old ? 'edited' : 'new';
             suggested = addDays(v5Value, 1);
           }
           counts[status]++;
@@ -272,7 +306,14 @@ async function report(args) {
   console.log(`  shifted (apply=yes): ${counts.shifted}`);
   console.log(`  edited  (review):    ${counts.edited}`);
   console.log(`  new     (review):    ${counts.new}`);
+  if (shiftedDays) console.log(`  ok      (not shifted per log, left out): ${counts.ok}`);
   if (!v3) console.log('No --v3-db given: every value is "new" and needs review.');
+}
+
+/** Every day v3-1 … v3-gap was stored shifted, i.e. N saves, not an edit. */
+function chainShifted(v3Value, gap, wasShifted) {
+  for (let k = 1; k <= gap; k++) if (!wasShifted(addDays(v3Value, -k))) return false;
+  return true;
 }
 
 function csvCell(value) {
@@ -337,7 +378,7 @@ async function apply(args) {
 const args = parseArgs(process.argv.slice(2));
 const commands = { report, apply };
 if (!commands[args.command]) {
-  console.error('Usage: fix-shifted-dates.js report --since YYYY-MM-DD [--v3-db NAME] [--out FILE]');
+  console.error('Usage: fix-shifted-dates.js report --since YYYY-MM-DD [--v3-db NAME] [--log FILE[,FILE]] [--out FILE]');
   console.error('       fix-shifted-dates.js apply --in FILE');
   process.exit(1);
 }
