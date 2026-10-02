@@ -62,9 +62,19 @@ const knex = require('knex');
 const MAX_SHIFT_DAYS = 31;
 const DATE_TZ = process.env.APP_TZ || 'Europe/Madrid';
 const TRUNCATION = /Date received: (\S+?)\. Date stored: (\d{4}-\d{2}-\d{2})/g;
+// Columns every frontend path sends as a YYYY-MM-DD string, so v5 never
+// shifted them (traced in projectes-front: DedicationInput / JornadaDiaria for
+// activities and workday logs; OrdersForm formats these two order dates).
+const NEVER_SHIFTED = new Set([
+  'activities.date',
+  'workday_logs.date',
+  'orders.transfer_route_date',
+  'orders.collection_pickup_date',
+]);
 const CSV_COLUMNS = [
   'table', 'id', 'column', 'kind', 'parent', 'updated_at',
-  'v3_value', 'v5_value', 'shift_days', 'status', 'suggested', 'apply',
+  'v3_value', 'v5_value', 'shift_days', 'status',
+  'log_shifts_that_day', 'rows_that_day', 'suggested', 'apply',
 ];
 
 function parseArgs(argv) {
@@ -211,17 +221,17 @@ function ownerResolver(db, cmpsTables, componentTables) {
 /**
  * Days Strapi stored one or more days early, from its truncation warnings: the
  * received timestamp's local day differs from the stored UTC day.
- * @returns {Set<string>|null}
+ * @returns {Map<string, number>|null} stored day -> number of shifted writes
  */
 function shiftedDaysFromLogs(files) {
   if (!files) return null;
-  const days = new Set();
+  const days = new Map();
   for (const file of files.split(',')) {
     const text = fs.readFileSync(file, 'utf8');
     for (const [, received, stored] of text.matchAll(TRUNCATION)) {
       const d = new Date(received);
       if (Number.isNaN(d.getTime())) continue;
-      if (d.toLocaleDateString('sv-SE', { timeZone: DATE_TZ }) !== stored) days.add(stored);
+      if (d.toLocaleDateString('sv-SE', { timeZone: DATE_TZ }) !== stored) days.set(stored, (days.get(stored) || 0) + 1);
     }
   }
   return days;
@@ -238,7 +248,7 @@ async function report(args) {
     allComponentTables().map(({ table, uid }) => [table, uid]),
   );
   const owners = ownerResolver(db, cmpsTables, componentTables);
-  const lines = [CSV_COLUMNS.join(',')];
+  const entries = [];
   const counts = { shifted: 0, edited: 0, new: 0, ok: 0 };
   const shiftedDays = shiftedDaysFromLogs(args.log);
   const wasShifted = (day) => !shiftedDays || shiftedDays.has(day);
@@ -263,6 +273,7 @@ async function report(args) {
       const seen = new Set();
       for (const row of rows) {
         for (const column of s.columns) {
+          if (NEVER_SHIFTED.has(`${s.table}.${column}`)) continue;
           const key = `${row.id}.${column}`;
           if (seen.has(key)) continue;
           seen.add(key);
@@ -289,10 +300,11 @@ async function report(args) {
             suggested = addDays(v5Value, 1);
           }
           counts[status]++;
-          lines.push([
-            s.table, row.id, column, s.kind, row.parent, row.updated_at,
-            v3Value, v5Value, shift, status, suggested, apply,
-          ].map(csvCell).join(','));
+          entries.push({
+            table: s.table, id: row.id, column, kind: s.kind, parent: row.parent,
+            updated_at: row.updated_at, v3_value: v3Value, v5_value: v5Value,
+            shift_days: shift, status, suggested, apply,
+          });
         }
       }
     }
@@ -301,6 +313,17 @@ async function report(args) {
     if (v3) await v3.destroy();
   }
 
+  // How ambiguous a review row is: the log caps how many values stored that
+  // day were shifted (13 shifts, 13 rows: likely all; 2 shifts, 80 rows: few).
+  const rowsPerDay = new Map();
+  for (const e of entries) if (e.status !== 'shifted') rowsPerDay.set(e.v5_value, (rowsPerDay.get(e.v5_value) || 0) + 1);
+  const lines = [CSV_COLUMNS.join(',')];
+  for (const e of entries) {
+    const review = e.status !== 'shifted';
+    e.log_shifts_that_day = shiftedDays && review ? shiftedDays.get(e.v5_value) || 0 : '';
+    e.rows_that_day = review ? rowsPerDay.get(e.v5_value) : '';
+    lines.push(CSV_COLUMNS.map((c) => csvCell(e[c])).join(','));
+  }
   fs.writeFileSync(out, `${lines.join('\n')}\n`);
   console.log(`Wrote ${lines.length - 1} values to ${out}`);
   console.log(`  shifted (apply=yes): ${counts.shifted}`);
