@@ -1464,32 +1464,38 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       },
     ];
 
-    for (const section of sections) {
-      const info = data[section.info];
-      if (data[section.flag] && data[section.phases] && info) {
-        await strapi
-          .controller('api::project.project')
-          .updatePhases(
-            id,
-            section.entity,
-            data[section.phases],
-            info.deletedPhases || [],
-            info.deletedIncomes || [],
-            info.deletedExpenses || [],
-            info.deletedHours || [],
-          );
+    // One transaction for the phase writes and the core update: if the update
+    // fails (validation, beforeUpdate totals, afterUpdate is_mother), the phase
+    // edits roll back too instead of surviving a 500. db.query and the
+    // document service both join the ambient transaction.
+    return strapi.db.transaction(async () => {
+      for (const section of sections) {
+        const info = data[section.info];
+        if (data[section.flag] && data[section.phases] && info) {
+          await strapi
+            .controller('api::project.project')
+            .updatePhases(
+              id,
+              section.entity,
+              data[section.phases],
+              info.deletedPhases || [],
+              info.deletedIncomes || [],
+              info.deletedExpenses || [],
+              info.deletedHours || [],
+            );
+        }
+        // Phases are managed exclusively through updatePhases, so they never
+        // belong on a core update — whether or not this request edited them. The
+        // form echoes the whole graph back, carrying `dirty` markers that v5's
+        // input validation rejects ("Invalid key dirty at project_phases.incomes")
+        // and stale rows that would otherwise overwrite the relation.
+        delete data[section.phases];
+        delete data[section.flag];
+        delete data[section.info];
       }
-      // Phases are managed exclusively through updatePhases, so they never
-      // belong on a core update — whether or not this request edited them. The
-      // form echoes the whole graph back, carrying `dirty` markers that v5's
-      // input validation rejects ("Invalid key dirty at project_phases.incomes")
-      // and stale rows that would otherwise overwrite the relation.
-      delete data[section.phases];
-      delete data[section.flag];
-      delete data[section.info];
-    }
 
-    return super.update(ctx);
+      return super.update(ctx);
+    });
   },
 
   async findOne(ctx) {
