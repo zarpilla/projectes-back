@@ -12,6 +12,7 @@ const _ = require('lodash');
 const moment = require('moment');
 const { relationId } = require('../../../../services/relation-input');
 const { calculatePriceFromRouteRate, fillMissingPrice } = require('../../services/route-price');
+const { getMe } = require('../../../../services/me-settings');
 
 /**
  * Safely extract ID from a value that could be a number, string, or object with an id property
@@ -34,6 +35,12 @@ const extractId = (value) => {
   // If it's an object, try to extract the id property
   if (typeof value === 'object' && value.id !== undefined) {
     return extractId(value.id);
+  }
+  // v5 hands db lifecycles relations as operations — { set: [{ id }] } or
+  // { connect: … }. Read as "no id", the owner of every saved order came out
+  // null and its multidelivery discount was never recomputed.
+  if (typeof value === 'object' && (value.set !== undefined || value.connect !== undefined)) {
+    return extractId(relationId(value));
   }
   // Otherwise, it's not a valid ID
   return null;
@@ -193,6 +200,17 @@ const processVolumeDiscountForOtherOrders = async (orderId, currentData, previou
     }
   }
 };
+
+/**
+ * The relations the multidelivery / volume grouping keys on. v3 returned them
+ * as FK columns on every row; v5 omits an unpopulated relation, so the rows
+ * the hooks re-read had no contact / owner / route and the discount of the
+ * OTHER orders in the old and new date groups was never updated.
+ */
+const DISCOUNT_RELATIONS = { contact: true, owner: true, route: true };
+
+const findWithDiscountRelations = (id) =>
+  strapi.db.query('api::order.order').findOne({ where: { id }, populate: DISCOUNT_RELATIONS });
 
 const checkMultidelivery = async (id, date, contactId, currentStatus) => {
   const ordersOfDateAndContact = await strapi.db.query('api::order.order').findMany({
@@ -1208,7 +1226,9 @@ const processMultideliveryDiscountForCurrentOrder = async (orderId, data) => {
     return;
   }
 
-  const me = await strapi.db.query('api::me.me').findOne();
+  // orders_options is a component: a bare findOne() leaves it out, so the
+  // discount read as unset and multidelivery was never recomputed in v5.
+  const me = await getMe({ orders_options: true });
   if (!me?.orders_options?.multidelivery_discount) {
     return;
   }
@@ -1261,7 +1281,9 @@ const processMultideliveryDiscountForOtherOrders = async (orderId, currentData, 
     return;
   }
 
-  const me = await strapi.db.query('api::me.me').findOne();
+  // orders_options is a component: a bare findOne() leaves it out, so the
+  // discount read as unset and multidelivery was never recomputed in v5.
+  const me = await getMe({ orders_options: true });
   if (!me?.orders_options?.multidelivery_discount) {
     return;
   }
@@ -1477,6 +1499,16 @@ module.exports = {
       }
     }
 
+    // previousOrder is unpopulated: take the relations the discount grouping
+    // needs from a populated read when the payload does not carry them.
+    const previousRelations = await findWithDiscountRelations(params.id);
+    event.state.previousRelations = previousRelations;
+    for (const field of Object.keys(DISCOUNT_RELATIONS)) {
+      if (mergedData[field] === undefined || mergedData[field] === null) {
+        mergedData[field] = previousRelations ? previousRelations[field] : null;
+      }
+    }
+
     await processMultideliveryDiscountForCurrentOrder(params.id, mergedData);
 
     data.multidelivery_discount = mergedData.multidelivery_discount;
@@ -1523,7 +1555,7 @@ module.exports = {
     // await createOrderTracking(result.id, result.status, trackingUser);
 
     // Process multidelivery discount for other orders after the current order is created
-    const previousOrder = await strapi.db.query('api::order.order').findOne({ where: { id: result.id } });
+    const previousOrder = await findWithDiscountRelations(result.id);
 
     // Ensure transfer route is calculated for new orders that need transfer
     // This handles edge cases where beforeCreate didn't set it properly
@@ -1639,9 +1671,22 @@ module.exports = {
         }
       }
 
-      // Process multidelivery discount for other orders
-      await processMultideliveryDiscountForOtherOrders(params.id, currentOrder, previousOrder);
-      await processVolumeDiscountForOtherOrders(params.id, currentOrder, previousOrder);
+      // Process multidelivery discount for other orders — both need the
+      // contact / owner / route relations, on the order and on its previous
+      // state, to find the old and the new date groups.
+      const currentWithRelations = (await findWithDiscountRelations(params.id)) || currentOrder;
+      const previousRelations = event.state.previousRelations;
+      const previousWithRelations =
+        previousOrder && previousRelations
+          ? {
+              ...previousOrder,
+              contact: previousRelations.contact,
+              owner: previousRelations.owner,
+              route: previousRelations.route,
+            }
+          : previousOrder;
+      await processMultideliveryDiscountForOtherOrders(params.id, currentWithRelations, previousWithRelations);
+      await processVolumeDiscountForOtherOrders(params.id, currentWithRelations, previousWithRelations);
     }
   },
 
