@@ -19,6 +19,7 @@
  *   find/findOne overrides (v5 removed those hooks).
  */
 const { PROJECT_GRAPH_FOR_TOTALS_POPULATE } = require('../../services/projectFinancials');
+const { resolveComponentRefs } = require('../../../../services/component-refs');
 
 module.exports = {
   async beforeCreate(event) {
@@ -92,6 +93,11 @@ module.exports = {
       _project_original_phases_updated,
       ...dataToMerge
     } = data;
+    // Components (periodification, grantable_*) arrive here as bare
+    // `{ id, __pivot }` references: merged as-is they replaced the loaded rows
+    // and the financials read `pp.year` off a reference — a 500 on every save
+    // with a periodification. Merge their stored values instead.
+    await resolveComponentRefs('api::project.project', dataToMerge);
     Object.assign(fullProject, dataToMerge);
 
     const calculatedData = await strapi.controller('api::project.project').calculateProject(fullProject, id);
