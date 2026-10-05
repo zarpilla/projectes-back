@@ -60,6 +60,7 @@ describe('order.invoice re-invoice guard', () => {
       links: new Map(), // order_id -> emitted_invoice_id
       sql: [],
       projectsUpdated: [],
+      phaseIncomes: [],
       hangSerials: null,
     };
 
@@ -79,7 +80,12 @@ describe('order.invoice re-invoice guard', () => {
       documents: () => ({ findFirst: async () => null }), // verifactu disabled
       service: () => ({
         create: async ({ data }) => {
-          const invoice = { id: nextInvoiceId++, code: 'ESBORRANY', state: 'draft', ...data };
+          // beforeCreate computes the base from the lines (discounts added).
+          const total_base = data.lines.reduce(
+            (sum, l) => sum + l.base * l.quantity * (1 - (l.discount || 0) / 100),
+            0,
+          );
+          const invoice = { id: nextInvoiceId++, code: 'ESBORRANY', state: 'draft', total_base, ...data };
           state.invoices.push(invoice);
           return invoice;
         },
@@ -103,7 +109,15 @@ describe('order.invoice re-invoice guard', () => {
             }
             return [];
           },
-          findOne: async () => ({ id: 30, name: 'P', project_phases: [{ id: 1, incomes: [] }] }),
+          findOne: async () => ({
+            id: 30,
+            name: 'P',
+            project_phases: [{ id: 1, incomes: [] }, { id: 2, incomes: [] }],
+          }),
+          create: async ({ data }) => {
+            if (uid === 'api::phase-income.phase-income') state.phaseIncomes.push(data);
+            return data;
+          },
           update: async (args) => {
             state.projectsUpdated.push(args);
             return args.data;
@@ -157,6 +171,33 @@ describe('order.invoice re-invoice guard', () => {
     expect(state.links.get(2)).toBe(100);
     expect(state.orders.map((o) => o.status)).toEqual(['invoiced', 'invoiced']);
     expect(res.skipped).toEqual([]);
+  });
+
+  it('creates the draft\'s income line on the project\'s last phase', async () => {
+    // v5 regression: the line used to be pushed into the populated phase and
+    // saved through a nested project update, which wrote nothing — every
+    // draft reached the project without its income.
+    await ctrl.invoice(buildCtx({ orders: [1, 2], project: 30 }));
+
+    expect(state.phaseIncomes).toHaveLength(1);
+    expect(state.phaseIncomes[0]).toMatchObject({
+      concept: 'Factura #ESBORRANY# - Acme',
+      amount: 30,
+      total_amount: 30,
+      invoice: 100,
+      project_phase: 2,
+      income_type: 1,
+      vat_pct: 21,
+    });
+  });
+
+  it('takes the income amount from the invoice base, discounts added not compounded', async () => {
+    state.orders = [order(1, { price: 10, multidelivery_discount: 20, contact_pickup_discount: 70 })];
+    await ctrl.invoice(buildCtx({ orders: [1], project: 30 }));
+
+    // 10 * (1 - 0.90) = 1, as billed — not 10 * 0.8 * 0.3 = 2.4.
+    expect(state.phaseIncomes[0].amount).toBeCloseTo(1);
+    expect(state.phaseIncomes[0].total_amount).toBeCloseTo(1);
   });
 
   it('never re-invoices orders that are already invoiced', async () => {

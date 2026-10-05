@@ -736,36 +736,36 @@ async function invoiceRun(ctx) {
     );
   }
 
-  // Update project phases with income lines
+  // One income line per invoice on the project's last phase. v3 pushed the
+  // lines into the populated phase and saved the project, and its project
+  // lifecycle wrote them out; in v5 phase incomes are their own collection and
+  // that nested update silently wrote nothing, so every draft from this run
+  // reached the project without its income line. Create the rows directly.
+  //
+  // The amount is the invoice's own base, not a recomputation from the
+  // orders: v3 compounded the multidelivery and pickup discounts here while
+  // the invoice lines add them, so the income drifted from what was billed.
   for (const p of [project]) {
     const proj = projectCache[p];
     const phase = proj.project_phases[proj.project_phases.length - 1];
-    for (const { invoice, contact, contactOrders } of invoicesByOwner) {
-      let price = 0;
-      for (const o of contactOrders) {
-        price +=
-          ((o.price || 0) - (o.volume_discount || 0)) *
-          (1 - (o.multidelivery_discount || 0) / 100) *
-          (1 - (o.contact_pickup_discount || 0) / 100);
-      }
-      if (!phase.incomes) phase.incomes = [];
-      phase.incomes.push({
-        concept: `Factura #${invoice.code}# - ${contact.trade_name || contact.name}`,
-        quantity: 1,
-        amount: price,
-        total_amount: price,
-        date: new Date(),
-        income_type: 1,
-        invoice: invoice.id,
-        paid: true,
-        date_estimate_document: new Date(),
-        vat_pct: 21,
+    for (const { invoice, contact } of invoicesByOwner) {
+      const amount = Number(invoice.total_base) || 0;
+      await strapi.db.query('api::phase-income.phase-income').create({
+        data: {
+          concept: `Factura #${invoice.code}# - ${contact.trade_name || contact.name}`,
+          quantity: 1,
+          amount,
+          total_amount: amount,
+          date: new Date(),
+          income_type: 1,
+          invoice: invoice.id,
+          paid: true,
+          date_estimate_document: new Date(),
+          vat_pct: 21,
+          project_phase: phase.id,
+        },
       });
     }
-    await strapi.db.query('api::project.project').update({
-      where: { id: p },
-      data: { project_phases: proj.project_phases },
-    });
   }
   log('COMPLETE', `Total time: ${Date.now() - startTime}ms`);
 
