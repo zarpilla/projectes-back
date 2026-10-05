@@ -11,6 +11,7 @@
 const _ = require('lodash');
 const moment = require('moment');
 const { relationId } = require('../../../../services/relation-input');
+const { calculatePriceFromRouteRate, fillMissingPrice } = require('../../services/route-price');
 
 /**
  * Safely extract ID from a value that could be a number, string, or object with an id property
@@ -1141,57 +1142,6 @@ const calculateCollectionOrderRouteRate = async (collectionOrder, kilograms) => 
   return routeRates.length > 0 ? routeRates[0] : null;
 };
 
-/**
- * Calculate price from route rate
- */
-const calculatePriceFromRouteRate = (routeRate, kilograms, pickupLines) => {
-  let price = 0;
-
-  if (!routeRate) {
-    return price;
-  }
-
-  if (routeRate.ratev2 !== true) {
-    // Old rate structure
-    if (kilograms < 15) {
-      price = routeRate.less15 || 0;
-    } else if (kilograms < 30) {
-      price = routeRate.less30 || 0;
-    } else {
-      price = (routeRate.less30 || 0) + (kilograms - 30) * (routeRate.additional30 || 0);
-    }
-  } else {
-    // New rate structure (ratev2)
-    if (kilograms < 10) {
-      price = routeRate.less10 || 0;
-    } else if (kilograms >= 10 && kilograms <= 20) {
-      const t = (kilograms - 10) / 10;
-      price = (routeRate.more10 || 0) + t * ((routeRate.from10to20 || 0) - (routeRate.more10 || 0));
-    } else if (kilograms > 20 && kilograms <= 30) {
-      const t = (kilograms - 20) / 10;
-      price = (routeRate.from10to20 || 0) + t * ((routeRate.from20to30 || 0) - (routeRate.from10to20 || 0));
-    } else if (kilograms > 30 && kilograms <= 40) {
-      const t = (kilograms - 30) / 10;
-      price = (routeRate.from20to30 || 0) + t * ((routeRate.from30to40 || 0) - (routeRate.from20to30 || 0));
-    } else if (kilograms > 40 && kilograms <= 50) {
-      const t = (kilograms - 40) / 10;
-      price = (routeRate.from30to40 || 0) + t * ((routeRate.from40to50 || 0) - (routeRate.from30to40 || 0));
-    } else if (kilograms > 50 && kilograms <= 60) {
-      const t = (kilograms - 50) / 10;
-      price = (routeRate.from40to50 || 0) + t * ((routeRate.from50to60 || 0) - (routeRate.from40to50 || 0));
-    } else if (kilograms > 60) {
-      price = (routeRate.from50to60 || 0) + (kilograms - 60) * (routeRate.additional60 || 0);
-    }
-
-    // Add pickup point charges if applicable (though for collection orders this should be 0)
-    if (pickupLines > 0 && routeRate.pickup_point) {
-      price += pickupLines * routeRate.pickup_point;
-    }
-  }
-
-  return price;
-};
-
 const updateMultideliveryDiscountForOrders = async (orders, me, ownerFactor = 1) => {
   const discountToApply = ownerFactor * (me.orders_options?.multidelivery_discount || 0);
 
@@ -1456,6 +1406,8 @@ module.exports = {
 
     await processMultideliveryDiscountForCurrentOrder(0, data);
     await processVolumeDiscountForCurrentOrder(0, data);
+
+    await fillMissingPrice(data);
   },
 
   async beforeUpdate(event) {
@@ -1530,6 +1482,8 @@ module.exports = {
     data.multidelivery_discount = mergedData.multidelivery_discount;
     await processVolumeDiscountForCurrentOrder(params.id, mergedData);
     data.volume_discount = mergedData.volume_discount;
+
+    await fillMissingPrice(data, previousOrder);
   },
   async afterCreate(event) {
     const result = event.result;
