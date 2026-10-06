@@ -212,6 +212,26 @@ const DISCOUNT_RELATIONS = { contact: true, owner: true, route: true };
 const findWithDiscountRelations = (id) =>
   strapi.db.query('api::order.order').findOne({ where: { id }, populate: DISCOUNT_RELATIONS });
 
+/**
+ * The relations the collection-order hooks read off a re-read order row.
+ * Unpopulated in v5 they are undefined, so afterUpdate saw no
+ * collection_point (an edited order was never regrouped) and no
+ * collection_order (the collection order's totals and auto-deposit were never
+ * refreshed after a create, an edit or a delete).
+ */
+const COLLECTION_RELATIONS = {
+  collection_point: true,
+  collection_order: true,
+  collection_pickup_route: true,
+  owner: true,
+  route: true,
+  pickup: true,
+  delivery_type: true,
+};
+
+const findWithCollectionRelations = (id) =>
+  strapi.db.query('api::order.order').findOne({ where: { id }, populate: COLLECTION_RELATIONS });
+
 const checkMultidelivery = async (id, date, contactId, currentStatus) => {
   const ordersOfDateAndContact = await strapi.db.query('api::order.order').findMany({
     where: { estimated_delivery_date: moment(date).format('YYYY-MM-DD'), contact: contactId },
@@ -878,11 +898,15 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
       updateData.delivery_type = extractId(orderData.delivery_type);
     }
 
-    // Add current order to collection_orders if not already there
-    const currentCollectionOrders = collectionOrder.collection_orders || [];
+    // Add current order to collection_orders. `connect` adds one link and
+    // keeps the rest: a plain array *replaces* the relation in v5, and
+    // `collection_orders` is not populated on the row above, so the old
+    // `[...current, id]` was `[id]` — each new order unlinked every order
+    // already grouped, leaving only the last one picked up (24875 kept 24886
+    // and lost 24874, 24876–24883).
     const orderIdToAdd = orderId || orderData.id;
-    if (orderIdToAdd && !currentCollectionOrders.find((o) => (o.id || o) === orderIdToAdd)) {
-      updateData.collection_orders = [...currentCollectionOrders.map((o) => o.id || o), orderIdToAdd];
+    if (orderIdToAdd) {
+      updateData.collection_orders = { connect: [orderIdToAdd] };
     }
 
     await strapi.db.query('api::order.order').update({ where: { id: collectionOrder.id }, data: updateData });
@@ -1439,7 +1463,7 @@ module.exports = {
       return data;
     }
     // Get previous order data for comparison and store it for afterUpdate
-    const previousOrder = await strapi.db.query('api::order.order').findOne({ where: { id: params.id } });
+    const previousOrder = await findWithCollectionRelations(params.id);
 
     // Store previous order data for afterUpdate
     event.state.previousOrderData = previousOrder;
@@ -1525,11 +1549,14 @@ module.exports = {
       return;
     }
 
-    // Process collection order if needed
-    await processCollectionOrder(result.id, result, null);
+    // Process collection order if needed. Re-read rather than use `result`:
+    // its relations are whatever the caller asked to populate (the order form
+    // sends populate=*, a bare create has none and would never be grouped).
+    const created = (await findWithCollectionRelations(result.id)) || result;
+    await processCollectionOrder(result.id, created, null);
 
     // If this order was added to a collection order, check if it should be auto-deposited
-    const updatedOrder = await strapi.db.query('api::order.order').findOne({ where: { id: result.id } });
+    const updatedOrder = await findWithCollectionRelations(result.id);
     if (updatedOrder && updatedOrder.collection_order) {
       const collectionOrderId =
         typeof updatedOrder.collection_order === 'object'
@@ -1595,7 +1622,7 @@ module.exports = {
     const previousOrder = event.state.previousOrderData || data._previousOrderData;
 
     // Get the current order state after the update
-    const currentOrder = await strapi.db.query('api::order.order').findOne({ where: { id: params.id } });
+    const currentOrder = await findWithCollectionRelations(params.id);
 
     if (currentOrder) {
       // If this is a collection order itself being updated, recalculate its aggregates
@@ -1693,20 +1720,24 @@ module.exports = {
   async beforeDelete(event) {
     const params = event.params.where || {};
     // Store the order data before deletion to update collection order aggregates
-    const order = await strapi.db.query('api::order.order').findOne({ where: { id: params.id } });
+    const order = await findWithCollectionRelations(params.id);
     if (order && order.collection_order) {
-      // Store for afterDelete
-      params._deletedOrderCollectionOrder =
-        typeof order.collection_order === 'object' ? order.collection_order.id : order.collection_order;
+      // Store for afterDelete in event.state: params is the delete's `where`,
+      // so a key set on it became a column filter and the delete failed.
+      event.state.deletedOrderCollectionOrder = extractId(order.collection_order);
     }
   },
 
   async afterDelete(event) {
-    const result = event.result;
-    const params = event.params.where || {};
     // Update collection order aggregates if the deleted order was part of one
-    if (params._deletedOrderCollectionOrder) {
-      await updateCollectionOrderAggregates(params._deletedOrderCollectionOrder);
+    if (event.state.deletedOrderCollectionOrder) {
+      await updateCollectionOrderAggregates(event.state.deletedOrderCollectionOrder);
     }
   },
 };
+
+// For scripts/repair-unlinked-collection-orders.js. Non-enumerable: Strapi
+// rejects any lifecycles key that is not a db action.
+Object.defineProperty(module.exports, 'collectionOrderHelpers', {
+  value: { updateCollectionOrderAggregates },
+});
