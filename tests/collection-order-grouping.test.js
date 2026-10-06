@@ -98,3 +98,45 @@ describe('queries that dereference a relation populate it', () => {
     );
   });
 });
+
+/**
+ * Reported from production diligencia on 2026-10-06: order 24876 (and 24874,
+ * 24877–24883) had no collection order, while their collection order 24875
+ * picked up only 24886, the last one created that day.
+ *
+ * Reusing a collection order wrote `collection_orders: [...current, id]`, with
+ * `current` read off a row that never populated it — so `[id]`. In v5 a plain
+ * array REPLACES the relation: each new order unlinked every one grouped
+ * before it. Verified against a production copy: setting [24876] on 24875
+ * dropped 24886; `{ connect: [24876] }` kept it.
+ *
+ * The order hooks also re-read orders without their relations, so an edited
+ * order was never regrouped and the collection order's totals were never
+ * refreshed.
+ */
+describe('grouping adds to a collection order without unlinking the rest', () => {
+  it('connects the new order instead of replacing collection_orders', () => {
+    expect(lifecycles).toContain('updateData.collection_orders = { connect: [orderIdToAdd] }');
+    expect(lifecycles).not.toMatch(/updateData\.collection_orders = \[/);
+  });
+
+  it('the order hooks re-read orders with the collection relations', () => {
+    const populate = lifecycles.slice(
+      lifecycles.indexOf('const COLLECTION_RELATIONS = {'),
+      lifecycles.indexOf('};', lifecycles.indexOf('const COLLECTION_RELATIONS = {')),
+    );
+    for (const relation of ['collection_point', 'collection_order', 'collection_pickup_route', 'owner']) {
+      expect(populate).toContain(`${relation}: true`);
+    }
+    for (const hook of ['afterCreate', 'beforeUpdate', 'afterUpdate', 'beforeDelete']) {
+      const start = lifecycles.indexOf(`async ${hook}(event)`);
+      const body = lifecycles.slice(start, lifecycles.indexOf('\n  },', start));
+      expect(body).toContain('findWithCollectionRelations(');
+      expect(body).not.toMatch(/findOne\(\{ where: \{ id: (params|result)\.id \} \}\)/);
+    }
+  });
+
+  it('beforeDelete keeps its state off the delete where clause', () => {
+    expect(lifecycles).not.toContain('params._deletedOrderCollectionOrder');
+  });
+});

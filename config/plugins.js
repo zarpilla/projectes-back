@@ -2,11 +2,16 @@
  * v5 plugin config. Ported from v3 config/plugins.js.
  *
  * Email provider is switchable via EMAIL_PROVIDER (sendgrid | nodemailer), matching
- * the v3 convention. The v3-era provider packages (strapi-provider-email-sendgrid,
- * strapi-provider-email-nodemailer) are v3-only and have no direct v5 equivalent from
- * the same maintainers; the v5 community provider `@strapi/provider-email-nodemailer`
- * covers SMTP, and SendGrid is served by the local custom provider
- * (src/providers/email-sendgrid, P8.4) via the SendGrid REST API.
+ * the v3 convention. Both go through `@strapi/provider-email-nodemailer`; SendGrid
+ * through its SMTP relay. v5 loads a provider by name only (it lowercases
+ * `provider` and resolves it as a package), so a local provider module cannot be
+ * plugged in here.
+ *
+ * v5 reads a plugin's settings from `<plugin>.config`. The email settings used to
+ * sit directly under `email`, so v5 ignored them and fell back to its default
+ * `sendmail` provider: every tenant delivered straight from the VPS to the
+ * recipient's MX instead of through the tenant's SMTP account, and an email sent
+ * with only `text` went out as text/plain alone.
  */
 const path = require('path');
 
@@ -47,12 +52,14 @@ function emailProviderConfig(env) {
 
   if (provider === 'sendgrid') {
     // NOTE(R8): v3 used strapi-provider-email-sendgrid (v3-only package).
-    // The v5 SendGrid path is a local custom provider (src/providers/email-sendgrid,
-    // ported in P8.4) that calls the SendGrid v3 REST API with the same options.
+    // SendGrid's SMTP relay takes the literal user `apikey` and the API key as
+    // password.
     return {
-      provider: require('../src/providers/email-sendgrid'),
+      provider: 'nodemailer',
       providerOptions: {
-        apiKey: env('SENDGRID_API_KEY'),
+        host: 'smtp.sendgrid.net',
+        port: 465,
+        auth: { user: 'apikey', pass: env('SENDGRID_API_KEY') },
       },
       settings: { defaultFrom, defaultReplyTo: defaultFrom },
     };
@@ -71,7 +78,9 @@ function emailProviderConfig(env) {
 }
 
 module.exports = ({ env }) => ({
-  email: emailProviderConfig(env),
+  email: {
+    config: emailProviderConfig(env),
+  },
   'users-permissions': {
     config: {
       jwtManagement: 'refresh',

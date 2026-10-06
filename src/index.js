@@ -5,6 +5,7 @@ const { runStartupScript } = require('./services/startup-scripts');
 const { recalcZeroDocumentTotals } = require('./services/recalc-zero-document-totals');
 const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoice-unique-index');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
+const { wrapEmailProvider } = require('./services/email-body');
 
 module.exports = {
   /**
@@ -30,6 +31,7 @@ module.exports = {
    */
   async bootstrap({ strapi }) {
     registerDateFieldNormalizer();
+    wrapEmailProvider(strapi);
 
     try {
       await importSeedPermissions();
