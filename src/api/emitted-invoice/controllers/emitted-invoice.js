@@ -20,6 +20,7 @@ const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { rawExecute } = require('../../../services/raw-sql');
 const { getMe } = require('../../../services/me-settings');
+const { buildEmailBody } = require('../../../services/email-body');
 
 // Map v3 entity slug -> DB table name for the raw UPDATE in payEntity.
 const ENTITY_TABLE = {
@@ -381,9 +382,10 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
             from: me.invoice_email,
             bcc: me.invoice_email,
             subject: me.invoice_subject.replace('{invoice_code}', invoice.code),
-            text: me.invoice_template
-              .replace('{invoice_code}', invoice.code)
-              .replace('{contact_name}', invoice.contact.contact_person || invoice.contact.name),
+            ...buildEmailBody(me.invoice_template, {
+              invoice_code: invoice.code,
+              contact_name: invoice.contact.contact_person || invoice.contact.name,
+            }),
             attachments,
           });
         return { done: true };
