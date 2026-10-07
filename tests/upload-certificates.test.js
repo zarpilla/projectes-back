@@ -18,10 +18,19 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 // Required by path: the package's `exports` map does not expose this internal.
-const validation = require(
-  path.join(__dirname, '..', 'node_modules', '@strapi', 'upload', 'dist', 'server', 'utils', 'mime-validation.js'),
+const VALIDATION_MODULE = path.join(
+  __dirname,
+  '..',
+  'node_modules',
+  '@strapi',
+  'upload',
+  'dist',
+  'server',
+  'utils',
+  'mime-validation.js',
 );
 
 function uploadSecurityConfig() {
@@ -31,25 +40,54 @@ function uploadSecurityConfig() {
   return require('../config/plugins.js')({ env }).upload.config.security;
 }
 
-// Content sniffing must actually run for these assertions to mean anything. The
-// upload plugin dynamically imports the ESM-only `file-type`, which needs
-// --experimental-vm-modules inside jest — package.json's test scripts set it. If
-// it is ever dropped, detection degrades to "trust the declared type" and the
-// renamed-executable case below fails loudly rather than passing silently.
+// The validator runs in a plain Node child process rather than inside jest. It
+// dynamically imports the ESM-only `file-type` to sniff content, and jest's
+// sandbox only allows `import()` under --experimental-vm-modules: running the
+// suite through `npx jest` or an editor's test runner, which do not pass that
+// flag, failed every case below. Plain Node needs no flag.
+//
+// Content sniffing must still actually run for these assertions to mean
+// anything. If detection fails, Strapi logs a warning and degrades to "trust the
+// declared type"; the stub turns that warning into an error so the suite fails
+// loudly rather than passing silently.
+const CHILD_SCRIPT = `
+const [modulePath, input] = process.argv.slice(1);
+const { file, config } = JSON.parse(input);
 const strapiStub = {
   log: {
     warn(message) {
-      throw new Error(`MIME detection did not run: ${message}`);
+      throw new Error('MIME detection did not run: ' + message);
     },
   },
 };
+require(modulePath)
+  .validateFile(file, config, strapiStub)
+  .then((result) => {
+    // An Error serializes to {}, so carry its message across explicitly.
+    const error = result.error && { message: result.error.message };
+    process.stdout.write(JSON.stringify({ ...result, error }));
+  })
+  .catch((error) => {
+    process.stderr.write(String(error && error.message ? error.message : error));
+    process.exit(1);
+  });
+`;
 
 /** Writes a temp file and validates it the way the upload plugin would. */
 async function validate({ name, mimetype, bytes }, config) {
   const file = path.join(os.tmpdir(), `upload-test-${Date.now()}-${name}`);
   fs.writeFileSync(file, bytes);
   try {
-    return await validation.validateFile({ originalFilename: name, filepath: file, mimetype }, config, strapiStub);
+    const input = JSON.stringify({ file: { originalFilename: name, filepath: file, mimetype }, config });
+    let output;
+    try {
+      output = execFileSync(process.execPath, ['-e', CHILD_SCRIPT, VALIDATION_MODULE, input], {
+        encoding: 'utf8',
+      });
+    } catch (error) {
+      throw new Error(error.stderr || error.message, { cause: error });
+    }
+    return JSON.parse(output);
   } finally {
     fs.unlinkSync(file);
   }
@@ -58,7 +96,10 @@ async function validate({ name, mimetype, bytes }, config) {
 // A PKCS#12 file is DER, so it opens with a SEQUENCE tag.
 const DER_KEYSTORE = Buffer.concat([Buffer.from('30820', 'hex'), Buffer.alloc(256, 7)]);
 // MZ — a Windows executable, renamed to look like a certificate.
-const WINDOWS_EXE = Buffer.concat([Buffer.from('4d5a90000300000004000000ffff0000', 'hex'), Buffer.alloc(256)]);
+const WINDOWS_EXE = Buffer.concat([
+  Buffer.from('4d5a90000300000004000000ffff0000', 'hex'),
+  Buffer.alloc(256),
+]);
 
 describe('upload allowlist', () => {
   const config = uploadSecurityConfig();
