@@ -758,9 +758,15 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       );
     }
 
-    promises.push(strapi.db.query('api::daily-dedication.daily-dedication').findMany({}));
+    promises.push(
+      strapi.db
+        .query('api::daily-dedication.daily-dedication')
+        .findMany({ populate: { users_permissions_user: true } }),
+    );
 
-    promises.push(strapi.db.query('api::festive.festive').findMany({}));
+    promises.push(
+      strapi.db.query('api::festive.festive').findMany({ populate: { users_permissions_user: true } }),
+    );
 
     const results = await Promise.all(promises);
 
@@ -1010,8 +1016,14 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       );
     }
 
-    promises.push(strapi.db.query('api::daily-dedication.daily-dedication').findMany({}));
-    promises.push(strapi.db.query('api::festive.festive').findMany({}));
+    promises.push(
+      strapi.db
+        .query('api::daily-dedication.daily-dedication')
+        .findMany({ populate: { users_permissions_user: true } }),
+    );
+    promises.push(
+      strapi.db.query('api::festive.festive').findMany({ populate: { users_permissions_user: true } }),
+    );
 
     const results = await Promise.all(promises);
 
