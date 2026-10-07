@@ -37,7 +37,7 @@ module.exports = {
     }
     const dailyDedications = await strapi.db
       .query('api::daily-dedication.daily-dedication')
-      .findMany();
+      .findMany({ populate: { users_permissions_user: true } });
     stateInternal.dailyDedications = dailyDedications;
     stateInternal.dailyDedicationsDirty = false;
 
@@ -47,7 +47,9 @@ module.exports = {
     if (!stateInternal.festivesDirty) {
       return stateInternal.festives;
     }
-    const festives = await strapi.db.query('api::festive.festive').findMany();
+    const festives = await strapi.db
+      .query('api::festive.festive')
+      .findMany({ populate: { users_permissions_user: true } });
     stateInternal.festives = festives;
     stateInternal.festivesDirty = false;
     return festives;
