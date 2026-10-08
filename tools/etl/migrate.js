@@ -222,9 +222,17 @@ async function main() {
       // v3 link columns: field, order, component_type, component_id, <base>_id
       const v3IdCol = [...v3Columns[v3Link]].find((c) => c.endsWith('_id') && c !== 'component_id');
       if (!v3IdCol) continue;
-      const sql =
+      // v3 stored the component's table name, v5 its UID. v5 only manages rows
+      // carrying the UID, so a copied table name duplicated every component on
+      // the first save that re-linked them (issues/002).
+      const componentType = components.length
+        ? `CASE component_type ${components.map(() => 'WHEN ? THEN ?').join(' ')} ELSE component_type END`
+        : 'component_type';
+      const sql = mysql.format(
         `INSERT INTO \`${TO}\`.\`${v5Link}\` (entity_id, cmp_id, component_type, field, \`order\`) ` +
-        `SELECT \`${v3IdCol}\`, component_id, component_type, field, \`order\` FROM \`${FROM}\`.\`${v3Link}\``;
+          `SELECT \`${v3IdCol}\`, component_id, ${componentType}, field, \`order\` FROM \`${FROM}\`.\`${v3Link}\``,
+        components.flatMap((c) => [c.table, c.compName]),
+      );
       if (DRY) {
         console.log(`[dry] ${v5Link}: component links`);
       } else {

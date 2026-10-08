@@ -4,6 +4,7 @@ const { importSeedPermissions, importSeedRows } = require('./services/bootstrap-
 const { runStartupScript } = require('./services/startup-scripts');
 const { recalcZeroDocumentTotals } = require('./services/recalc-zero-document-totals');
 const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoice-unique-index');
+const { normalizeComponentTypes } = require('./services/normalize-component-types');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 
@@ -49,6 +50,9 @@ module.exports = {
       // tenant rebuilt by the ETL (which recreates the composite-only unique)
       // gets the real one-invoice-per-order constraint back.
       ['ensureOrderInvoiceUniqueIndex', ensureOrderInvoiceUniqueIndex, { runOnce: false }],
+      // Rerun on every boot for the same reason: the ETL used to copy v3's
+      // component_type spelling, which duplicated component rows on save.
+      ['normalizeComponentTypes', normalizeComponentTypes, { runOnce: false }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
