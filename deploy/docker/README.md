@@ -64,7 +64,8 @@ Secrets in GitHub: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, `DO
 rm state/<t> && ./render.sh && docker compose exec proxy caddy reload --config /etc/caddy/Caddyfile
 docker compose stop <t>-blue <t>-green
 mv ~/pm2-apps/strapi-projectes-<t>-v5.config.js.docker ~/pm2-apps/strapi-projectes-<t>-v5.config.js
+(cd <tenant dir>/projectes-v5 && npm ci && NODE_ENV=production npm run build)   # node_modules were removed on 2026-10-09
 pm2 start ~/pm2-apps/strapi-projectes-<t>-v5.config.js && pm2 save
 ```
 
-PM2 runs the code checked out in the tenant's directory, which may be older than the image.
+PM2 runs the code checked out in the tenant's directory, which may be older than the image. The tenant directories no longer have `node_modules` (removed once every backend ran in Docker), so `npm ci` comes first.
