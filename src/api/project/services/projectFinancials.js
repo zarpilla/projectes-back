@@ -50,7 +50,55 @@ const getProjectDefaultYear = (project) => {
   return extractYear(project.date_start) || extractYear(project.date_end) || String(moment().format('YYYY'));
 };
 
-const getEstimateYear = (item, fallbackYear = '9999') => {
+/**
+ * Year bucket for lines with no usable date. Kept as a sortable 4-digit
+ * string so it groups like a year; the form shows it as "Sense data"
+ * (issues/015).
+ */
+const UNDATED_YEAR = '9999';
+
+const parseRowDate = (date) => (date ? moment(date, 'YYYY-MM-DD') : null);
+
+// Without this, an undated line was bucketed under moment's "Invalid date".
+const rowYear = (date) => {
+  const m = parseRowDate(date);
+  return m && m.isValid() ? m.format('YYYY') : UNDATED_YEAR;
+};
+
+const rowMonth = (date) => {
+  const m = parseRowDate(date);
+  return m && m.isValid() ? m.format('MM') : '12';
+};
+
+/**
+ * Current-plan income/expense lines with neither an estimated nor a
+ * document date. They land in the UNDATED_YEAR bucket, so the form warns
+ * about them. Zero-amount lines are included: they still leave an empty
+ * undated row in the periodification table (issues/015).
+ */
+const findUndatedLines = (p) => {
+  const out = [];
+  for (const ph of (p && p.project_phases) || []) {
+    for (const [type, lines] of [
+      ['income', ph.incomes],
+      ['expense', ph.expenses],
+    ]) {
+      for (const line of lines || []) {
+        if (line.date_estimate_document || line.date) continue;
+        out.push({
+          id: line.id,
+          type,
+          phase: ph.name || '',
+          concept: line.concept || '',
+          total_amount: (line.quantity || 0) * (line.amount || 0),
+        });
+      }
+    }
+  }
+  return out;
+};
+
+const getEstimateYear = (item, fallbackYear = UNDATED_YEAR) => {
   if (item && item.date_estimate_document) {
     return item.date_estimate_document.substring(0, 4);
   }
@@ -70,7 +118,7 @@ const getRealYear = (item) => {
   if (item && item.date) {
     return item.date.substring(0, 4);
   }
-  return '9999';
+  return UNDATED_YEAR;
 };
 
 /**
@@ -446,8 +494,8 @@ const pushEstimatedIncomeRows = (out, p, projectInfo) => {
         income_orig: 0,
         income_esti: sph.quantity * sph.amount,
         income_real: 0,
-        year: moment(estimate_date, 'YYYY-MM-DD').format('YYYY'),
-        month: moment(estimate_date, 'YYYY-MM-DD').format('MM'),
+        year: rowYear(estimate_date),
+        month: rowMonth(estimate_date),
         row_type: sph.income_type && sph.income_type.name ? sph.income_type.name : '',
         document,
       });
@@ -464,8 +512,8 @@ const pushEstimatedIncomeRows = (out, p, projectInfo) => {
           income_orig: 0,
           income_esti: 0,
           income_real: sph.quantity * sph.amount,
-          year: moment(real_date, 'YYYY-MM-DD').format('YYYY'),
-          month: moment(real_date, 'YYYY-MM-DD').format('MM'),
+          year: rowYear(real_date),
+          month: rowMonth(real_date),
           row_type: sph.income_type && sph.income_type.name ? sph.income_type.name : '',
           document,
         });
@@ -500,8 +548,8 @@ const pushEstimatedExpenseRows = (out, p, projectInfo, getDeductibleRatio) => {
         expense_real: 0,
         expense_real_vat: 0,
         date: estimate_date,
-        year: moment(estimate_date, 'YYYY-MM-DD').format('YYYY'),
-        month: moment(estimate_date, 'YYYY-MM-DD').format('MM'),
+        year: rowYear(estimate_date),
+        month: rowMonth(estimate_date),
         row_type: sph.expense_type && sph.expense_type.name ? sph.expense_type.name : '',
         document,
       });
@@ -528,8 +576,8 @@ const pushEstimatedExpenseRows = (out, p, projectInfo, getDeductibleRatio) => {
           expense_real: -1 * sph.quantity * sph.amount,
           expense_real_vat: -1 * expense_vat * realDeductibleRatio,
           date: real_date,
-          year: moment(real_date, 'YYYY-MM-DD').format('YYYY'),
-          month: moment(real_date, 'YYYY-MM-DD').format('MM'),
+          year: rowYear(real_date),
+          month: rowMonth(real_date),
           row_type: sph.expense_type && sph.expense_type.name ? sph.expense_type.name : '',
           document,
         });
@@ -557,8 +605,8 @@ const pushOriginalIncomeAndExpenseRows = (out, p, projectInfo, getDeductibleRati
         income_orig: sph.quantity * sph.amount,
         income_esti: 0,
         income_real: 0,
-        year: moment(date, 'YYYY-MM-DD').format('YYYY'),
-        month: moment(date, 'YYYY-MM-DD').format('MM'),
+        year: rowYear(date),
+        month: rowMonth(date),
         row_type: sph.income_type && sph.income_type.name ? sph.income_type.name : '',
         document,
       });
@@ -585,8 +633,8 @@ const pushOriginalIncomeAndExpenseRows = (out, p, projectInfo, getDeductibleRati
         expense_esti_vat: 0,
         expense_real: 0,
         date,
-        year: moment(date, 'YYYY-MM-DD').format('YYYY'),
-        month: moment(date, 'YYYY-MM-DD').format('MM'),
+        year: rowYear(date),
+        month: rowMonth(date),
         row_type: sph.expense_type && sph.expense_type.name ? sph.expense_type.name : '',
         document,
       });
@@ -901,9 +949,9 @@ const aggregateRowsByYear = (rows) => {
     })
     .value();
 
-  // Drop empty "9999" buckets (rows with no resolvable date).
+  // Drop empty undated buckets (rows with no resolvable date).
   return grouped.filter((y) => {
-    if (y.year !== '9999') return true;
+    if (y.year !== UNDATED_YEAR) return true;
     return (
       y.total_incomes !== 0 ||
       y.total_expenses !== 0 ||
@@ -1260,6 +1308,9 @@ module.exports = {
   getProjectDefaultYear,
   getEstimateYear,
   getRealYear,
+  UNDATED_YEAR,
+  rowYear,
+  findUndatedLines,
   // Exposed for tests / future reuse:
   noPhaseInfo,
   makeGetDeductibleRatioForDate,
