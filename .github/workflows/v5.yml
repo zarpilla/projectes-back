@@ -107,9 +107,15 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
-          # Fingerprints only (safe to log), so a wrong secret is obvious.
-          echo "deploy key:  $(ssh-keygen -y -f ~/.ssh/deploy_key | ssh-keygen -lf - || echo 'NOT A VALID PRIVATE KEY')"
-          echo "known hosts: $(ssh-keygen -lf ~/.ssh/known_hosts || echo 'NO VALID HOST KEY')"
-          echo "target:      ${VPS_USER:-<empty VPS_USER>}@${VPS_HOST:-<empty VPS_HOST>}"
+          # Fingerprints only (safe to log), shown as annotations so a wrong secret is obvious.
+          echo "::notice title=deploy key::$(ssh-keygen -y -f ~/.ssh/deploy_key | ssh-keygen -lf - || echo 'NOT A VALID PRIVATE KEY')"
+          echo "::notice title=known hosts::$(ssh-keygen -lf ~/.ssh/known_hosts | tr '\n' ' ' || echo 'NO VALID HOST KEY')"
+          echo "::notice title=target::${VPS_USER:-<empty VPS_USER>}@${VPS_HOST:-<empty VPS_HOST>}"
+          set +e
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o ServerAliveInterval=30 "$VPS_USER@$VPS_HOST" "v5-${GITHUB_SHA}"
+            -o ServerAliveInterval=30 "$VPS_USER@$VPS_HOST" "v5-${GITHUB_SHA}" 2> >(tee ssh-stderr.log >&2)
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "::error title=deploy failed (exit $rc)::$(tail -3 ssh-stderr.log | tr '\n' ' ')"
+            exit $rc
+          fi
