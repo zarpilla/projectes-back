@@ -23,7 +23,9 @@ permissions:
 
 concurrency:
   group: backend-image-${{ github.ref }}
-  cancel-in-progress: true
+  # Only superseded PR builds are cancelled: on main a run may be deploying, and
+  # cutting it off mid-rollout would leave tenants on mixed builds.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:

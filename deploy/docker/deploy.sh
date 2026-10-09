@@ -30,7 +30,10 @@ for t in "${ONLY[@]}"; do grep -qx -- "$t" <<<"$ALL" || { echo "Unknown tenant: 
 
 exec 9>.deploy.lock
 flock -n 9 || { echo "Another deploy is running"; exit 3; }
-exec > >(tee -a "$LOG") 2>&1
+# Finish (or roll back) even if the SSH session that started us goes away:
+# ignore hangups, and keep logging to the file when stdout is gone.
+trap '' HUP PIPE
+exec > >(tee -a --output-error=warn-nopipe "$LOG") 2>&1
 
 PREV=$(sed -n "s/^BACK_TAG=//p" .env 2>/dev/null || true)
 PREV=${PREV:-v5}
