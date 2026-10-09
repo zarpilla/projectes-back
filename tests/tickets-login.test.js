@@ -6,7 +6,8 @@
  * GET /api/me/tickets-login returns a login URL for the tickets site
  * (esstrapis-tickets). The token must decrypt with the same scheme the tickets
  * site uses (AES-256-GCM, HKDF key from the tenant API key, tenant as AAD), and
- * the API key must never appear in the URL.
+ * the API key must never appear in the URL. The tenant is the slug of the
+ * instance name (`me.name`), unless TICKETS_TENANT overrides it.
  */
 
 const crypto = require('crypto');
@@ -44,8 +45,11 @@ describe('me.ticketsLogin', () => {
 
   beforeEach(() => {
     jest.resetModules();
-    global.strapi = { contentType: () => ({ kind: 'singleType' }) };
-    process.env.TICKETS_TENANT = 'coop-a';
+    global.strapi = {
+      contentType: () => ({ kind: 'singleType' }),
+      documents: () => ({ findFirst: async () => ({ name: 'Coop A' }) }),
+    };
+    delete process.env.TICKETS_TENANT;
     process.env.TICKETS_SSO_KEY = API_KEY;
     delete process.env.TICKETS_URL;
     ctrl = require(CONTROLLER)({ strapi: global.strapi });
@@ -95,6 +99,19 @@ describe('me.ticketsLogin', () => {
     expect(url.startsWith('http://localhost:3000/sso?tenant=coop-a&token=')).toBe(true);
   });
 
+  test('TICKETS_TENANT overrides the instance name', async () => {
+    process.env.TICKETS_TENANT = 'custom';
+    const { url } = await ctrl.ticketsLogin(fakeCtx({ username: 'a', email: 'a@coop-a.cat' }));
+    expect(new URL(url).searchParams.get('tenant')).toBe('custom');
+    expect(decrypt(new URL(url).searchParams.get('token'), 'custom', API_KEY).email).toBe('a@coop-a.cat');
+  });
+
+  test('refuses when the instance has no name and no TICKETS_TENANT', async () => {
+    global.strapi.documents = () => ({ findFirst: async () => ({ name: '  ' }) });
+    const ctx = fakeCtx({ username: 'a', email: 'a@coop-a.cat' });
+    expect(await ctrl.ticketsLogin(ctx)).toBe('bad request: Tickets are not configured on this instance');
+  });
+
   test('refuses when tickets are not configured, the user has no email, or nobody is logged in', async () => {
     let ctx = fakeCtx(undefined);
     expect(await ctrl.ticketsLogin(ctx)).toBe('unauthorized');
@@ -107,11 +124,22 @@ describe('me.ticketsLogin', () => {
     expect(await ctrl.ticketsLogin(ctx)).toBe('bad request: Tickets are not configured on this instance');
   });
 
-  test('ticketsConfig needs both tenant and key', () => {
+  test('tenantSlug makes valid tickets tenant names from instance names', () => {
+    const { tenantSlug } = require(SERVICE);
+    expect(tenantSlug('Fusteria La Serra, SCCL')).toBe('fusteria-la-serra-sccl');
+    expect(tenantSlug('  L\'Olivera, SCCL ')).toBe('l-olivera-sccl');
+    expect(tenantSlug('Cooperativa Ça Marxa · 2026')).toBe('cooperativa-ca-marxa-2026');
+    expect(tenantSlug('x'.repeat(80))).toHaveLength(63);
+    expect(tenantSlug('')).toBe('');
+    expect(tenantSlug(null)).toBe('');
+  });
+
+  test('ticketsConfig needs a tenant (override or instance name) and a key', () => {
     const { ticketsConfig } = require(SERVICE);
-    expect(ticketsConfig({ TICKETS_TENANT: 'x' })).toBeNull();
+    expect(ticketsConfig({ TICKETS_TENANT: 'xy' })).toBeNull();
     expect(ticketsConfig({ TICKETS_SSO_KEY: 'k' })).toBeNull();
-    expect(ticketsConfig({ TICKETS_TENANT: ' x ', TICKETS_SSO_KEY: 'k', TICKETS_URL: 'https://t.example/' }))
-      .toEqual({ tenant: 'x', apiKey: 'k', baseUrl: 'https://t.example' });
+    expect(ticketsConfig({ TICKETS_SSO_KEY: 'k' }, 'Coop A')).toEqual({ tenant: 'coop-a', apiKey: 'k', baseUrl: 'https://tiquets.esstrapis.org' });
+    expect(ticketsConfig({ TICKETS_TENANT: ' xy ', TICKETS_SSO_KEY: 'k', TICKETS_URL: 'https://t.example/' }, 'Coop A'))
+      .toEqual({ tenant: 'xy', apiKey: 'k', baseUrl: 'https://t.example' });
   });
 });

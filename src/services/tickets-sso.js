@@ -9,9 +9,13 @@
  * tenant as additional authenticated data. The API key never leaves the server.
  * Tokens are single-use and short-lived (the tickets site accepts up to 10 min).
  *
- * Config (per instance, environment):
- *   TICKETS_TENANT   tenant name registered on the tickets site
- *   TICKETS_SSO_KEY  that tenant's API key
+ * Config (per instance):
+ *   tenant           slug of the instance name (`me.name`, Configuració General),
+ *                    e.g. "Fusteria La Serra, SCCL" -> "fusteria-la-serra-sccl". It must
+ *                    match the tenant registered on the tickets site, so renaming
+ *                    the instance means renaming the tenant there too.
+ *   TICKETS_TENANT   optional override of that tenant name
+ *   TICKETS_SSO_KEY  the tenant's API key (environment only, never in the DB)
  *   TICKETS_URL      default https://tiquets.esstrapis.org
  */
 const crypto = require('crypto');
@@ -19,10 +23,18 @@ const crypto = require('crypto');
 const DEFAULT_URL = 'https://tiquets.esstrapis.org';
 const TTL_SECONDS = 120;
 
-function ticketsConfig(env = process.env) {
-  const tenant = (env.TICKETS_TENANT || '').trim();
+// Same rules as the tickets site's tenant names: [a-z0-9][a-z0-9_-]{1,62}.
+function tenantSlug(name) {
+  return String(name || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    .slice(0, 63).replace(/^-+|-+$/g, '');
+}
+
+function ticketsConfig(env = process.env, meName = '') {
+  const tenant = (env.TICKETS_TENANT || '').trim() || tenantSlug(meName);
   const apiKey = (env.TICKETS_SSO_KEY || '').trim();
-  if (!tenant || !apiKey) return null;
+  if (tenant.length < 2 || !apiKey) return null;
   return { tenant, apiKey, baseUrl: (env.TICKETS_URL || DEFAULT_URL).trim().replace(/\/+$/, '') };
 }
 
@@ -45,4 +57,4 @@ function buildTicketsLoginUrl({ tenant, apiKey, baseUrl = DEFAULT_URL, email, na
   return `${baseUrl}/sso?tenant=${encodeURIComponent(tenant)}&token=${token}`;
 }
 
-module.exports = { ticketsConfig, buildTicketsLoginUrl, TTL_SECONDS };
+module.exports = { tenantSlug, ticketsConfig, buildTicketsLoginUrl, TTL_SECONDS };

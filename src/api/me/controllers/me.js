@@ -96,7 +96,8 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
     if (!user) {
       return ctx.unauthorized();
     }
-    const config = ticketsConfig();
+    const me = await getMe([]);
+    const config = ticketsConfig(process.env, me && me.name);
     if (!config) {
       return ctx.badRequest('Tickets are not configured on this instance');
     }
