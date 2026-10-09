@@ -15,7 +15,7 @@ export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh" >/dev/null 2>&1; nvm use 20 >/d
 NAME="strapi-projectes-$T-v5"
 CFG="$HOME/pm2-apps/$NAME.config.js"
 [ -f "$CFG" ] || { echo "No $CFG (already on Docker?)"; exit 1; }
-docker compose config --services | grep -qx "$T" || { echo "No service '$T' in docker-compose.yml"; exit 1; }
+SERVICES=$(docker compose config --services); grep -qx "$T" <<<"$SERVICES" || { echo "No service '$T' in docker-compose.yml"; exit 1; }
 PORT=$(node -e "console.log(require('$CFG').apps[0].env.PORT)")
 
 mkdir -p envs && chmod 700 envs
