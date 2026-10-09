@@ -12,6 +12,7 @@ const { recalcZeroQuoteTotals } = require('./services/recalc-zero-quote-totals')
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
+const { lockIssuedInvoiceLines } = require('./services/lock-issued-invoices');
 
 module.exports = {
   /**
@@ -21,6 +22,8 @@ module.exports = {
   register({ strapi }) {
     // Change log of emitted/received invoices (issues/001).
     strapi.documents.use(changeLogMiddleware);
+    // Issued invoices keep their lines (issues/023).
+    strapi.documents.use(lockIssuedInvoiceLines);
   },
 
   /**
