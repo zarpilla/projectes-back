@@ -81,3 +81,31 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/esstrapis-back:v5-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Deploys the image just built to every tenant on the VPS (deploy/docker/deploy.sh:
+  # canary first, two at a time, automatic rollback). The SSH key can only run that
+  # script (forced command in authorized_keys), and the host key is pinned.
+  # Secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS.
+  # Add required reviewers to the `production` environment to approve each deploy.
+  deploy:
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 40
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Deploy v5-${{ github.sha }} to the VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 "$VPS_USER@$VPS_HOST" "v5-${GITHUB_SHA}"
