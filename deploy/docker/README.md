@@ -41,6 +41,8 @@ Cron jobs take a MySQL lock per tenant database (`src/services/cron-lock.js`), s
 docker compose logs -f demo-$(cat state/demo)
 ```
 
+The scripts on the server are copies of `deploy/docker/`. After changing them here, copy them to `/var/www/esstrapis-back`. Pushes that only touch `deploy/`, `docs/` or Markdown files don't build or deploy.
+
 Secrets in GitHub: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`. Add required reviewers to the `production` environment to approve each deploy by hand.
 
 ## Adding a tenant

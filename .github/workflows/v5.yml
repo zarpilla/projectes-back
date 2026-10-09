@@ -13,6 +13,11 @@ on:
   push:
     branches:
       - main
+    # Server scripts and docs don't change the image: no build, no deploy.
+    paths-ignore:
+      - 'deploy/**'
+      - 'docs/**'
+      - '**/*.md'
   pull_request:
     branches:
       - main

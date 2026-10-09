@@ -66,24 +66,15 @@ healthy() {  # tenant color
   echo "!!  $1-$2 not healthy after ${HEALTH_TIMEOUT}s (HTTP $code, port $port)"; return 1
 }
 
-# Old and new slot overlap from the new one's boot (35-90 s after start) until the
-# old one stops (~15 s later), both running cron. Tasks take a database lock
-# (src/services/cron-lock.js), but builds older than that lock don't, so also
-# keep that window clear of the */5 tick (FACe retry): start a batch when the
-# next 5-minute boundary is not 25-110 s away.
-wait_cron_window() {
-  local to_next=$(( 300 - $(date +%s) % 300 ))
-  if [ $to_next -ge 25 ] && [ $to_next -le 110 ]; then
-    echo "    waiting $((to_next + 5))s to stay clear of the */5 cron tick"; sleep $((to_next + 5))
-  fi
-}
-
 reload_proxy() {
   ./render.sh
   docker compose exec -T proxy caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1 \
     || { echo "!!  invalid Caddyfile"; docker compose exec -T proxy caddy validate --config /etc/caddy/Caddyfile; return 1; }
   docker compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile >/dev/null
 }
+
+# Old and new slot overlap for a few seconds, both running cron: every task takes a
+# MySQL lock per tenant database (src/services/cron-lock.js), so none runs twice.
 
 # Tenants switched in this run, with the slot they came from.
 declare -A FROM
@@ -111,7 +102,6 @@ docker pull -q "webcoop/esstrapis-back:$TAG" >/dev/null
 
 deploy_batch() {
   local t next pids=() failed=0
-  wait_cron_window
   echo "--- deploying $*"
   for t in "$@"; do
     next=$(other "$(active "$t")")
