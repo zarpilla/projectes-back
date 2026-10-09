@@ -6,9 +6,9 @@
 # another host) and URL without a sub-path, Strapi bakes only the path "/" as the
 # backend URL, so the same build works on every tenant's domain.
 #
-# Run (see deploy/docker-compose.example.yml):
-#   docker run --env-file <tenant>.env -v <tenant>/public/uploads:/opt/app/public/uploads \
-#     --network host webcoop/esstrapis-back:v5
+# Run with Docker Compose (deploy/docker: docker-compose.example.yml, to-docker.sh).
+# The env files there quote their values, which Compose understands and plain
+# `docker run --env-file` does not (it would pass the quotes on to Strapi).
 
 FROM node:20-bookworm-slim AS build
 WORKDIR /opt/app
