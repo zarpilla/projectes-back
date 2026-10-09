@@ -1037,8 +1037,9 @@ const computeStoredTotalsForProject = async (id) => {
     .findOne({ where: { id: numericId }, populate: PROJECT_GRAPH_FOR_TOTALS_POPULATE });
   if (!data) return null;
 
-  // v5: no strapi.controllers; call the project service's calculateProject.
-  const calculated = await strapi.service('api::project.project').calculateProject(data, numericId);
+  // calculateProject lives on the project controller (the service is the bare
+  // core one): calling it on the service failed every drain (issues/012).
+  const calculated = await strapi.controller('api::project.project').calculateProject(data, numericId);
   return { id: numericId, picked: pickStoredTotals(calculated), calculated };
 };
 
