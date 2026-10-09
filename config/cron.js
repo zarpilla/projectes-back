@@ -7,9 +7,14 @@
  *   - totals drain (2 min) -> totalsRefreshScheduler.processDirty (PM2-safe)
  *   - face check-status (30 min) -> api::face-queue.face-queue cronCheckStatus (P8.1)
  *   - face retry-pending (5 min)  -> api::face-queue.face-queue cronRetryPending (P8.1)
+ *
+ * Every task runs under withCronLock: during a zero-downtime deploy the old and
+ * the new instance of a tenant overlap for a few seconds, and a job must not run
+ * in both at once (e.g. a double FACe submission).
  */
 
 /* global strapi */ // strapi injected at runtime for the taskEmailDigest helper.
+const { withCronLock } = require('../src/services/cron-lock');
 
 // Daily task digest — delegates to the ported task controller's email action.
 // The action reads all data itself; ctx is unused for input.
@@ -24,19 +29,19 @@ async function taskEmailDigest() {
 module.exports = {
   // Every day at 3am — daily task digest email (controller ported in P4.9).
   '0 3 * * *': {
-    task: ({ strapi }) => taskEmailDigest(),
+    task: () => withCronLock('task-email', taskEmailDigest),
   },
   // Drain the stored-totals refresh queue every 2 minutes (P4.10 redesign:
   // DB-backed via projects.dirty — PM2-safe across all instances).
   '*/2 * * * *': {
-    task: ({ strapi }) => require('./src/api/project/services/totalsRefreshScheduler').processDirty(),
+    task: () => withCronLock('totals-refresh', () => require('../src/api/project/services/totalsRefreshScheduler').processDirty()),
   },
   // Check FACe invoice status every 30 minutes (ported in P8.1).
   '*/30 * * * *': {
-    task: ({ strapi }) => strapi.service('api::face-queue.face-queue').cronCheckStatus(),
+    task: ({ strapi }) => withCronLock('face-check-status', () => strapi.service('api::face-queue.face-queue').cronCheckStatus()),
   },
   // Retry pending FACe submissions every 5 minutes, max 10 attempts (ported in P8.1).
   '*/5 * * * *': {
-    task: ({ strapi }) => strapi.service('api::face-queue.face-queue').cronRetryPending(),
+    task: ({ strapi }) => withCronLock('face-retry-pending', () => strapi.service('api::face-queue.face-queue').cronRetryPending()),
   },
 };
