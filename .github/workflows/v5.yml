@@ -107,5 +107,9 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
+          # Fingerprints only (safe to log), so a wrong secret is obvious.
+          echo "deploy key:  $(ssh-keygen -y -f ~/.ssh/deploy_key | ssh-keygen -lf - || echo 'NOT A VALID PRIVATE KEY')"
+          echo "known hosts: $(ssh-keygen -lf ~/.ssh/known_hosts || echo 'NO VALID HOST KEY')"
+          echo "target:      ${VPS_USER:-<empty VPS_USER>}@${VPS_HOST:-<empty VPS_HOST>}"
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o ServerAliveInterval=30 "$VPS_USER@$VPS_HOST" "v5-${GITHUB_SHA}"
