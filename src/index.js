@@ -7,14 +7,16 @@ const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoi
 const { normalizeComponentTypes } = require('./services/normalize-component-types');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
+const { changeLogMiddleware } = require('./services/change-log');
 
 module.exports = {
   /**
    * An asynchronous register function that runs before your application is
    * initialized. Used to register hooks, services, etc.
    */
-  register(/* { strapi } */) {
-    // Nothing to register yet.
+  register({ strapi }) {
+    // Change log of emitted/received invoices (issues/001).
+    strapi.documents.use(changeLogMiddleware);
   },
 
   /**

@@ -39,6 +39,12 @@ module.exports = {
       handler: 'emitted-invoice.pendingProvider',
     },
     {
+      // issues/001: the one field still editable after emission.
+      method: 'PUT',
+      path: '/emitted-invoices/:id/payment-method',
+      handler: 'emitted-invoice.updatePaymentMethod',
+    },
+    {
       method: 'GET',
       path: '/emitted-invoices/pdf/:doc/:id',
       handler: 'emitted-invoice.pdf',
