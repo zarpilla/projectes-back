@@ -5,9 +5,9 @@
  *
  * GET /api/me/tickets-login returns a login URL for the tickets site
  * (esstrapis-tickets). The token must decrypt with the same scheme the tickets
- * site uses (AES-256-GCM, HKDF key from the tenant API key, tenant as AAD), and
- * the API key must never appear in the URL. The tenant is the slug of the
- * instance name (`me.name`), unless TICKETS_TENANT overrides it.
+ * site uses (AES-256-GCM, HKDF key from the shared TICKETS_SSO_KEY), carry the
+ * tenant (slug of `me.name`, unless TICKETS_TENANT overrides it), and the secret
+ * must never appear in the URL.
  */
 
 const crypto = require('crypto');
@@ -16,17 +16,19 @@ const path = require('path');
 const CONTROLLER = path.join(__dirname, '..', 'src', 'api', 'me', 'controllers', 'me.js');
 const SERVICE = path.join(__dirname, '..', 'src', 'services', 'tickets-sso.js');
 
-const API_KEY = 'test-api-key-0123456789abcdefghijklmnop';
+const SECRET = 'shared-sso-secret-0123456789abcdefghijklmnop';
 
 // Same decryption as esstrapis-tickets lib/sso.js readToken().
-function decrypt(token, tenant, apiKey) {
+function decrypt(token, secret) {
   const raw = Buffer.from(token, 'base64url');
-  const key = Buffer.from(crypto.hkdfSync('sha256', Buffer.from(apiKey, 'utf8'), 'esstrapis-tickets-sso', tenant, 32));
+  const key = Buffer.from(crypto.hkdfSync('sha256', Buffer.from(secret, 'utf8'), 'esstrapis-tickets-sso', 'v2', 32));
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12));
-  decipher.setAAD(Buffer.from(tenant, 'utf8'));
+  decipher.setAAD(Buffer.from('esstrapis-tickets-sso/v2', 'utf8'));
   decipher.setAuthTag(raw.subarray(raw.length - 16));
   return JSON.parse(Buffer.concat([decipher.update(raw.subarray(12, raw.length - 16)), decipher.final()]).toString('utf8'));
 }
+
+const tokenOf = (url) => new URL(url).searchParams.get('token');
 
 function fakeCtx(user) {
   const headers = {};
@@ -47,11 +49,11 @@ describe('me.ticketsLogin', () => {
     jest.resetModules();
     global.strapi = {
       contentType: () => ({ kind: 'singleType' }),
-      documents: () => ({ findFirst: async () => ({ name: 'Coop A' }) }),
+      documents: () => ({ findFirst: async () => ({ name: 'Coop A, SCCL' }) }),
     };
     delete process.env.TICKETS_TENANT;
-    process.env.TICKETS_SSO_KEY = API_KEY;
     delete process.env.TICKETS_URL;
+    process.env.TICKETS_SSO_KEY = SECRET;
     ctrl = require(CONTROLLER)({ strapi: global.strapi });
   });
 
@@ -60,30 +62,32 @@ describe('me.ticketsLogin', () => {
     delete global.strapi;
   });
 
-  test('returns a tickets login URL for the current user', async () => {
+  test('returns a tickets login URL carrying the user and the tenant', async () => {
     const ctx = fakeCtx({ id: 3, username: 'Núria', email: 'nuria@coop-a.cat' });
     const before = Math.floor(Date.now() / 1000);
     const { url } = await ctrl.ticketsLogin(ctx);
 
     const parsed = new URL(url);
     expect(parsed.origin + parsed.pathname).toBe('https://tiquets.esstrapis.org/sso');
-    expect(parsed.searchParams.get('tenant')).toBe('coop-a');
-    expect(url).not.toContain(API_KEY);
+    expect([...parsed.searchParams.keys()]).toEqual(['token']);
+    expect(url).not.toContain(SECRET);
     expect(ctx.headers['Cache-Control']).toBe('no-store');
 
-    const payload = decrypt(parsed.searchParams.get('token'), 'coop-a', API_KEY);
-    expect(payload.email).toBe('nuria@coop-a.cat');
-    expect(payload.name).toBe('Núria');
+    const payload = decrypt(tokenOf(url), SECRET);
+    expect(payload).toMatchObject({
+      tenant: 'coop-a-sccl',
+      tenantName: 'Coop A, SCCL',
+      email: 'nuria@coop-a.cat',
+      name: 'Núria',
+    });
     expect(payload.exp).toBeGreaterThanOrEqual(before + 60);
     expect(payload.exp).toBeLessThanOrEqual(before + 600);
     expect(payload.nonce.length).toBeGreaterThanOrEqual(16);
   });
 
-  test('the token only decrypts with this tenant and key', async () => {
+  test('the token only decrypts with the shared secret', async () => {
     const { url } = await ctrl.ticketsLogin(fakeCtx({ username: 'a', email: 'a@coop-a.cat' }));
-    const token = new URL(url).searchParams.get('token');
-    expect(() => decrypt(token, 'coop-b', API_KEY)).toThrow();
-    expect(() => decrypt(token, 'coop-a', 'another-key')).toThrow();
+    expect(() => decrypt(tokenOf(url), 'another-secret')).toThrow();
   });
 
   test('each call makes a different, single-use token', async () => {
@@ -91,19 +95,19 @@ describe('me.ticketsLogin', () => {
     const a = await ctrl.ticketsLogin(fakeCtx(user));
     const b = await ctrl.ticketsLogin(fakeCtx(user));
     expect(a.url).not.toBe(b.url);
+    expect(decrypt(tokenOf(a.url), SECRET).nonce).not.toBe(decrypt(tokenOf(b.url), SECRET).nonce);
   });
 
   test('uses TICKETS_URL when set', async () => {
     process.env.TICKETS_URL = 'http://localhost:3000/';
     const { url } = await ctrl.ticketsLogin(fakeCtx({ username: 'a', email: 'a@coop-a.cat' }));
-    expect(url.startsWith('http://localhost:3000/sso?tenant=coop-a&token=')).toBe(true);
+    expect(url.startsWith('http://localhost:3000/sso?token=')).toBe(true);
   });
 
   test('TICKETS_TENANT overrides the instance name', async () => {
     process.env.TICKETS_TENANT = 'custom';
     const { url } = await ctrl.ticketsLogin(fakeCtx({ username: 'a', email: 'a@coop-a.cat' }));
-    expect(new URL(url).searchParams.get('tenant')).toBe('custom');
-    expect(decrypt(new URL(url).searchParams.get('token'), 'custom', API_KEY).email).toBe('a@coop-a.cat');
+    expect(decrypt(tokenOf(url), SECRET)).toMatchObject({ tenant: 'custom', tenantName: 'Coop A, SCCL' });
   });
 
   test('refuses when the instance has no name and no TICKETS_TENANT', async () => {
@@ -134,12 +138,14 @@ describe('me.ticketsLogin', () => {
     expect(tenantSlug(null)).toBe('');
   });
 
-  test('ticketsConfig needs a tenant (override or instance name) and a key', () => {
+  test('ticketsConfig needs a tenant (override or instance name) and the secret', () => {
     const { ticketsConfig } = require(SERVICE);
     expect(ticketsConfig({ TICKETS_TENANT: 'xy' })).toBeNull();
     expect(ticketsConfig({ TICKETS_SSO_KEY: 'k' })).toBeNull();
-    expect(ticketsConfig({ TICKETS_SSO_KEY: 'k' }, 'Coop A')).toEqual({ tenant: 'coop-a', apiKey: 'k', baseUrl: 'https://tiquets.esstrapis.org' });
-    expect(ticketsConfig({ TICKETS_TENANT: ' xy ', TICKETS_SSO_KEY: 'k', TICKETS_URL: 'https://t.example/' }, 'Coop A'))
-      .toEqual({ tenant: 'xy', apiKey: 'k', baseUrl: 'https://t.example' });
+    expect(ticketsConfig({ TICKETS_SSO_KEY: 'k' }, 'Coop A')).toEqual({
+      tenant: 'coop-a', tenantName: 'Coop A', secret: 'k', baseUrl: 'https://tiquets.esstrapis.org',
+    });
+    expect(ticketsConfig({ TICKETS_TENANT: ' xy ', TICKETS_SSO_KEY: 'k', TICKETS_URL: 'https://t.example/' }, ''))
+      .toEqual({ tenant: 'xy', tenantName: 'xy', secret: 'k', baseUrl: 'https://t.example' });
   });
 });
