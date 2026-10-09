@@ -1,6 +1,9 @@
 'use strict';
 /* global strapi */
 const { relationId } = require('../../../../services/relation-input');
+const { computeQuoteTotals, resolveComponentLines } = require('../../../../services/document-lifecycle');
+
+const UID = 'api::quote.quote';
 
 /**
  * quote lifecycles (v5). Ported from v3 api/quote/models/quote.js.
@@ -11,11 +14,11 @@ const { relationId } = require('../../../../services/relation-input');
 module.exports = {
   async beforeCreate(event) {
     await fillContactInfo(event.params.data);
-    await calculateTotals(event.params.data);
+    await calculateTotals(event.params.data, false);
   },
   async beforeUpdate(event) {
     await fillContactInfo(event.params.data);
-    await calculateTotals(event.params.data);
+    await calculateTotals(event.params.data, true);
   },
 };
 
@@ -39,13 +42,18 @@ async function fillContactInfo(data) {
   }
 }
 
-async function calculateTotals(data) {
+async function calculateTotals(data, isUpdate) {
   if (data._internal) return;
 
-  data.total_base = 0;
-  data.total_vat = 0;
-  data.total_irpf = 0;
-  data.total = 0;
+  // An update that doesn't send the lines (accepting the quote, …) keeps the
+  // stored totals rather than zeroing them (issues/022).
+  const touchesLines = !(isUpdate && data.lines === undefined);
+  if (touchesLines) {
+    data.total_base = 0;
+    data.total_vat = 0;
+    data.total_irpf = 0;
+    data.total = 0;
+  }
 
   if (!data.code) {
     const serialId = relationId(data.serial);
@@ -69,20 +77,7 @@ async function calculateTotals(data) {
   }
 
   if (data.lines) {
-    let total_base = 0;
-    let total_vat = 0;
-    data.lines.forEach((i) => {
-      let base = (i.base ? i.base : 0) * (i.quantity ? i.quantity : 0);
-      if (i.discount) {
-        base = base * (1 - i.discount / 100.0);
-      }
-      const vat = (base * (i.vat ? i.vat : 0)) / 100.0;
-      total_base += base;
-      total_vat += vat;
-    });
-    data.total_base = total_base;
-    data.total_vat = total_vat;
-    data.total_irpf = 0; // quotes never carry irpf (v3 behavior)
-    data.total = data.total_base + data.total_vat;
+    // v5 leaves bare `{ id }` references here: read the values back (issues/022)
+    Object.assign(data, computeQuoteTotals(await resolveComponentLines(UID, data.lines)));
   }
 }

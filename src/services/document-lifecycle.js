@@ -128,30 +128,8 @@ function createDocumentLifecycles({
     }
   }
 
-  /**
-   * Returns the lines with their VALUES.
-   *
-   * v5 inserts the component rows before the db lifecycle runs and replaces the
-   * payload's objects with bare references — `{ id, __pivot }` — so `data.lines`
-   * no longer carries `base`, `quantity` or `vat`. v3 handed the model the raw
-   * objects; run on references, the same arithmetic saved every document with a
-   * 0.00 total (which the treasury and the stats then showed). Same fix as
-   * emitted-invoice's resolveLines, but the component differs per document
-   * type, so it is read from the schema.
-   */
-  async function resolveLines(lines) {
-    if (!Array.isArray(lines) || lines.length === 0) return [];
-    const refs = lines.filter((l) => l && l.id !== undefined && l.base === undefined);
-    if (refs.length === 0) return lines;
-    const ct = strapi.contentTypes[uid];
-    const component = ct && ct.attributes && ct.attributes.lines && ct.attributes.lines.component;
-    if (!component) return lines;
-    const rows = await strapi.db
-      .query(component)
-      .findMany({ where: { id: { $in: refs.map((l) => l.id) } } });
-    const byId = new Map(rows.map((r) => [r.id, r]));
-    // Keep any line that already carried its values (a caller passing raw objects).
-    return lines.map((l) => (l && l.base === undefined && byId.has(l.id) ? byId.get(l.id) : l));
+  function resolveLines(lines) {
+    return resolveComponentLines(uid, lines);
   }
 
   async function calculateTotals(data, isUpdate) {
@@ -190,6 +168,32 @@ function createDocumentLifecycles({
 }
 
 /**
+ * Returns the lines of a document of type `uid` with their VALUES.
+ *
+ * v5 inserts the component rows before the db lifecycle runs and replaces the
+ * payload's objects with bare references — `{ id, __pivot }` — so `data.lines`
+ * no longer carries `base`, `quantity` or `vat`. v3 handed the model the raw
+ * objects; run on references, the same arithmetic saved every document with a
+ * 0.00 total (which the treasury and the stats then showed). Same fix as
+ * emitted-invoice's resolveLines, but the component differs per document
+ * type, so it is read from the schema. Also used by quotes (issues/022).
+ */
+async function resolveComponentLines(uid, lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return [];
+  const refs = lines.filter((l) => l && l.id !== undefined && l.base === undefined);
+  if (refs.length === 0) return lines;
+  const ct = strapi.contentTypes[uid];
+  const component = ct && ct.attributes && ct.attributes.lines && ct.attributes.lines.component;
+  if (!component) return lines;
+  const rows = await strapi.db
+    .query(component)
+    .findMany({ where: { id: { $in: refs.map((l) => l.id) } } });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  // Keep any line that already carried its values (a caller passing raw objects).
+  return lines.map((l) => (l && l.base === undefined && byId.has(l.id) ? byId.get(l.id) : l));
+}
+
+/**
  * total_base / total_vat / total_irpf / total from line VALUES (not the bare
  * `{ id }` references v5 leaves in a lifecycle payload). Shared with the
  * recalcZeroDocumentTotals startup script so both compute the same numbers.
@@ -213,4 +217,10 @@ function computeLineTotals(lines) {
   return { total_base, total_vat, total_irpf, total: total_base + total_vat - total_irpf };
 }
 
-module.exports = { createDocumentLifecycles, computeLineTotals };
+/** Quote totals: same as the other documents, but quotes never carry IRPF. */
+function computeQuoteTotals(lines) {
+  const { total_base, total_vat } = computeLineTotals(lines);
+  return { total_base, total_vat, total_irpf: 0, total: total_base + total_vat };
+}
+
+module.exports = { createDocumentLifecycles, computeLineTotals, computeQuoteTotals, resolveComponentLines };

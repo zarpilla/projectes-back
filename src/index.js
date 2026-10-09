@@ -8,6 +8,7 @@ const { normalizeComponentTypes } = require('./services/normalize-component-type
 const { backfillActivityCosts } = require('./services/backfill-activity-costs');
 const { mergeInvalidPeriodificationYears } = require('./services/merge-invalid-periodification-years');
 const { ensureResetPasswordUrl } = require('./services/ensure-reset-password-url');
+const { recalcZeroQuoteTotals } = require('./services/recalc-zero-quote-totals');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -65,6 +66,8 @@ module.exports = {
       // issues/021: the password-reset e-mail needs the front's URL. Rerun on every
       // boot: it only fills the setting when empty, so setting the env var later works.
       ['ensureResetPasswordUrl', ensureResetPasswordUrl, { runOnce: false }],
+      // issues/022: quotes saved on v5 had every total at 0.
+      ['recalcZeroQuoteTotals', recalcZeroQuoteTotals, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
