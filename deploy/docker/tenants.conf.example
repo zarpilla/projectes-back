@@ -1,5 +1,5 @@
 # <tenant> <public port> <uploads dir on the host>
 # The public port is what the tenant's nginx site proxies to; the proxy (Caddy)
 # listens there and forwards to the live slot: blue = port + 10000, green = port + 20000.
-demo 1350 /var/www/demo.projectes/projectes-v5/public/uploads
-webcoop 1339 /var/www/projectes.webcoop.cat/projectes-v5/public/uploads
+demo 1350 /var/www/demo.projectes/uploads
+webcoop 1339 /var/www/projectes.webcoop.cat/uploads

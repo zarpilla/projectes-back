@@ -17,7 +17,7 @@ nginx (domain) ──> 127.0.0.1:<port>  Caddy ("proxy" container)
 - `state/<tenant>` says which slot is live (`blue` or `green`).
 - `render.sh` generates `docker-compose.yml` and `caddy/Caddyfile` from those files. Never edit the generated files.
 - The backend services are in the `backends` profile, so `docker compose up -d` without names only starts the proxy. Always name backend services explicitly.
-- Every container uses `network_mode: host`. MySQL is reached at `127.0.0.1`, and the tenant's `public/uploads` is mounted at `/opt/app/public/uploads`.
+- Every container uses `network_mode: host`. MySQL is reached at `127.0.0.1`, and the tenant's uploads dir (`/var/www/<tenant>/uploads`) is mounted at `/opt/app/public/uploads`.
 - Caddy trusts nginx's `X-Forwarded-*` headers, so Strapi still sees `https` and the client IP.
 
 ## Deploys
@@ -47,7 +47,7 @@ Secrets in GitHub: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, `DO
 
 ## Adding a tenant
 
-1. Create its database and its `public/uploads` dir. Write `envs/<name>.env` (`KEY='value'` lines; `pm2-env-to-dotenv.js` converts a PM2 config), then `chmod 600` it.
+1. Create its database and its uploads dir (`/var/www/<tenant>/uploads`). Write `envs/<name>.env` (`KEY='value'` lines; `pm2-env-to-dotenv.js` converts a PM2 config), then `chmod 600` it.
 2. Add `<name> <port> <uploads dir>` to `tenants.conf`, pick a free port, and point the tenant's nginx site at `127.0.0.1:<port>`.
 3. Run:
    ```bash
@@ -58,14 +58,11 @@ Secrets in GitHub: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, `DO
 
 `migrate-to-proxy.sh` did the one-time move from one container per port to this setup (2026-10-09). It is kept for reference.
 
-## Emergency: back to PM2 for one tenant
+## Rolling back
 
 ```bash
-rm state/<t> && ./render.sh && docker compose exec proxy caddy reload --config /etc/caddy/Caddyfile
-docker compose stop <t>-blue <t>-green
-mv ~/pm2-apps/strapi-projectes-<t>-v5.config.js.docker ~/pm2-apps/strapi-projectes-<t>-v5.config.js
-(cd <tenant dir>/projectes-v5 && npm ci && NODE_ENV=production npm run build)   # node_modules were removed on 2026-10-09
-pm2 start ~/pm2-apps/strapi-projectes-<t>-v5.config.js && pm2 save
+./deploy.sh v5-<earlier sha>              # every tenant, zero downtime
+./deploy.sh v5-<earlier sha> diligencia   # just one
 ```
 
-PM2 runs the code checked out in the tenant's directory, which may be older than the image. The tenant directories no longer have `node_modules` (removed once every backend ran in Docker), so `npm ci` comes first.
+Every `main` commit has its image on Docker Hub (`webcoop/esstrapis-back:v5-<sha>`); `deploy.log` lists what was deployed when. There is no PM2 fallback any more: since 2026-10-09 the tenant directories hold only `uploads/` (and the fronts' `docker/`), not the backend code.
