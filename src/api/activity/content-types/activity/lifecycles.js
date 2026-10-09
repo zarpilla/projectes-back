@@ -13,37 +13,44 @@ module.exports = {
     await calculatePrice(0, event.params.data);
   },
   async afterCreate(event) {
+    // A v5 db lifecycle result carries no relations: read the project back
+    // (issues/012 — the project was never marked and its real hours went stale).
     const result = event.result;
-    if (result && result.project) {
-      scheduleRefresh(result.project.id || result.project);
+    if (result && result.id) {
+      scheduleRefresh(await activityProjectId(result.id));
     }
   },
   async beforeUpdate(event) {
     await calculatePrice(event.params.where.id, event.params.data);
+    // Remember the project before the write, to refresh it too if the
+    // activity moves to another one.
+    event.state = event.state || {};
+    event.state.previousProjectId = await activityProjectId(event.params.where.id);
   },
   async afterUpdate(event) {
     const result = event.result;
-    const data = event.params.data;
-    if (result && result.project) {
-      scheduleRefresh(result.project.id || result.project);
-    }
-    // Refresh the previous project too if the activity was reassigned.
-    if (
-      data &&
-      data.project &&
-      result &&
-      (!result.project || relationId(result.project) !== relationId(data.project))
-    ) {
-      scheduleRefresh(relationId(data.project));
+    const projectId = result && result.id ? await activityProjectId(result.id) : undefined;
+    if (projectId) scheduleRefresh(projectId);
+    const previousProjectId = event.state && event.state.previousProjectId;
+    if (previousProjectId && previousProjectId !== projectId) {
+      scheduleRefresh(previousProjectId);
     }
   },
   async beforeDelete(event) {
-    const activity = await strapi.db.query('api::activity.activity').findOne({ where: event.params.where });
-    if (activity && activity.project) {
-      scheduleRefresh(activity.project.id || activity.project);
+    const where = event.params.where;
+    if (where && where.id) {
+      scheduleRefresh(await activityProjectId(where.id));
     }
   },
 };
+
+async function activityProjectId(id) {
+  if (!id) return undefined;
+  const activity = await strapi.db
+    .query('api::activity.activity')
+    .findOne({ where: { id }, select: ['id'], populate: { project: { select: ['id'] } } });
+  return activity && activity.project ? activity.project.id : undefined;
+}
 
 async function calculatePrice(id, data) {
   if (data && !data.cost_by_hour && data.users_permissions_user) {

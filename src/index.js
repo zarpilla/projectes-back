@@ -5,16 +5,19 @@ const { runStartupScript } = require('./services/startup-scripts');
 const { recalcZeroDocumentTotals } = require('./services/recalc-zero-document-totals');
 const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoice-unique-index');
 const { normalizeComponentTypes } = require('./services/normalize-component-types');
+const { backfillActivityCosts } = require('./services/backfill-activity-costs');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
+const { changeLogMiddleware } = require('./services/change-log');
 
 module.exports = {
   /**
    * An asynchronous register function that runs before your application is
    * initialized. Used to register hooks, services, etc.
    */
-  register(/* { strapi } */) {
-    // Nothing to register yet.
+  register({ strapi }) {
+    // Change log of emitted/received invoices (issues/001).
+    strapi.documents.use(changeLogMiddleware);
   },
 
   /**
@@ -53,6 +56,8 @@ module.exports = {
       // Rerun on every boot for the same reason: the ETL used to copy v3's
       // component_type spelling, which duplicated component rows on save.
       ['normalizeComponentTypes', normalizeComponentTypes, { runOnce: false }],
+      // issues/012: price unpriced activities and recompute "Hores executades".
+      ['backfillActivityCosts', backfillActivityCosts, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

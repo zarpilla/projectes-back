@@ -1,0 +1,47 @@
+{
+  "kind": "collectionType",
+  "collectionName": "document_change_logs",
+  "info": {
+    "singularName": "document-change-log",
+    "pluralName": "document-change-logs",
+    "displayName": "Document Change Log",
+    "description": "Who changed what on an emitted/received invoice, and when (issues/001). Written by services/change-log.js only."
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "entity": {
+      "type": "string",
+      "required": true
+    },
+    "entity_id": {
+      "type": "integer"
+    },
+    "document_code": {
+      "type": "string"
+    },
+    "action": {
+      "type": "enumeration",
+      "enum": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "required": true
+    },
+    "changes": {
+      "type": "json"
+    },
+    "snapshot": {
+      "type": "json"
+    },
+    "user_id": {
+      "type": "integer"
+    },
+    "username": {
+      "type": "string"
+    }
+  }
+}

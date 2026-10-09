@@ -23,7 +23,9 @@ module.exports = createCoreController('api::received-invoice.received-invoice', 
     const opts = adaptQuery(ctx.query);
     return strapi.db.query('api::received-invoice.received-invoice').findMany({
       where: opts.filters || {},
-      populate: { contact: true, projects: true, document_type: true },
+      // issues/013: v3 auto-populated components; v5 does not. The lists read
+      // lines[0].concept (Concepte column, Excel export) and contact_info.
+      populate: { contact: true, projects: true, document_type: true, lines: true, contact_info: true },
       limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,

@@ -751,6 +751,37 @@ export interface ApiDietDiet extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiDocumentChangeLogDocumentChangeLog extends Struct.CollectionTypeSchema {
+  collectionName: 'document_change_logs';
+  info: {
+    description: 'Who changed what on an emitted/received invoice, and when (issues/001). Written by services/change-log.js only.';
+    displayName: 'Document Change Log';
+    pluralName: 'document-change-logs';
+    singularName: 'document-change-log';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    action: Schema.Attribute.Enumeration<['create', 'update', 'delete']> & Schema.Attribute.Required;
+    changes: Schema.Attribute.JSON;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    document_code: Schema.Attribute.String;
+    entity: Schema.Attribute.String & Schema.Attribute.Required;
+    entity_id: Schema.Attribute.Integer;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::document-change-log.document-change-log'> &
+      Schema.Attribute.Private;
+    publishedAt: Schema.Attribute.DateTime;
+    snapshot: Schema.Attribute.JSON;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    user_id: Schema.Attribute.Integer;
+    username: Schema.Attribute.String;
+  };
+}
+
 export interface ApiDocumentTypeDocumentType extends Struct.CollectionTypeSchema {
   collectionName: 'document_types';
   info: {
@@ -3297,6 +3328,7 @@ declare module '@strapi/strapi' {
       'api::dedication-type.dedication-type': ApiDedicationTypeDedicationType;
       'api::delivery-type.delivery-type': ApiDeliveryTypeDeliveryType;
       'api::diet.diet': ApiDietDiet;
+      'api::document-change-log.document-change-log': ApiDocumentChangeLogDocumentChangeLog;
       'api::document-type.document-type': ApiDocumentTypeDocumentType;
       'api::emitted-grant.emitted-grant': ApiEmittedGrantEmittedGrant;
       'api::emitted-invoice.emitted-invoice': ApiEmittedInvoiceEmittedInvoice;

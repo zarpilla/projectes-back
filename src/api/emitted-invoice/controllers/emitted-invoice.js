@@ -21,6 +21,8 @@ const { adaptQuery } = require('../../../services/query-adapter');
 const { rawExecute } = require('../../../services/raw-sql');
 const { getMe } = require('../../../services/me-settings');
 const { buildEmailBody } = require('../../../services/email-body');
+const changeLog = require('../../../services/change-log');
+const { relationId } = require('../../../services/relation-input');
 
 // Map v3 entity slug -> DB table name for the raw UPDATE in payEntity.
 const ENTITY_TABLE = {
@@ -65,11 +67,17 @@ const payEntity = async (documents, entitySlug, vatPaidDate, deductibleVatPct, y
       ? years.find((y) => String(y.year) === String(emittedYear))?.deductible_vat_pct || deductibleVatPct
       : 100;
 
+    // The raw UPDATE skips the document service, so the change log is fed here.
+    const uid = ENTITY_UID[entitySlug];
+    const before = changeLog.isTracked(uid)
+      ? await changeLog.snapshot(uid, { id: doc.id }).catch(() => null)
+      : null;
     await rawExecute(strapi, `UPDATE ${table} SET vat_paid_date = ?, deductible_vat_pct = ? WHERE id = ?`, [
       vatPaidDate,
       deductibleVatPctYear,
       doc.id,
     ]);
+    await changeLog.logRawUpdate(uid, before);
     totalVat += (doc.total_vat * deductibleVatPctYear) / 100.0;
   }
   return totalVat;
@@ -120,11 +128,57 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     return response;
   },
 
+  /**
+   * PUT /api/emitted-invoices/:id/payment-method  body: { payment_method }
+   *
+   * issues/001: the payment method stays editable after emission, because the
+   * payment sometimes reaches a different bank than expected. Only the payment
+   * method and the bank account derived from it change, also on an invoice
+   * marked not updatable. Every other field keeps its lock.
+   * The write goes through the document service, so the change log records it.
+   * The PDF is not regenerated: it stays as it was issued to the client.
+   */
+  async updatePaymentMethod(ctx) {
+    const uid = 'api::emitted-invoice.emitted-invoice';
+    const { id } = ctx.params;
+    const body = ctx.request.body || {};
+    const paymentMethodId = relationId(body.data ? body.data.payment_method : body.payment_method);
+    if (!paymentMethodId) return ctx.badRequest('payment_method is required');
+
+    const where = /^\d+$/.test(String(id)) ? { id: Number(id) } : { documentId: id };
+    const invoice = await strapi.db.query(uid).findOne({ where, populate: { payment_method: true } });
+    if (!invoice) return ctx.notFound('emitted-invoice not found');
+
+    const paymentMethod = await strapi.db
+      .query('api::payment-method.payment-method')
+      .findOne({ where: { id: paymentMethodId }, populate: { bank_account: true } });
+    if (!paymentMethod) return ctx.badRequest('payment_method not found');
+
+    if (relationId(invoice.payment_method) !== paymentMethod.id) {
+      const data = {
+        payment_method: paymentMethod.id,
+        // Treasury groups invoices by bank_account: a method without one must
+        // not leave the old method's bank behind.
+        bank_account: relationId(paymentMethod.bank_account) || null,
+        // One-shot pass through the updatable guard; beforeUpdate resets it.
+        updatable_admin: true,
+      };
+      if (ctx.state && ctx.state.user) data.user_last = ctx.state.user.id;
+      await strapi.documents(uid).update({ documentId: invoice.documentId, data });
+    }
+
+    return strapi.db
+      .query(uid)
+      .findOne({ where: { id: invoice.id }, populate: { payment_method: true, bank_account: true } });
+  },
+
   async findBasic(ctx) {
     const opts = adaptQuery(ctx.query);
     return strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
       where: opts.filters || {},
-      populate: { contact: true, projects: true, document_type: true },
+      // issues/013: v3 auto-populated components; v5 does not. The lists read
+      // lines[0].concept (Concepte column, Excel export) and contact_info.
+      populate: { contact: true, projects: true, document_type: true, lines: true, contact_info: true },
       limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
@@ -250,7 +304,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
         });
       if (showIrpf)
         part.push({
-          value: `${formatCurrency((-1 * line.quantity * line.base * line.irpf) / 100)} ${euro} (${line.irpf}%)`,
+          value: `${formatCurrency((-1 * line.quantity * line.base * (1 - line.discount / 100) * line.irpf) / 100)} ${euro} (${line.irpf}%)`,
           width: 0.1 * cr,
         });
       part.push({

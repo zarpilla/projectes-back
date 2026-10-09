@@ -158,8 +158,12 @@ async function importSeedPermissions() {
       'pdf',
       'sendInvoiceByEmail',
       'pendingProvider',
+      // issues/001: same audience as `update`.
+      'updatePaymentMethod',
     ],
     'received-invoice': ['create', 'find', 'findBasic', 'findOne', 'update', 'delete', 'upload'],
+    // Read-only: rows are written by services/change-log.js (issues/001).
+    'document-change-log': ['find', 'findOne'],
     'received-income': ['create', 'find', 'findBasic', 'findOne', 'update', 'delete'],
     'received-expense': ['create', 'find', 'findBasic', 'findOne', 'update', 'delete', 'upload'],
     payroll: ['create', 'find', 'findOne', 'update', 'delete', 'createAll'],
