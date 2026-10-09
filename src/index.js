@@ -7,6 +7,7 @@ const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoi
 const { normalizeComponentTypes } = require('./services/normalize-component-types');
 const { backfillActivityCosts } = require('./services/backfill-activity-costs');
 const { mergeInvalidPeriodificationYears } = require('./services/merge-invalid-periodification-years');
+const { ensureResetPasswordUrl } = require('./services/ensure-reset-password-url');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -61,6 +62,9 @@ module.exports = {
       ['backfillActivityCosts', backfillActivityCosts, { runOnce: true }],
       // issues/015: periodification rows saved as "Invalid date" join the undated 9999 row.
       ['mergeInvalidPeriodificationYears', mergeInvalidPeriodificationYears, { runOnce: true }],
+      // issues/021: the password-reset e-mail needs the front's URL. Rerun on every
+      // boot: it only fills the setting when empty, so setting the env var later works.
+      ['ensureResetPasswordUrl', ensureResetPasswordUrl, { runOnce: false }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
