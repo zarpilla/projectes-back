@@ -8,31 +8,20 @@
  * (component: permissions.application-permission). This is an application-level
  * permission, distinct from Strapi's RBAC roles.
  *
- * v5 policy signature: (ctx, config, { strapi }) => Promise<void>.
- * The user is loaded via strapi.db.query (component populated) since the custom
- * `permissions` component is part of the User content-type extension.
+ * v5 policy signature: (policyContext, config, { strapi }). A Strapi 5 policy
+ * context has no ctx.forbidden()/ctx.unauthorized() (calling them answered 500,
+ * issues/025): refuse by throwing, PolicyError → 403, UnauthorizedError → 401.
  */
-module.exports = async (ctx, config, { strapi }) => {
-  if (!ctx.state.user) {
-    return ctx.unauthorized('You must be authenticated to access this resource');
-  }
+const { errors } = require('@strapi/utils');
+const { isAppAdmin } = require('../services/app-permissions');
 
-  // Load the user with their permissions component populated.
-  const user = await strapi.db.query('plugin::users-permissions.user').findOne({
-    where: { id: ctx.state.user.id },
-    populate: { permissions: true },
-  });
-
+module.exports = async (policyContext) => {
+  const user = policyContext.state && policyContext.state.user;
   if (!user) {
-    return ctx.unauthorized('User not found');
+    throw new errors.UnauthorizedError('You must be authenticated to access this resource');
   }
-
-  const hasAdminPermission =
-    Array.isArray(user.permissions) && user.permissions.some((p) => p.permission === 'admin');
-
-  if (!hasAdminPermission) {
-    return ctx.forbidden('You do not have admin privileges');
+  if (!(await isAppAdmin(user.id))) {
+    throw new errors.PolicyError('You do not have admin privileges');
   }
-
-  // User is admin, proceed to the next handler.
+  return true;
 };
