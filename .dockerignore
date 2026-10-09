@@ -1,15 +1,33 @@
+# Only what the image needs. Never secrets or tenant data.
 node_modules
 npm-debug.log
 .env
 .env.*
 !.env.example
 .git
+.github
 .gitignore
 coverage
 .tmp
 .strapi
 build
 dist
-*.log
+
+# Tenant files come from the uploads volume, never from the build context.
+public/uploads/*
+!public/uploads/.gitkeep
+
+# Development only
 tests
+tools
 docs
+types
+workflows
+*.md
+*.sql
+jest.config.js
+eslint.config.cjs
+.prettier*
+Dockerfile
+.dockerignore
+deploy
