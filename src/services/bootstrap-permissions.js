@@ -260,7 +260,7 @@ async function importSeedPermissions() {
     strategy: ['create', 'find', 'findOne', 'update', 'delete'],
     year: ['create', 'find', 'findOne', 'update', 'delete'],
     'entity-metadata': ['adminEntities'],
-    me: ['find', 'update', 'dir3SearchNif', 'dir3SearchName'],
+    me: ['find', 'update', 'dir3SearchNif', 'dir3SearchName', 'ticketsLogin'],
     // users-permissions plugin actions for authenticated users
     // (merged into the SAME call because updateRole REPLACES the role's set)
     user: ['find', 'findOne', 'create', 'update', 'count', 'me'],

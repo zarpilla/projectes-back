@@ -2,8 +2,8 @@
 
 /**
  * me CUSTOM routes (v5). Ported from v3 api/me/config/routes.json.
- * These are the 2 non-CRUD endpoints; their handlers are stubbed
- * and throw "not yet ported" until Phase 4 ports each controller method.
+ * These are the non-CRUD endpoints: the DIR3 proxies (ported from v3) and
+ * tickets-login (login link to the tickets site, issues/019).
  *
  * v5 mounts custom routes at /api + the path exactly as written — it does NOT
  * namespace them by content type, so each path keeps its v3 plural prefix.
@@ -22,6 +22,11 @@ module.exports = {
       method: 'GET',
       path: '/me/dir3/search/name/:name',
       handler: 'me.dir3SearchName',
+    },
+    {
+      method: 'GET',
+      path: '/me/tickets-login',
+      handler: 'me.ticketsLogin',
     },
   ],
 };

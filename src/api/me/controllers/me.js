@@ -13,6 +13,7 @@ const axios = require('axios');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { getMe } = require('../../../services/me-settings');
+const { ticketsConfig, buildTicketsLoginUrl } = require('../../../services/tickets-sso');
 
 module.exports = createCoreController('api::me.me', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -84,5 +85,27 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
       }
       return ctx.internalServerError('Error connecting to DIR3 API');
     }
+  },
+
+  /**
+   * Login link to the tickets site for the current user (issues/019).
+   * The front opens the returned URL in a new tab.
+   */
+  async ticketsLogin(ctx) {
+    const user = ctx.state.user;
+    if (!user) {
+      return ctx.unauthorized();
+    }
+    const me = await getMe([]);
+    const config = ticketsConfig(process.env, me && me.name);
+    if (!config) {
+      return ctx.badRequest('Tickets are not configured on this instance');
+    }
+    if (!user.email) {
+      return ctx.badRequest('Your user has no email address');
+    }
+    const url = buildTicketsLoginUrl({ ...config, email: user.email, name: user.username || user.email });
+    ctx.set('Cache-Control', 'no-store');
+    return { url };
   },
 }));
