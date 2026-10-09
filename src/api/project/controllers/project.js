@@ -16,6 +16,7 @@ const { getMe } = require('../../../services/me-settings');
 const {
   buildProjectRows,
   aggregateRowsByYear,
+  findUndatedLines,
   buildSingleProjectActivitiesMap,
   calculateEstimatedTotals,
   getProjectDefaultYear,
@@ -78,6 +79,8 @@ const doProjectInfoCalculations = async (data, id) => {
   const rows = await buildProjectRows(data, financialsCtx);
 
   data.allByYear = aggregateRowsByYear(rows);
+  // Lines the form must flag: they put a "9999" year in the periodification (issues/015).
+  data.undatedLines = findUndatedLines(data);
 
   // Sum project-level totals from the year buckets so the totals always
   // match what the user sees per year.

@@ -6,6 +6,7 @@ const { recalcZeroDocumentTotals } = require('./services/recalc-zero-document-to
 const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoice-unique-index');
 const { normalizeComponentTypes } = require('./services/normalize-component-types');
 const { backfillActivityCosts } = require('./services/backfill-activity-costs');
+const { mergeInvalidPeriodificationYears } = require('./services/merge-invalid-periodification-years');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -58,6 +59,8 @@ module.exports = {
       ['normalizeComponentTypes', normalizeComponentTypes, { runOnce: false }],
       // issues/012: price unpriced activities and recompute "Hores executades".
       ['backfillActivityCosts', backfillActivityCosts, { runOnce: true }],
+      // issues/015: periodification rows saved as "Invalid date" join the undated 9999 row.
+      ['mergeInvalidPeriodificationYears', mergeInvalidPeriodificationYears, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
