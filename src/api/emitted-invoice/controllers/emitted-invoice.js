@@ -302,7 +302,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
         });
       if (showIrpf)
         part.push({
-          value: `${formatCurrency((-1 * line.quantity * line.base * line.irpf) / 100)} ${euro} (${line.irpf}%)`,
+          value: `${formatCurrency((-1 * line.quantity * line.base * (1 - line.discount / 100) * line.irpf) / 100)} ${euro} (${line.irpf}%)`,
           width: 0.1 * cr,
         });
       part.push({
