@@ -21,14 +21,18 @@ module.exports = ({ env }) => [
   'strapi::poweredBy',
   'strapi::query',
   {
-    // Response compression (v3 "gzip" middleware). Brotli disabled to match v3 behavior.
-    name: 'strapi::responses',
+    // Response compression (v3 "gzip" middleware). Until issues/016 this config
+    // sat on strapi::responses, which does not compress anything in v5, and
+    // nginx only gzips text/html — so every JSON answer (485 KB for a large
+    // project, several MB for the lists) crossed the network uncompressed.
+    // Brotli stays off: koa-compress runs it at maximum quality, far too slow
+    // for dynamic answers.
+    name: 'strapi::compression',
     config: {
-      compression: {
-        br: env.bool('COMPRESSION_BROTLI', false),
-      },
+      br: env.bool('COMPRESSION_BROTLI', false),
     },
   },
+  'strapi::responses',
   'strapi::body',
   'strapi::session',
   'strapi::favicon',

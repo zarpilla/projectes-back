@@ -174,6 +174,7 @@ async function importSeedPermissions() {
       'update',
       'delete',
       'findWithBasicInfo',
+      'findWithActivities',
       'findEstimatedTotalsByDay',
       'findNames',
       'findWithPhases',

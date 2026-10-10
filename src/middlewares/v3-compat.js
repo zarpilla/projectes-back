@@ -321,6 +321,9 @@ function sanitizeWriteBody(ctx, uid, strapi) {
 function defaultPopulate(ctx) {
   if (ctx.query.populate === undefined) {
     ctx.query = { ...ctx.query, populate: '*' };
+    // Lets a controller narrow the default without overriding a populate the
+    // caller asked for (see the project update, issues/016).
+    ctx.state.v3DefaultPopulate = true;
   }
 }
 

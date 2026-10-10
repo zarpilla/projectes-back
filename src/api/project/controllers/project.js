@@ -191,6 +191,21 @@ const doProjectInfoCalculations = async (data, id) => {
 
 let projectsQueue = [];
 
+// Relations left out of the default populate of a project list and of the entity
+// a project update answers with. The creator fields are Strapi's own and are
+// not populatable over REST ("Invalid key createdBy").
+const DEFAULT_POPULATE_SKIPS = ['activities', 'createdBy', 'updatedBy', 'localizations'];
+
+/** The v3 default populate (`*`: first-level relations, components and media) minus `skip`. */
+const firstLevelPopulateWithout = (skip) => {
+  const { attributes } = strapi.contentType('api::project.project');
+  return Object.keys(attributes).filter(
+    (name) =>
+      ['relation', 'component', 'media', 'dynamiczone'].includes(attributes[name].type) &&
+      !skip.includes(name),
+  );
+};
+
 // v3 plural entity names used by the phase helpers -> v5 UIDs
 // ('project-phases' / 'project-original-phases').
 const PHASE_ENTITY_UIDS = {
@@ -204,6 +219,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
    * child totals onto mother projects in list responses.
    */
   async find(ctx) {
+    // The v3 default populate brought every activity of every project along:
+    // 83% of an 11 MB answer, and most of the 4.4 s it took, for lists that
+    // never read them. The views that do ask `projects/with-activities`
+    // (issues/016). An explicit populate is left alone.
+    if (ctx.state.v3DefaultPopulate) {
+      ctx.query = { ...ctx.query, populate: firstLevelPopulateWithout(DEFAULT_POPULATE_SKIPS) };
+    }
     adaptCtxQuery(ctx);
     const response = await super.find(ctx);
     const rows = response?.data;
@@ -215,6 +237,47 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         }
       }
     }
+    return response;
+  },
+
+  /**
+   * GET /projects/with-activities — the project list (same filters and shape as
+   * GET /projects) with each project's `activities`, for the views that work on
+   * the logged hours: the "Projectes" and "Dedicació" pivots and the real hours
+   * of a justification.
+   *
+   * The activities carry their relations as ids (`project`,
+   * `users_permissions_user`, `activity_type`, `dedication_type`), which is how
+   * v3 nested them and what those views compare against.
+   */
+  async findWithActivities(ctx) {
+    if (ctx.query.populate === undefined) {
+      ctx.query = { ...ctx.query, populate: firstLevelPopulateWithout(DEFAULT_POPULATE_SKIPS) };
+    }
+    const response = await strapi.controller('api::project.project').find(ctx);
+    const rows = (response && response.data) || [];
+    if (rows.length === 0) return response;
+
+    const only = { select: ['id'] };
+    const activities = await strapi.db.query('api::activity.activity').findMany({
+      where: { project: { id: { $in: rows.map((row) => row.id) } } },
+      populate: { project: only, users_permissions_user: only, activity_type: only, dedication_type: only },
+      orderBy: { id: 'asc' },
+    });
+    const idOf = (relation) => (relation && relation.id) || null;
+    const byProject = new Map();
+    for (const activity of activities) {
+      const projectId = idOf(activity.project);
+      if (!byProject.has(projectId)) byProject.set(projectId, []);
+      byProject.get(projectId).push({
+        ...activity,
+        project: projectId,
+        users_permissions_user: idOf(activity.users_permissions_user),
+        activity_type: idOf(activity.activity_type),
+        dedication_type: idOf(activity.dedication_type),
+      });
+    }
+    for (const row of rows) row.activities = byProject.get(row.id) || [];
     return response;
   },
 
@@ -1509,6 +1572,15 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         delete data[section.info];
       }
 
+      // The saved project is echoed back with the v3 default populate, which
+      // includes every activity ever logged on it: 1.3 MB and a second of
+      // sanitizing for a project with 4,400 of them, on every save and on every
+      // document assigned to one of its lines. No view reads them from this
+      // answer (issues/016).
+      if (ctx.state.v3DefaultPopulate) {
+        ctx.query = { ...ctx.query, populate: firstLevelPopulateWithout(DEFAULT_POPULATE_SKIPS) };
+      }
+
       return super.update(ctx);
     });
   },
@@ -1584,6 +1656,14 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     if (data && data.id) {
       const calculatedData = await doProjectInfoCalculations(data, id);
       delete calculatedData.activities;
+      // `_phases=false`: the caller loads the phases from their own endpoints
+      // (ProjectForm does, and replaces these with them), so don't send a
+      // second copy — 380 of the 485 KB of a large project (issues/016). They
+      // are still loaded above: the totals are computed from them.
+      if (ctx.query && String(ctx.query._phases) === 'false') {
+        delete calculatedData.project_phases;
+        delete calculatedData.project_original_phases;
+      }
       // Mother projects: aggregate child totals (v3 afterFindOne port, P5.3).
       if (calculatedData.is_mother) {
         await calculateMotherProjectTotals(calculatedData);

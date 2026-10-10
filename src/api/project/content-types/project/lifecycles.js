@@ -102,6 +102,15 @@ module.exports = {
 
     const calculatedData = await strapi.controller('api::project.project').calculateProject(fullProject, id);
     Object.assign(data, calculatedData);
+    // calculatedData IS the loaded project, so the assign above also copied the
+    // graph it was loaded with — every activity and phase, fully populated — into
+    // the update. The db layer then "set" those relations again: a deep-equal
+    // de-duplication over thousands of activity rows (7s of CPU on a project
+    // with 4,400 activities) followed by a rewrite of all their link rows. They
+    // are only inputs of the calculation and never change here (issues/016).
+    for (const relation of Object.keys(PROJECT_GRAPH_FOR_TOTALS_POPULATE)) {
+      delete data[relation];
+    }
   },
 
   async afterUpdate(event) {

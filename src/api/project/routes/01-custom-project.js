@@ -20,6 +20,11 @@ module.exports = {
     },
     {
       method: 'GET',
+      path: '/projects/with-activities',
+      handler: 'project.findWithActivities',
+    },
+    {
+      method: 'GET',
       path: '/projects/estimated-totals',
       handler: 'project.findEstimatedTotalsByDay',
     },
