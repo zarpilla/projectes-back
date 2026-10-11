@@ -12,9 +12,13 @@
  * auth/forgot-password ignores a `url` in the body (issues/021): v3 fronts sent
  * the reset link's URL, which Strapi 5 refuses as an unknown key. The link now
  * comes from the `email_reset_password` setting (services/ensure-reset-password-url.js).
+ *
+ * The role's permissions are kept in memory between requests instead of being
+ * read on each one (issues/016, services/role-permissions-cache.js).
  */
 const { errors } = require('@strapi/utils');
 const { isAppAdmin } = require('../../services/app-permissions');
+const { cachePermissionReads } = require('../../services/role-permissions-cache');
 
 module.exports = (plugin) => {
   const adminOnly = (action) => async (ctx, ...rest) => {
@@ -40,5 +44,11 @@ module.exports = (plugin) => {
     };
     return auth;
   };
+
+  const permissionFactory = plugin.services && plugin.services.permission;
+  if (permissionFactory) {
+    plugin.services.permission = (deps) => cachePermissionReads(permissionFactory(deps));
+  }
+
   return plugin;
 };

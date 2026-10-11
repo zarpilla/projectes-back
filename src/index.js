@@ -2,6 +2,7 @@
 
 const { importSeedPermissions, importSeedRows } = require('./services/bootstrap-permissions');
 const { runStartupScript } = require('./services/startup-scripts');
+const { registerRolePermissionsInvalidation } = require('./services/role-permissions-cache');
 const { recalcZeroDocumentTotals } = require('./services/recalc-zero-document-totals');
 const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoice-unique-index');
 const { normalizeComponentTypes } = require('./services/normalize-component-types');
@@ -41,6 +42,7 @@ module.exports = {
    */
   async bootstrap({ strapi }) {
     registerDateFieldNormalizer();
+    registerRolePermissionsInvalidation();
     wrapEmailProvider(strapi);
 
     try {

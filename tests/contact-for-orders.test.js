@@ -26,6 +26,7 @@ const {
   FOR_ORDERS_FIELDS,
   FOR_ORDERS_POPULATE,
   SOCIES_POPULATE,
+  forOrdersWhere,
 } = require('../src/api/contact/services/for-orders');
 
 const attrs = JSON.parse(
@@ -52,6 +53,33 @@ describe('for-orders field selection', () => {
     for (const f of ['name', 'trade_name', 'city', 'postcode', 'time_slot_1_ini', 'time_slot_1_end']) {
       expect(FOR_ORDERS_FIELDS).toContain(f);
     }
+  });
+});
+
+// issues/016: the order form listed its delivery points from
+// `contacts/basic?_where[owner_gt]=0` (2 MB, 2 s in production). It reads these
+// off the chosen contact, so they have to be here.
+describe('for-orders serves the order form', () => {
+  it.each([
+    'name', 'trade_name', 'nif', 'address', 'postcode', 'notes', 'phone', 'city',
+    'multiowner', 'pickup_discount', 'pickup_point',
+    'time_slot_1_ini', 'time_slot_1_end', 'time_slot_2_ini', 'time_slot_2_end',
+  ])('selects %s', (field) => {
+    expect(FOR_ORDERS_FIELDS).toContain(field);
+  });
+
+  it('?owned=1 keeps the contacts that have an owner (the old owner_gt=0)', () => {
+    expect(forOrdersWhere({ owned: '1' })).toEqual({ owner: { $notNull: true } });
+    expect(attrs.owner.type).toBe('relation');
+  });
+
+  it('without parameters every contact is listed; ?socies=1 is unchanged', () => {
+    expect(forOrdersWhere({})).toEqual({});
+    expect(forOrdersWhere({ socies: '1' })).toEqual({ users_permissions_user: { $notNull: true } });
+    expect(forOrdersWhere({ socies: 'true', owned: 'true' })).toEqual({
+      users_permissions_user: { $notNull: true },
+      owner: { $notNull: true },
+    });
   });
 });
 

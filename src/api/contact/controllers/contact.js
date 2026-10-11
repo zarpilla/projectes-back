@@ -14,6 +14,7 @@ const {
   FOR_ORDERS_FIELDS,
   FOR_ORDERS_POPULATE,
   SOCIES_POPULATE,
+  forOrdersWhere,
 } = require('../services/for-orders');
 
 module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
@@ -55,13 +56,14 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
    * The contact list the orders page needs, and nothing more.
    *
    * `?socies=1` narrows to contacts linked to a user and adds the two
-   * relations the collection-point lookup walks.
+   * relations the collection-point lookup walks. `?owned=1` narrows to the
+   * delivery points (contacts with an owner), the list of the order form.
    */
   async forOrders(ctx) {
     const socies = ctx.query.socies === '1' || ctx.query.socies === 'true';
     return strapi.db.query('api::contact.contact').findMany({
       select: FOR_ORDERS_FIELDS,
-      where: socies ? { users_permissions_user: { $notNull: true } } : {},
+      where: forOrdersWhere(ctx.query),
       populate: socies ? SOCIES_POPULATE : FOR_ORDERS_POPULATE,
       orderBy: { trade_name: 'asc' },
     });

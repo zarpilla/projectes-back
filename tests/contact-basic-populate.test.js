@@ -18,7 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { BASIC_POPULATE, BASIC_EXCLUDED } = require('../src/api/contact/services/contact-populate');
+const { BASIC_POPULATE, BASIC_EXCLUDED, USER_PUBLIC_FIELDS } = require('../src/api/contact/services/contact-populate');
 
 const schema = JSON.parse(
   fs.readFileSync(
@@ -40,7 +40,34 @@ describe('contacts/basic populate', () => {
   });
 
   it.each(singleValued)('populates %s — v3 returned it as an FK column', (name) => {
-    expect(BASIC_POPULATE[name]).toBe(true);
+    expect(BASIC_POPULATE[name]).toBeTruthy();
+  });
+
+  // issues/016: populated whole, the contact's users carried their salary,
+  // hourly cost, identity number and social security number to every logged-in
+  // user, in each of the 1,162 rows (28% of a 2 MB answer).
+  it.each(['owner', 'users_permissions_user'])('%s carries the public profile only', (name) => {
+    expect(BASIC_POPULATE[name]).toEqual({ select: USER_PUBLIC_FIELDS });
+    for (const f of ['monthly_salary', 'monthly_tax', 'cost_by_hour', 'identity_number', 'naf', 'ical', 'password']) {
+      expect(USER_PUBLIC_FIELDS).not.toContain(f);
+    }
+    // what the front reads off a contact's users
+    for (const f of ['id', 'username', 'fullname', 'email']) {
+      expect(USER_PUBLIC_FIELDS).toContain(f);
+    }
+  });
+
+  it('the public profile fields are scalars of the user (select takes scalars only)', () => {
+    const user = JSON.parse(
+      fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'extensions', 'users-permissions', 'content-types', 'user', 'schema.json'),
+        'utf8'
+      )
+    ).attributes;
+    for (const f of USER_PUBLIC_FIELDS.filter((x) => x !== 'id' && x !== 'documentId')) {
+      expect(user[f]).toBeDefined();
+      expect(['relation', 'component']).not.toContain(user[f].type);
+    }
   });
 
   it('populates contact_types, which the Tipus column maps over', () => {

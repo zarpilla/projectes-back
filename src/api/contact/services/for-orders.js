@@ -15,8 +15,12 @@
  * handler returns db.query rows directly, so the sanitise pass is skipped the
  * way /contacts/basic already does.
  *
- * Derived from what OrdersTable actually dereferences. If it starts reading
- * another field, add it here or it will silently be undefined.
+ * Derived from what OrdersTable and OrdersForm actually dereference. If they
+ * start reading another field, add it here or it will silently be undefined.
+ *
+ * The order form used `contacts/basic?_where[owner_gt]=0` for its "Punt
+ * d'entrega" list: 2 MB and 2 s on the production server, the last request of
+ * a page that took 5-8 s (issues/016). It now asks for `?owned=1` here.
  */
 const FOR_ORDERS_FIELDS = [
   'id',
@@ -33,6 +37,10 @@ const FOR_ORDERS_FIELDS = [
   'time_slot_1_end',
   'time_slot_2_ini',
   'time_slot_2_end',
+  // read by the order form when a delivery point is chosen
+  'multiowner',
+  'pickup_discount',
+  'pickup_point',
 ];
 
 // legal_form backs the CSV import's "no te sector" check; sector is read by the
@@ -53,4 +61,17 @@ const SOCIES_POPULATE = {
   collection_points: true,
 };
 
-module.exports = { FOR_ORDERS_FIELDS, FOR_ORDERS_POPULATE, SOCIES_POPULATE };
+/**
+ * The rows `GET /api/contacts/for-orders` answers with:
+ * `?socies=1` the contacts linked to a user, `?owned=1` the delivery points
+ * (contacts that have an owner, what the order form lists).
+ */
+function forOrdersWhere(query = {}) {
+  const on = (v) => v === '1' || v === 'true';
+  const where = {};
+  if (on(query.socies)) where.users_permissions_user = { $notNull: true };
+  if (on(query.owned)) where.owner = { $notNull: true };
+  return where;
+}
+
+module.exports = { FOR_ORDERS_FIELDS, FOR_ORDERS_POPULATE, SOCIES_POPULATE, forOrdersWhere };
