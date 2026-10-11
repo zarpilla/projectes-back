@@ -3,6 +3,7 @@
 const { importSeedPermissions, importSeedRows } = require('./services/bootstrap-permissions');
 const { runStartupScript } = require('./services/startup-scripts');
 const { registerRolePermissionsInvalidation } = require('./services/role-permissions-cache');
+const { seedNewDatabase } = require('./services/seed-new-database');
 const { recalcZeroDocumentTotals } = require('./services/recalc-zero-document-totals');
 const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoice-unique-index');
 const { normalizeComponentTypes } = require('./services/normalize-component-types');
@@ -44,6 +45,16 @@ module.exports = {
     registerDateFieldNormalizer();
     registerRolePermissionsInvalidation();
     wrapEmailProvider(strapi);
+
+    // A brand-new database gets its catalogs, settings and home menu (what used
+    // to come from restoring the empty `buida` tenant). Existing databases are
+    // left alone. Before the seed rows below, so the default bank account they
+    // create is wired into the settings record.
+    try {
+      await runStartupScript('seedNewDatabase', seedNewDatabase, { runOnce: true });
+    } catch (error) {
+      strapi.log.error(`[bootstrap] startup script seedNewDatabase failed: ${error && error.message}`);
+    }
 
     try {
       await importSeedPermissions();

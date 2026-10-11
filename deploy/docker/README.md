@@ -47,14 +47,26 @@ Secrets in GitHub: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, `DO
 
 ## Adding a tenant
 
-1. Create its database and its uploads dir (`/var/www/<tenant>/uploads`). Write `envs/<name>.env` (`KEY='value'` lines; `pm2-env-to-dotenv.js` converts a PM2 config), then `chmod 600` it.
-2. Add `<name> <port> <uploads dir>` to `tenants.conf`, pick a free port, and point the tenant's nginx site at `127.0.0.1:<port>`.
-3. Run:
-   ```bash
-   ./render.sh && BACK_TAG=$(sed -n 's/^BACK_TAG=//p' .env) docker compose up -d <name>-blue
-   # once http://127.0.0.1:<port+10000>/api/logos answers 200:
-   echo blue > state/<name> && ./render.sh && docker compose exec proxy caddy reload --config /etc/caddy/Caddyfile
-   ```
+Point the domain's DNS at the VPS, then on the server:
+
+```bash
+cd /var/www/esstrapis-back
+./create-tenant.sh <name> <domain> --user-email <e-mail> --dry-run   # shows the ports and paths it would use
+./create-tenant.sh <name> <domain> --user-email <e-mail>
+```
+
+`create-tenant.sh`:
+1. writes `envs/<name>.env`: the shared settings (SMTP, API keys, `TICKETS_SSO_KEY`) copied from `envs/buida.env`, plus new secrets and a new database password;
+2. creates the empty database `<name>_v5` and the MySQL user `<name>` (it asks for the MySQL admin password);
+3. adds the tenant to `tenants.conf` on the next free port, starts `<name>-blue`, waits for it and points the proxy at it;
+4. creates the front in `/var/www/projectes-<name>/docker`, starts it and adds it to the front's `sites.conf`;
+5. installs the nginx site and runs certbot (asks for the sudo password; with `--skip-nginx` it prints the commands instead).
+
+Each step is skipped when already done, so a run that failed halfway is simply run again. It never drops or overwrites anything, and refuses a name whose database, MySQL user, directory or env file already exists.
+
+No other tenant is copied. The database starts empty: the first boot creates the tables and seeds what an instance needs (catalogs, Configuració General with demo values, home menu, the current year and its invoice series; see `src/services/seed-new-database.js`). With `--user-email`, that boot also creates a first app user with the `admin` permission; the script prints its generated password once and then removes `SEED_USER_*` from the env file. The Strapi admin user is registered at `/admin` as usual.
+
+It holds the deploy lock while the backend starts (a few minutes on the first boot), so a CI deploy arriving in that window fails with "Another deploy is running" and has to be rerun.
 
 `migrate-to-proxy.sh` did the one-time move from one container per port to this setup (2026-10-09). It is kept for reference.
 
