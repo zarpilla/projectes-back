@@ -1,61 +1,85 @@
-# 🚀 Getting started with Strapi
+# ESSTRAPIS backend
 
-Strapi comes with a full featured [Command Line Interface](https://docs.strapi.io/dev-docs/cli) (CLI) which lets you scaffold and manage your project in seconds.
+The API of **ESSTRAPIS**, management software for cooperatives, associations and other organisations of the Social and Solidarity Economy (ESS, *Economia Social i Solidària*).
 
-### `develop`
+This repository is the backend, built on [Strapi 5](https://strapi.io). The web application that people use is in [projectes-front](https://github.com/zarpilla/projectes-front).
 
-Start your Strapi application with autoReload enabled. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-develop)
+- Website: https://esstrapis.org
+- Frontend: https://github.com/zarpilla/projectes-front
+- Previous backend (Strapi 3, deprecated): https://github.com/zarpilla/projectes
 
+## What is ESSTRAPIS?
+
+ESSTRAPIS brings the day-to-day management of an organisation into one place: its projects, the hours each person puts into them, and the money that comes in and goes out. Everything revolves around the project, so that at any moment you can see whether it is going as budgeted: what was expected to be earned, spent and worked, and what actually was.
+
+| Area | What it covers |
+| ---- | -------------- |
+| **Projects** | Projects with phases and budgets, parent and child projects, planning (Gantt), tasks, contacts, quotes |
+| **Time** | Hours per person, task and project, workday log, hour balance, festives, payroll and advances |
+| **Money** | Issued and received invoices, expenses, diets and tickets, VAT, treasury and forecasts |
+| **E-invoicing** | [VERI\*FACTU](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu.html) records and electronic invoices to the public administration through FACe |
+| **Grants** | Economic status of each grant and its justifications |
+| **Logistics** | Orders, pickup points, routes and incidences, for the organisations that deliver goods |
+| **Data** | Pivot tables and charts, CSV export, and this API |
+
+ESSTRAPIS is used by cooperatives such as Resilience Earth, Arran de Terra, La Diligència, Raiels, L'Arada and Núria Social. Each organisation runs as its own tenant, with its own database.
+
+## Stack
+
+- Strapi 5 on Node 20
+- MySQL
+- Jest for tests
+
+## Getting started
+
+You need Node 20 (`nvm use` reads `.nvmrc`) and a MySQL database.
+
+```bash
+npm install
+
+# settings: server, secrets, database, email
+cp .env.example .env
+
+# Strapi in develop mode, with the admin panel at http://localhost:1337/admin
+npm run dev
 ```
-npm run develop
-# or
-yarn develop
-```
 
-### `start`
+Then run the [frontend](https://github.com/zarpilla/projectes-front) with `VUE_APP_API_URL` pointing at this server.
 
-Start your Strapi application with autoReload disabled. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-start)
+| Command | What it does |
+| ------- | ------------ |
+| `npm run dev` | Strapi with auto-reload |
+| `npm run build` | Build the admin panel |
+| `npm start` | Strapi without auto-reload (production) |
+| `npm test` | All tests in `tests/` |
+| `npm test -- tests/<file>.test.js` | One test file |
+| `npm run lint` | ESLint |
 
-```
-npm run start
-# or
-yarn start
-```
+## Project layout
 
-### `build`
+| Path | Contents |
+| ---- | -------- |
+| `src/api/` | Content types with their controllers, services and lifecycles |
+| `src/services/` | Shared services and run-once startup scripts that repair data |
+| `config/` | Strapi configuration, including the cron jobs |
+| `tests/` | Jest tests. They stub `global.strapi` and don't boot Strapi |
+| `deploy/` | Server scripts for the Docker deployment |
+| `tools/` | The ETL and tooling used to migrate from Strapi 3 |
 
-Build your admin panel. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-build)
+## Documentation
 
-```
-npm run build
-# or
-yarn build
-```
+| Question | Doc |
+| -------- | --- |
+| How do I write a query, and which access layer do I use? | [docs/DATA_ACCESS_CONVENTIONS.md](docs/DATA_ACCESS_CONVENTIONS.md) |
+| How do I ship to the tenants? | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| A screen is blank or a value is missing after the migration | [docs/V3_TO_V5_TRAPS.md](docs/V3_TO_V5_TRAPS.md) |
+| How did the Strapi 3 to 5 migration go? | [MIGRATION.md](MIGRATION.md) |
+| Conventions for tests and data repairs | [AGENTS.md](AGENTS.md) |
 
-## ⚙️ Deployment
+## Deployment
 
-Strapi gives you many possible deployment options for your project including [Strapi Cloud](https://cloud.strapi.io). Browse the [deployment section of the documentation](https://docs.strapi.io/dev-docs/deployment) to find the best solution for your use case.
+One Docker image serves every tenant; tenant settings come from the environment. A push to `main` runs the tests, builds the image and deploys it. Changes to docs, `deploy/` and Markdown files don't trigger a build. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-```
-yarn strapi deploy
-```
+## Contributing
 
-## 📚 Learn more
-
-- [Resource center](https://strapi.io/resource-center) - Strapi resource center.
-- [Strapi documentation](https://docs.strapi.io) - Official Strapi documentation.
-- [Strapi tutorials](https://strapi.io/tutorials) - List of tutorials made by the core team and the community.
-- [Strapi blog](https://strapi.io/blog) - Official Strapi blog containing articles made by the Strapi team and the community.
-- [Changelog](https://strapi.io/changelog) - Find out about the Strapi product updates, new features and general improvements.
-
-Feel free to check out the [Strapi GitHub repository](https://github.com/strapi/strapi). Your feedback and contributions are welcome!
-
-## ✨ Community
-
-- [Discord](https://discord.strapi.io) - Come chat with the Strapi community including the core team.
-- [Forum](https://forum.strapi.io/) - Place to discuss, ask questions and find answers, show your Strapi project and get feedback or just talk with other Community members.
-- [Awesome Strapi](https://github.com/strapi/awesome-strapi) - A curated list of awesome things related to Strapi.
-
----
-
-<sub>🤫 Psst! [Strapi is hiring](https://strapi.io/careers).</sub>
+Every bug fix or feature should come with a test that fails before the change and passes after it. Issues are tracked at https://tiquets.esstrapis.org.
