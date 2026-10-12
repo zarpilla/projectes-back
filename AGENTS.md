@@ -4,6 +4,7 @@
 - `npm run dev` — Strapi in develop mode
 - `npm test` — Jest (all `tests/**/*.test.js`)
 - `npm test -- tests/<file>.test.js` — a single test file
+- `npm run test:cov` — all tests with coverage; fails under the floor in `jest.config.js` (what CI runs)
 - `npm run lint`
 
 ## Tests
@@ -14,6 +15,7 @@ Every bug fix or feature should come with a test that fails before the change an
 - Controllers are tested by calling the action with a fake `ctx` (`request.body`, `params`, `state.user`, `send`/`body`).
 - For regressions, start the file with a comment describing the incident or issue (date, what broke, what the test guards). Reference the issue id when there is one (e.g. `issues/001`).
 - `@/` resolves to `src/`.
+- `tests/calculate-estimated-totals.test.js` also compares the financial engine against recorded results of generated projects (`tests/__snapshots__/`). They must stay bit-for-bit equal unless a change is intended; then review the diff and update with `npm test -- -u tests/calculate-estimated-totals.test.js`.
 
 ## Repairing existing data: run-once startup scripts
 A code fix only corrects rows written from now on. When the bug also left wrong data behind (stale totals, missing computed fields), ship the repair with the fix as a run-once startup script, so every tenant is corrected on its next deploy without manual SQL:

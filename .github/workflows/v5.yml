@@ -53,8 +53,9 @@ jobs:
       # most to find: relations that must be populated, `select` lists that must
       # name only scalars, lifecycle writes that must carry `_internal`, secrets
       # that must not be hashed, and the ETL's column pairing.
+      # With coverage, so the floor in jest.config.js (coverageThreshold) is enforced.
       - name: Run tests
-        run: npm test
+        run: npm run test:cov
 
   build-and-push:
     needs: test
