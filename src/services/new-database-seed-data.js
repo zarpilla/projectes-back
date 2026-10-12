@@ -35,9 +35,9 @@ const CATALOGS = {
     { name: 'Transport', vat_pct: 21 },
     { name: 'Compres', vat_pct: 21 },
     { name: "Ma d'obra", vat_pct: 0 },
-    { name: 'Quotes' },
-    { name: 'Comissions bancàries' },
-    { name: "Ajustament salarial final d'any" },
+    { name: 'Quotes', vat_pct: 0 },
+    { name: 'Comissions bancàries', vat_pct: 0 },
+    { name: "Ajustament salarial final d'any", vat_pct: 0 },
   ],
   'api::festive-type.festive-type': [
     { name: 'Festiu Estatal', personal: false, max: 8 },

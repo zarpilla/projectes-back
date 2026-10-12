@@ -12,6 +12,7 @@ const { mergeInvalidPeriodificationYears } = require('./services/merge-invalid-p
 const { ensureResetPasswordUrl } = require('./services/ensure-reset-password-url');
 const { ensureAuthEmailTemplates } = require('./services/ensure-auth-email-templates');
 const { recalcZeroQuoteTotals } = require('./services/recalc-zero-quote-totals');
+const { zeroVatExpenseTypes } = require('./services/zero-vat-expense-types');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -88,6 +89,8 @@ module.exports = {
       ['ensureAuthEmailTemplates', ensureAuthEmailTemplates, { runOnce: false }],
       // issues/022: quotes saved on v5 had every total at 0.
       ['recalcZeroQuoteTotals', recalcZeroQuoteTotals, { runOnce: true }],
+      // issues/033: 0 % expense types were budgeted at 21 % VAT.
+      ['zeroVatExpenseTypes', zeroVatExpenseTypes, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

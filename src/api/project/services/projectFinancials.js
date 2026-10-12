@@ -122,6 +122,16 @@ const getRealYear = (item) => {
 };
 
 /**
+ * VAT % of a budgeted expense line: its expense type's, or 21 when the line
+ * has no type or the type has no VAT set. A type at 0 % is 0, not "unset"
+ * (issues/033).
+ */
+const expenseVatPct = (line) => {
+  const vat_pct = line.expense_type ? line.expense_type.vat_pct : null;
+  return vat_pct === null || vat_pct === undefined || vat_pct === '' ? 21 : vat_pct;
+};
+
+/**
  * Walk a project's phase tree (either current `project_phases` or the
  * locked `project_original_phases`) to compute daily/yearly totals.
  *
@@ -377,10 +387,7 @@ const calculateEstimatedTotals = async (
             (expense.quantity ? expense.quantity : 0) * (expense.amount ? expense.amount : 0);
           total_expenses += (expense.quantity ? expense.quantity : 0) * (expense.amount ? expense.amount : 0);
 
-          expense.total_expenses_vat =
-            (expense.total_amount *
-              (expense.expense_type && expense.expense_type.vat_pct ? expense.expense_type.vat_pct : 21)) /
-            100.0;
+          expense.total_expenses_vat = (expense.total_amount * expenseVatPct(expense)) / 100.0;
 
           total_expenses_vat += expense.total_expenses_vat;
 
@@ -532,7 +539,7 @@ const pushEstimatedExpenseRows = (out, p, projectInfo, getDeductibleRatio) => {
       const phaseInfo = { phase: ph.name, subphase: sph.concept };
       const document = sph.invoice || sph.expense;
       const estimate_date = sph.date_estimate_document || sph.date;
-      const vat_pct = sph.expense_type && sph.expense_type.vat_pct ? sph.expense_type.vat_pct : 21;
+      const vat_pct = expenseVatPct(sph);
       const estimatedDeductibleRatio = getDeductibleRatio(estimate_date);
 
       // Estimated expense (all lines, paid or unpaid)
@@ -619,7 +626,7 @@ const pushOriginalIncomeAndExpenseRows = (out, p, projectInfo, getDeductibleRati
       const phaseInfo = { phase: ph.name, subphase: sph.concept };
       const document = sph.invoice || sph.expense;
       const date = sph.date_estimate_document || sph.date;
-      const vat_pct = sph.expense_type && sph.expense_type.vat_pct ? sph.expense_type.vat_pct : 21;
+      const vat_pct = expenseVatPct(sph);
       const originalDeductibleRatio = getDeductibleRatio(date);
 
       out.push({
