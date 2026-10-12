@@ -11,11 +11,14 @@
  *
  * afterUpdate enqueues VeriFactu-chain and FACe-queue items when the org
  * settings enable them, and regenerates the PDF on first render or on the
- * draft->real conversion.
+ * draft->real conversion (beforeUpdate flags the conversion in `event.state`),
+ * after which the draft's PDF file is removed.
  *
  * The v3 afterFindOne (face/verifactu status injection) moved to the
  * emitted-invoice controller's findOne override (v5 removed afterFindOne).
  */
+const fs = require('fs');
+const path = require('path');
 const { scheduleFromEntityProjects } = require('../../../project/services/totalsRefreshScheduler');
 const { rawExecute } = require('../../../../services/raw-sql');
 const { getMe } = require('../../../../services/me-settings');
@@ -30,6 +33,8 @@ module.exports = {
     const data = event.params.data;
     data.state = 'draft';
     data.code = 'ESBORRANY';
+    // The number comes from the serie when the invoice is issued (issues/035).
+    delete data.number;
 
     if (!data.payment_method) {
       const firstPaymentMethod = await strapi.db
@@ -80,10 +85,24 @@ module.exports = {
       }
     }
 
-    await fillContactInfo(data);
+    // issues/035: an issued invoice stays issued. The state was not among the
+    // locked fields, so a save sending `state: 'draft'` stored it as a draft
+    // with its number.
+    const wasReal = Boolean(invoice && invoice.state === 'real');
+    if (wasReal && data.state !== undefined) data.state = 'real';
+
+    // The client's details are the ones the invoice was issued with. Through
+    // the document service the lock-issued-invoices middleware has already
+    // dropped them; this covers the writes that skip it.
+    if (wasReal) {
+      delete data.contact_info;
+    } else {
+      await fillContactInfo(data);
+    }
 
     // Real invoices: lock the core fields to their stored values.
     if (invoice && invoice.state === 'real') {
+      if (invoice.number) data.number = invoice.number;
       data.lines = invoice.lines;
       data.contact = invoice.contact;
       data.emitted = invoice.emitted;
@@ -96,11 +115,17 @@ module.exports = {
 
     if (!data._internal) {
       data.updatable_admin = false;
+      // The number comes from the serie, never from the client (issues/035).
+      if (!wasReal) delete data.number;
       await handleState(data, invoice);
       await calculateTotals(data);
     } else {
       delete data.user_real;
     }
+
+    // issues/034: afterUpdate can't tell from the payload that the invoice has
+    // just been issued (handleState has replaced its ESBORRANY code), so say it.
+    if (event.state) event.state.issued = !wasReal && !data._internal && data.state === 'real';
 
     cleanupUserFields(data);
   },
@@ -184,13 +209,14 @@ module.exports = {
       }
     }
 
-    // Regenerate PDF: first render OR the draft->real conversion.
-    const shouldRegeneratePdf =
-      (invoice && !invoice.pdf) ||
-      (invoice && invoice.state === 'real' && data.state === 'real' && data.code === 'ESBORRANY');
+    // Regenerate PDF: first render OR the draft->real conversion, whose PDF
+    // still says ESBORRANY.
+    const issued = Boolean(event.state && event.state.issued);
+    const shouldRegeneratePdf = (invoice && !invoice.pdf) || (invoice && invoice.state === 'real' && issued);
     if (invoice && shouldRegeneratePdf) {
       try {
         await regeneratePdf(event.params.where.id);
+        if (issued) await removeDraftPdf(invoice.id, invoice.pdf);
       } catch (err) {
         console.error('Error generating PDF after update:', err);
       }
@@ -240,6 +266,30 @@ async function regeneratePdf(id) {
   });
 }
 
+// issues/034: the PDF's file name carries the code, so the one drawn on issuing
+// is a new file and the draft's would stay in public/uploads/documents for good.
+// Only a draft's own file goes: a duplicated invoice starts out with the `pdf`
+// path of its original, which must survive.
+async function removeDraftPdf(id, draftPdf) {
+  const isDraftFile =
+    typeof draftPdf === 'string' &&
+    path.posix.normalize(draftPdf) === draftPdf &&
+    path.posix.dirname(draftPdf) === '/uploads/documents' &&
+    path.posix.basename(draftPdf).includes('-ESBORRANY-H');
+  if (!isDraftFile) return;
+
+  const query = strapi.db.query('api::emitted-invoice.emitted-invoice');
+  const invoice = await query.findOne({ where: { id } });
+  if (!invoice || !invoice.pdf || invoice.pdf === draftPdf) return;
+  if ((await query.count({ where: { pdf: draftPdf } })) > 0) return;
+
+  try {
+    await fs.promises.unlink(`./public${draftPdf}`);
+  } catch (err) {
+    if (err.code !== 'ENOENT') console.error('Error removing the draft PDF:', err);
+  }
+}
+
 function cleanupUserFields(data) {
   for (const f of ['user_real', 'user_draft']) {
     if (f in data && (data[f] === '' || data[f] === null || data[f] === undefined)) {
@@ -273,7 +323,7 @@ async function handleState(data, stored) {
       ? await strapi.db.query('api::serie.serie').findOne({ where: { id: serialId } })
       : null;
     if (serial) {
-      const existingNumber = data.number || (stored && stored.number);
+      const existingNumber = stored && stored.number;
       if (existingNumber) {
         data.number = existingNumber;
       } else {

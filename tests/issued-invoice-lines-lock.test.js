@@ -13,9 +13,12 @@
  *
  * The document middleware (services/lock-issued-invoices.js) drops `lines`
  * from updates of real invoices before the document service sees them.
+ *
+ * issues/035: the same goes for `contact_info`, the client's details the
+ * invoice was issued with, which is a component too.
  */
 
-const { lockIssuedInvoiceLines } = require('../src/services/lock-issued-invoices');
+const { lockIssuedInvoiceComponents } = require('../src/services/lock-issued-invoices');
 
 const UID = 'api::emitted-invoice.emitted-invoice';
 
@@ -34,31 +37,45 @@ describe('issued invoices keep their lines (issues/023)', () => {
     mockStrapi({ id: 1, state: 'real' });
     const next = jest.fn(async () => 'result');
     const ctx = context({ lines: [{ concept: 'x', base: 1, quantity: 1 }], paid: true });
-    expect(await lockIssuedInvoiceLines(ctx, next)).toBe('result');
+    expect(await lockIssuedInvoiceComponents(ctx, next)).toBe('result');
     expect(ctx.params.data).toEqual({ paid: true });
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops the client's details of an update to a real invoice (issues/035)", async () => {
+    mockStrapi({ id: 1, state: 'real' });
+    const ctx = context({ contact_info: { name: 'Una altra SL' }, paid: true });
+    await lockIssuedInvoiceComponents(ctx, jest.fn());
+    expect(ctx.params.data).toEqual({ paid: true });
+  });
+
+  it("lets a draft change its client's details", async () => {
+    mockStrapi({ id: 1, state: 'draft' });
+    const ctx = context({ contact_info: { name: 'Una altra SL' } });
+    await lockIssuedInvoiceComponents(ctx, jest.fn());
+    expect(ctx.params.data.contact_info).toEqual({ name: 'Una altra SL' });
   });
 
   it('leaves drafts alone', async () => {
     mockStrapi({ id: 1, state: 'draft' });
     const lines = [{ concept: 'x', base: 1, quantity: 1 }];
     const ctx = context({ lines });
-    await lockIssuedInvoiceLines(ctx, jest.fn());
+    await lockIssuedInvoiceComponents(ctx, jest.fn());
     expect(ctx.params.data.lines).toBe(lines);
   });
 
-  it('does not look up the invoice when the update has no lines, or for other types and actions', async () => {
+  it("does not look up the invoice when the update has no lines or client's details, or for other types and actions", async () => {
     const { findOne } = mockStrapi({ id: 1, state: 'real' });
-    await lockIssuedInvoiceLines(context({ paid: true }), jest.fn());
-    await lockIssuedInvoiceLines(context({ lines: [] }, { uid: 'api::quote.quote' }), jest.fn());
-    await lockIssuedInvoiceLines(context({ lines: [] }, { action: 'create' }), jest.fn());
+    await lockIssuedInvoiceComponents(context({ paid: true }), jest.fn());
+    await lockIssuedInvoiceComponents(context({ lines: [] }, { uid: 'api::quote.quote' }), jest.fn());
+    await lockIssuedInvoiceComponents(context({ lines: [] }, { action: 'create' }), jest.fn());
     expect(findOne).not.toHaveBeenCalled();
   });
 
   it('lets the update that issues the invoice through (it still is a draft)', async () => {
     mockStrapi({ id: 1, state: 'draft' });
     const ctx = context({ state: 'real', code: 'ESBORRANY', lines: [{ id: 9 }] });
-    await lockIssuedInvoiceLines(ctx, jest.fn());
+    await lockIssuedInvoiceComponents(ctx, jest.fn());
     expect(ctx.params.data.lines).toEqual([{ id: 9 }]);
   });
 });

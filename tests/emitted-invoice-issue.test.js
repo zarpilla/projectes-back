@@ -7,7 +7,9 @@
  *     client's details and its totals;
  *   - "Emetre factura" (state draft -> real) takes the next number of its serie
  *     and builds the code; the number is taken once;
- *   - an issued invoice keeps its number, code and lines whatever is saved later;
+ *   - an issued invoice keeps its number, code and lines whatever is saved later,
+ *     and stays issued (issues/035);
+ *   - its PDF is drawn again when it is issued, with the number (issues/034);
  *   - once issued it is queued for VeriFactu and FACe when those are switched on,
  *     once each.
  *
@@ -97,8 +99,10 @@ afterEach(() => {
   delete global.strapi;
 });
 
+// Strapi hands every hook of one write the same `params` and `state`.
+const updateEvent = (data) => ({ params: { where: { id: 1 }, data }, state: {} });
 const update = async (data) => {
-  const event = { params: { where: { id: 1 }, data } };
+  const event = updateEvent(data);
   await lifecycles.beforeUpdate(event);
   return event.params.data;
 };
@@ -218,6 +222,13 @@ describe('issuing ("Emetre factura")', () => {
     expect(queries[SERIE].update).not.toHaveBeenCalled();
   });
 
+  // issues/035: the number comes from the serie, never from the client.
+  it('ignores a number sent with the save that issues it', async () => {
+    const data = await issue({ number: 999 });
+
+    expect(data).toMatchObject({ number: 42, code: '2026-0042' });
+  });
+
   it('still converts when the client already holds the assigned code', async () => {
     db.invoice.number = 17;
 
@@ -228,6 +239,17 @@ describe('issuing ("Emetre factura")', () => {
     const data = await issue({ lines: [{ quantity: 2, base: 100, vat: 21, irpf: 15 }] });
 
     expect([data.total_base, data.total_vat, data.total_irpf, data.total]).toEqual([200, 42, 30, 212]);
+  });
+
+  it('a draft does not store a number sent by the client, which issuing would then keep', async () => {
+    expect(await update({ state: 'draft', number: 999 })).not.toHaveProperty('number');
+  });
+
+  it('a new invoice does not either', async () => {
+    const data = { number: 999, lines: [] };
+    await lifecycles.beforeCreate({ params: { data } });
+
+    expect(data).not.toHaveProperty('number');
   });
 
   it('a save as draft stays a draft and takes no number', async () => {
@@ -288,6 +310,30 @@ describe('an issued invoice', () => {
 
   it('is not walked back to ESBORRANY by a save that leaves the state out', async () => {
     expect((await update({ paid: true })).code).toBe('2026-0042');
+  });
+
+  // issues/035: the state was not among the locked fields, so a PUT with
+  // `state: 'draft'` stored an issued invoice as a draft, number and all.
+  it('stays issued when a save sends it back as a draft', async () => {
+    expect(await update({ state: 'draft', paid: true })).toMatchObject({
+      state: 'real',
+      code: '2026-0042',
+      paid: true,
+    });
+    expect(queries[SERIE].update).not.toHaveBeenCalled();
+  });
+
+  // issues/035: the client's details are the ones it was issued with.
+  it("keeps the client's details: no save rewrites them, from another client or as sent", async () => {
+    db.contact = { id: 77, name: 'Una altra SL', nif: 'B00000000' };
+
+    expect(await update({ state: 'draft', contact: 77 })).not.toHaveProperty('contact_info');
+    expect(await update({ contact: 77 })).not.toHaveProperty('contact_info');
+    expect(await update({ contact_info: { name: 'Una altra SL' } })).not.toHaveProperty('contact_info');
+  });
+
+  it('keeps its number whatever the save sends', async () => {
+    expect((await update({ number: 999 })).number).toBe(42);
   });
 
   it('refuses every save once it is not updatable, unless an admin unlocks it', async () => {
@@ -432,6 +478,114 @@ describe('the invoice PDF after a save', () => {
     await afterUpdate({ paid: true });
 
     expect(pdf).not.toHaveBeenCalled();
+  });
+
+  // issues/034: the draft's PDF says ESBORRANY. afterUpdate looked for that code
+  // in the payload to know the invoice was being issued, but beforeUpdate has
+  // put the assigned code there by then, so the PDF was never drawn again.
+  it('is rendered again when the invoice is issued, so it carries the number', async () => {
+    db.invoice = { id: 1, state: 'draft', code: 'ESBORRANY', serial: { id: 3 }, pdf: 'draft.pdf' };
+    const event = updateEvent({ state: 'real', code: 'ESBORRANY', user_last: 5 });
+
+    await lifecycles.beforeUpdate(event);
+    db.invoice = { ...db.invoice, state: 'real', code: event.params.data.code };
+    await lifecycles.afterUpdate({ ...event, result: { id: 1 } });
+
+    expect(event.params.data.code).toBe('2026-0042');
+    expect(pdf).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not rendered again by later saves of the issued invoice', async () => {
+    db.invoice = { id: 1, state: 'real', code: '2026-0042', number: 42, pdf: 'issued.pdf' };
+    const event = updateEvent({ state: 'real', code: 'ESBORRANY', paid: true });
+
+    await lifecycles.beforeUpdate(event);
+    await lifecycles.afterUpdate({ ...event, result: { id: 1 } });
+
+    expect(pdf).not.toHaveBeenCalled();
+  });
+
+  // issues/034: the PDF's name carries the code, so issuing writes a new file
+  // and the draft's stayed in public/uploads/documents for good.
+  describe("the draft's file once the invoice is issued", () => {
+    const fs = require('fs');
+    const DRAFT = '/uploads/documents/Factura-Clienta SCCL-ESBORRANY-Habc.pdf';
+    const ISSUED = '/uploads/documents/Factura-Clienta SCCL-2026-0042-Hdef.pdf';
+    let unlink;
+
+    beforeEach(() => {
+      unlink = jest.spyOn(fs.promises, 'unlink').mockResolvedValue();
+      queries[INVOICE].count = jest.fn(async () => 0);
+      db.invoice = { id: 1, state: 'draft', code: 'ESBORRANY', serial: { id: 3 }, pdf: DRAFT };
+      // what the pdf action does: write the new file and store its path
+      pdf.mockImplementation(async () => {
+        db.invoice = { ...db.invoice, pdf: ISSUED };
+      });
+    });
+    afterEach(() => unlink.mockRestore());
+
+    const issueAndSave = async () => {
+      const event = updateEvent({ state: 'real', code: 'ESBORRANY', user_last: 5 });
+      await lifecycles.beforeUpdate(event);
+      db.invoice = { ...db.invoice, state: 'real', code: event.params.data.code };
+      await lifecycles.afterUpdate({ ...event, result: { id: 1 } });
+    };
+
+    it('is removed', async () => {
+      await issueAndSave();
+
+      expect(queries[INVOICE].count).toHaveBeenCalledWith({ where: { pdf: DRAFT } });
+      expect(unlink).toHaveBeenCalledTimes(1);
+      expect(unlink).toHaveBeenCalledWith(`./public${DRAFT}`);
+    });
+
+    it('stays when another invoice points at it (a duplicate keeps the path of its original)', async () => {
+      queries[INVOICE].count.mockResolvedValue(1);
+      await issueAndSave();
+
+      expect(unlink).not.toHaveBeenCalled();
+    });
+
+    it('stays when the new PDF could not be rendered, or took the same path', async () => {
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      pdf.mockRejectedValue(new Error('no logo file'));
+      await issueAndSave();
+
+      db.invoice = { id: 1, state: 'draft', code: 'ESBORRANY', serial: { id: 3 }, pdf: DRAFT };
+      pdf.mockImplementation(async () => {});
+      await issueAndSave();
+
+      expect(unlink).not.toHaveBeenCalled();
+      error.mockRestore();
+    });
+
+    it("is only touched when it is a draft's PDF in the documents folder", async () => {
+      for (const other of [
+        '/uploads/documents/Factura-Clienta SCCL-2025-0007-Habc.pdf',
+        '/uploads/factura-ESBORRANY-Habc.pdf',
+        '/uploads/documents/../../.env-ESBORRANY-H.pdf',
+        'https://example.org/x-ESBORRANY-H.pdf',
+      ]) {
+        db.invoice = { id: 1, state: 'draft', code: 'ESBORRANY', serial: { id: 3 }, pdf: other };
+        await issueAndSave();
+      }
+
+      expect(unlink).not.toHaveBeenCalled();
+    });
+
+    it('does not fail the save when the file is already gone', async () => {
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      unlink.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
+
+      await expect(issueAndSave()).resolves.toBeUndefined();
+      error.mockRestore();
+    });
+
+    it('is left alone by saves that do not issue the invoice', async () => {
+      await afterUpdate({ paid: true });
+
+      expect(unlink).not.toHaveBeenCalled();
+    });
   });
 
   it('does not fail the save when it cannot be rendered', async () => {
