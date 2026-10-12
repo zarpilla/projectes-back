@@ -21,9 +21,8 @@ const fs = require('fs');
 const axios = require('axios');
 const https = require('https');
 const path = require('path');
-const crypto = require('crypto');
-const { execSync } = require('child_process');
 const { signFacturaeXml } = require('../utils/sign-facturae');
+const { generateFaceJWT } = require('../utils/face-jwt');
 const { relationId } = require('../../../services/relation-input');
 const { decryptSecret } = require('../../../services/secret-crypto');
 
@@ -34,129 +33,6 @@ const FACE_QUEUE_UID = 'api::face-queue.face-queue';
 const EMITTED_INVOICE_UID = 'api::emitted-invoice.emitted-invoice';
 const ME_UID = 'api::me.me';
 const CONTACT_UID = 'api::contact.contact';
-
-/**
- * Generate JWT token for FACe API authentication
- * According to FACe API manual: JWT signed with JWS (RS256), valid for 5 minutes
- * Manual: /home/jordi/Documents/work/webcoop/face/FACe - Manual de API de Proveedores.pdf (page 7)
- */
-const generateFaceJWT = (certificatePath, certificatePassword) => {
-  try {
-    // Extract private key and certificate from PFX using OpenSSL commands
-    // We need to convert PFX to PEM format to extract the public certificate
-    const tmpCertPath = `/tmp/face_cert_${Date.now()}.pem`;
-    const tmpKeyPath = `/tmp/face_key_${Date.now()}.pem`;
-
-    try {
-      // Extract certificate (public part) - only client cert, no chain
-      execSync(`openssl pkcs12 -in "${certificatePath}" -clcerts -nokeys -out "${tmpCertPath}" -passin pass:"${certificatePassword || ''}"`);
-
-      // Extract private key
-      execSync(`openssl pkcs12 -in "${certificatePath}" -nocerts -nodes -out "${tmpKeyPath}" -passin pass:"${certificatePassword || ''}"`);
-
-      // Read the extracted PEM certificate
-      let certPem = fs.readFileSync(tmpCertPath, 'utf8');
-
-      // Extract ONLY the certificate part (between BEGIN and END CERTIFICATE)
-      // OpenSSL output may include Bag Attributes and other info we don't want
-      const certMatch = certPem.match(/-----BEGIN CERTIFICATE-----\s*([\s\S]+?)\s*-----END CERTIFICATE-----/);
-      if (!certMatch) {
-        throw new Error('Could not extract certificate from PFX');
-      }
-
-      // Clean PEM: remove all whitespace and newlines
-      const pemCleaned = certMatch[1]
-        .replace(/\s/g, '')  // Remove ALL whitespace (spaces, tabs, newlines)
-        .trim();
-
-      // Calculate SHA1 hash of the cleaned PEM for username
-      const username = crypto.createHash('sha1').update(pemCleaned).digest('hex');
-
-      // Generate timestamps (Unix timestamp in seconds)
-      const now = Math.floor(Date.now() / 1000);
-      const iat = now;
-      const exp = now + (5 * 60); // 5 minutes validity
-
-      // Build JWT Header
-      const header = {
-        typ: "JWT",
-        alg: "RS256",
-        x5c: [pemCleaned]
-      };
-
-      // Build JWT Payload
-      const payload = {
-        username: username,
-        iat: iat,
-        exp: exp
-      };
-
-      // Encode header and payload in base64url
-      const base64UrlEncode = (obj) => {
-        const json = JSON.stringify(obj);
-        return Buffer.from(json)
-          .toString('base64')
-          .replace(/\+/g, '-')
-          .replace(/\//g, '_')
-          .replace(/=/g, '');
-      };
-
-      const headerEncoded = base64UrlEncode(header);
-      const payloadEncoded = base64UrlEncode(payload);
-
-      // Create the signature input
-      const signatureInput = `${headerEncoded}.${payloadEncoded}`;
-
-      // Read private key
-      let privateKeyPem = fs.readFileSync(tmpKeyPath, 'utf8');
-
-      // Extract only the private key part (OpenSSL may include Bag Attributes)
-      const keyMatch = privateKeyPem.match(/-----BEGIN PRIVATE KEY-----[\s\S]+?-----END PRIVATE KEY-----/);
-      const rsaKeyMatch = privateKeyPem.match(/-----BEGIN RSA PRIVATE KEY-----[\s\S]+?-----END RSA PRIVATE KEY-----/);
-
-      let privateKey;
-      if (keyMatch) {
-        privateKey = keyMatch[0];
-      } else if (rsaKeyMatch) {
-        privateKey = rsaKeyMatch[0];
-      } else {
-        throw new Error('Could not extract private key from PFX');
-      }
-
-      // Sign with RS256 (RSA with SHA-256)
-      const signature = crypto.sign('RSA-SHA256', Buffer.from(signatureInput), {
-        key: privateKey,
-        padding: crypto.constants.RSA_PKCS1_PADDING
-      });
-
-      // Encode signature in base64url
-      const signatureEncoded = signature
-        .toString('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=/g, '');
-
-      // Construct the final JWT
-      const jwt = `${headerEncoded}.${payloadEncoded}.${signatureEncoded}`;
-
-      // Clean up temporary files
-      fs.unlinkSync(tmpCertPath);
-      fs.unlinkSync(tmpKeyPath);
-
-      return jwt;
-
-    } catch (execError) {
-      // Clean up temp files if they exist
-      try { if (fs.existsSync(tmpCertPath)) fs.unlinkSync(tmpCertPath); } catch { /* noop */ }
-      try { if (fs.existsSync(tmpKeyPath)) fs.unlinkSync(tmpKeyPath); } catch { /* noop */ }
-      throw execError;
-    }
-
-  } catch (error) {
-    strapi.log.error("[face-queue] Error generating JWT:", error.message);
-    throw new Error(`Failed to generate FACe JWT: ${error.message}`, { cause: error });
-  }
-};
 
 const toNumber = (value) => {
   const n = Number(value || 0);
