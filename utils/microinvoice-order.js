@@ -805,14 +805,15 @@ module.exports = class MicroinvoiceOrder {
       return this.document;
     }
 
+    // Resolve once the file is on disk: the document's 'end' fires before the
+    // write stream has flushed, and the caller reads the file straight away.
     return new Promise((resolve, reject) => {
-      this.document.on('end', () => {
+      _stream.on('finish', () => {
         return resolve();
       });
 
-      this.document.on('error', () => {
-        return reject();
-      });
+      _stream.on('error', reject);
+      this.document.on('error', reject);
     });
   }
 };

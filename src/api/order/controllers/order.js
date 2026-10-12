@@ -16,7 +16,7 @@ const crypto = require('crypto');
 const moment = require('moment');
 const sharp = require('sharp');
 const QRCode = require('qrcode');
-const PDFMerge = require('pdf-merge');
+const { PDFDocument } = require('pdf-lib');
 const MicroInvoiceOrder = require('../../../../utils/microinvoice-order');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { applyFinalPrice, applyFinalPriceToAll } = require('../services/final-price');
@@ -291,7 +291,18 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     const { orders: orderIds } = ctx.request.body;
     const ordersEntities = await strapi.db.query('api::order.order').findMany({
       where: { id: { $in: orderIds } },
-      populate: { owner: true, contact: true, route: true, pickup: true, contact_legal_form: true },
+      // lines (component) and the transfer pickups feed the box labels and the
+      // route chain below; v5 returns none of them without an explicit populate.
+      populate: {
+        owner: true,
+        contact: true,
+        route: true,
+        pickup: true,
+        contact_legal_form: true,
+        lines: true,
+        transfer_pickup_origin: true,
+        transfer_pickup_destination: true,
+      },
     });
 
     const me = await getMe();
@@ -437,10 +448,17 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       urls.push(docName);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
     const fileName =
       orderIds.length === 1 ? orderIds[0] : crypto.createHash('md5').update(orderIds.join('-')).digest('hex');
-    const mergedPdf = await PDFMerge(urls, { output: 'Buffer' });
+    // Merged in-process: pdf-merge shelled out to pdftk, which the Docker image
+    // does not have (issues/036).
+    const merged = await PDFDocument.create();
+    for (const url of urls) {
+      const doc = await PDFDocument.load(fs.readFileSync(url));
+      const pages = await merged.copyPages(doc, doc.getPageIndices());
+      for (const page of pages) merged.addPage(page);
+    }
+    const mergedPdf = await merged.save();
     const mergedPdfPath = `./public/uploads/orders/orders-${fileName}.pdf`;
     fs.writeFileSync(mergedPdfPath, mergedPdf);
     return { urls: mergedPdfPath.substring('./public'.length) };
