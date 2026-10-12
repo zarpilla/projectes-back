@@ -10,6 +10,7 @@ const { normalizeComponentTypes } = require('./services/normalize-component-type
 const { backfillActivityCosts } = require('./services/backfill-activity-costs');
 const { mergeInvalidPeriodificationYears } = require('./services/merge-invalid-periodification-years');
 const { ensureResetPasswordUrl } = require('./services/ensure-reset-password-url');
+const { ensureAuthEmailTemplates } = require('./services/ensure-auth-email-templates');
 const { recalcZeroQuoteTotals } = require('./services/recalc-zero-quote-totals');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
@@ -82,6 +83,9 @@ module.exports = {
       // issues/021: the password-reset e-mail needs the front's URL. Rerun on every
       // boot: it only fills the setting when empty, so setting the env var later works.
       ['ensureResetPasswordUrl', ensureResetPasswordUrl, { runOnce: false }],
+      // issues/021: the SMTP accounts refuse Strapi's default sender (no-reply@strapi.io);
+      // also puts the e-mails' text in Catalan.
+      ['ensureAuthEmailTemplates', ensureAuthEmailTemplates, { runOnce: false }],
       // issues/022: quotes saved on v5 had every total at 0.
       ['recalcZeroQuoteTotals', recalcZeroQuoteTotals, { runOnce: true }],
     ];
