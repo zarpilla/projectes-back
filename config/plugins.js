@@ -86,6 +86,11 @@ module.exports = ({ env }) => ({
       jwtManagement: 'refresh',
       sessions: {
         httpOnly: true,
+        // Unset: users-permissions marks the refresh cookie `secure` when
+        // NODE_ENV=production. The e2e CI runs the production image over plain
+        // http://localhost with no proxy, where Koa refuses a secure cookie and
+        // every login answers 500; it sets REFRESH_COOKIE_SECURE=false (issues/040).
+        cookie: { secure: env.bool('REFRESH_COOKIE_SECURE', undefined) },
       },
     },
   },
