@@ -15,6 +15,7 @@ const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { getMe } = require('../../../services/me-settings');
 const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
+const { payrollNetBankAccountName } = require('../services/payroll-bank');
 
 const getDeductiblePct = (years, emitted) => {
   const year = years.find(
@@ -881,7 +882,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             ? e.users_permissions_user.username
             : '',
         to: `/document/${e.id}/payrolls`,
-        bank_account: getBankAccountName(e.bank_account, me.bank_account_default),
+        bank_account: payrollNetBankAccountName(e, me),
         validation_key: validationKey,
         is_validated: validationMap[validationKey] || false,
       };
