@@ -21,6 +21,7 @@ const MicroInvoiceOrder = require('../../../../utils/microinvoice-order');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { applyFinalPrice, applyFinalPriceToAll } = require('../services/final-price');
 const { adaptQuery, adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
+const { statsDateRange } = require('../../../services/stats-date-range');
 const { rawExecute } = require('../../../services/raw-sql');
 const { getMe } = require('../../../services/me-settings');
 const { numericId } = require('../../../middlewares/v3-compat');
@@ -129,14 +130,10 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    */
   async infoAll(ctx) {
     const { year, month, ...query } = ctx.query;
-    if (year && !isNaN(year)) {
-      query.estimated_delivery_date_gte = `${year}-01-01`;
-      query.estimated_delivery_date_lte = `${year}-12-31`;
-    }
-    if (month && !isNaN(month)) {
-      query.estimated_delivery_date_gte = `${year}-${String(month).padStart(2, '0')}-01`;
-      const lastDay = moment(`${year}-${month}`, 'YYYY-MM').daysInMonth();
-      query.estimated_delivery_date_lte = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const range = statsDateRange(year, month);
+    if (range) {
+      query.estimated_delivery_date_gte = range.from;
+      query.estimated_delivery_date_lte = range.to;
     }
 
     const opts = adaptQuery(query);

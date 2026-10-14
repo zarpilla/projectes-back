@@ -8,6 +8,7 @@
 const moment = require('moment');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { statsDateRange } = require('../../../services/stats-date-range');
 const { setCurrentUserId } = require('../utils/updater');
 
 module.exports = createCoreController('api::incidence.incidence', ({ strapi }) => ({
@@ -39,15 +40,10 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
   async infoAll(ctx) {
     const { year, month, ...query } = ctx.query;
 
-    if (year && !isNaN(year)) {
-      query['created_at_gte'] = `${year}-01-01`;
-      query['created_at_lte'] = `${year}-12-31`;
-    }
-    if (month && !isNaN(month)) {
-      query['created_at_gte'] = `${year}-${String(month).padStart(2, '0')}-01`;
-      const lastDay = moment(`${year}-${month}`, 'YYYY-MM').daysInMonth();
-      query['created_at_lte'] =
-        `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const range = statsDateRange(year, month);
+    if (range) {
+      query['created_at_gte'] = range.from;
+      query['created_at_lte'] = range.to;
     }
 
     // v3 sent _limit=-1 for 'all rows'; db.query says that by omitting the limit.
@@ -74,7 +70,7 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
         : { id: 'desc' },
     });
 
-    return incidences.map((incidence) => {
+    const rows = incidences.map((incidence) => {
       const createdAt = incidence.createdAt ? moment(incidence.createdAt) : null;
       return {
         id: incidence.id,
@@ -96,5 +92,7 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
         month: createdAt ? `${createdAt.month() + 1}` : null,
       };
     });
+    // without a year there is no date range: keep that month of every year
+    return month && !isNaN(month) ? rows.filter((r) => Number(r.month) === Number(month)) : rows;
   },
 }));
