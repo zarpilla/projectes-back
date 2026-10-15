@@ -3,6 +3,7 @@
 const { importSeedPermissions, importSeedRows } = require('./services/bootstrap-permissions');
 const { runStartupScript } = require('./services/startup-scripts');
 const { registerRolePermissionsInvalidation } = require('./services/role-permissions-cache');
+const { registerUserDeleteGuard } = require('./services/user-delete-guard');
 const { seedNewDatabase } = require('./services/seed-new-database');
 const { recalcZeroDocumentTotals } = require('./services/recalc-zero-document-totals');
 const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoice-unique-index');
@@ -47,6 +48,8 @@ module.exports = {
   async bootstrap({ strapi }) {
     registerDateFieldNormalizer();
     registerRolePermissionsInvalidation();
+    // users with hours, payrolls or work periods can't be deleted (issues/050)
+    registerUserDeleteGuard();
     wrapEmailProvider(strapi);
 
     // A brand-new database gets its catalogs, settings and home menu (what used

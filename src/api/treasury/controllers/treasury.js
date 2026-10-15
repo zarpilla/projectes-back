@@ -5,6 +5,17 @@ const moment = require('moment');
 const _ = require('lodash');
 const { buildEstimatedForecastByYear } = require('../../project/services/projectFinancials');
 const zeroPad = (num, places) => String(num).padStart(places, '0');
+// "Nòmina 2026-03-anna". A payroll can point at a user who was deleted (v3 let
+// them be deleted; issues/050): populate gives null and the forecast answered
+// 500 for the whole tenant. Such payrolls still count, without a name.
+const payrollConcept = (payroll) => {
+  const year = payroll.year && payroll.year.year ? payroll.year.year : '';
+  const month = payroll.month && payroll.month.month ? zeroPad(payroll.month.month, 2) : '';
+  const user = payroll.users_permissions_user && payroll.users_permissions_user.username
+    ? payroll.users_permissions_user.username
+    : '';
+  return `Nòmina ${year}-${month}-${user}`;
+};
 
 /**
  * treasury controller (v5). Ported from v3 api/treasury/controllers/treasury.js (1,212 LOC).
@@ -872,7 +883,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         project_name: '',
         project_id: 0,
         type: e.paid ? 'Nòmina pagada' : 'Nòmina esperada',
-        concept: `Nòmina ${e.year.year}-${zeroPad(e.month.month, 2)}-${e.users_permissions_user.username}`,
+        concept: payrollConcept(e),
         total_amount: e.net_base ? -1 * e.net_base : 0,
         date: moment(e.net_date, 'YYYY-MM-DD'),
         date_error: (e.paid_date || e.emitted) === null,
@@ -894,7 +905,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           project_name: '',
           project_id: 0,
           type: 'IRPF Nòmina',
-          concept: `Nòmina ${e.year.year}-${zeroPad(e.month.month, 2)}-${e.users_permissions_user.username}`,
+          concept: payrollConcept(e),
           total_amount: e.irpf_base ? -1 * e.irpf_base : 0,
           date: moment(e.irpf_date, 'YYYY-MM-DD'),
           date_error: e.irpf_date === null,
@@ -917,7 +928,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           project_name: '',
           project_id: 0,
           type: 'Altres Nòmina',
-          concept: `Nòmina ${e.year.year}-${zeroPad(e.month.month, 2)}-${e.users_permissions_user.username}`,
+          concept: payrollConcept(e),
           total_amount: e.other_base ? -1 * e.other_base : 0,
           date: moment(e.other_date, 'YYYY-MM-DD'),
           date_error: e.other_date === null,
@@ -941,7 +952,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           project_name: '',
           project_id: 0,
           type: e.paid ? 'SS pagat' : 'SS esperat',
-          concept: `Nòmina ${e.year.year}-${zeroPad(e.month.month, 2)}-${e.users_permissions_user.username}`,
+          concept: payrollConcept(e),
           total_amount: e.ss_base ? -1 * e.ss_base : 0,
           date: moment(e.ss_date, 'YYYY-MM-DD'),
           date_error: e.ss_date === null,
