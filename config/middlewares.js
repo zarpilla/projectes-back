@@ -3,6 +3,9 @@
 module.exports = ({ env }) => [
   'strapi::logger',
   'strapi::errors',
+  // 4xx http-errors from koa-static (bot scans) answered without an error log
+  // (issues/052). Must come right after strapi::errors.
+  'global::quiet-client-errors',
   {
     name: 'strapi::security',
     config: {
