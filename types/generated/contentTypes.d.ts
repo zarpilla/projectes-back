@@ -2608,8 +2608,10 @@ export interface ApiTimeCounterTimeCounter extends Struct.CollectionTypeSchema {
     draftAndPublish: false;
   };
   attributes: {
+    activity_type: Schema.Attribute.Relation<'manyToOne', 'api::activity-type.activity-type'>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    dedication_type: Schema.Attribute.Relation<'manyToOne', 'api::dedication-type.dedication-type'>;
     description: Schema.Attribute.String;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::time-counter.time-counter'> &
@@ -2617,6 +2619,7 @@ export interface ApiTimeCounterTimeCounter extends Struct.CollectionTypeSchema {
     project: Schema.Attribute.Relation<'oneToOne', 'api::project.project'>;
     publishedAt: Schema.Attribute.DateTime;
     start: Schema.Attribute.DateTime;
+    task: Schema.Attribute.Relation<'manyToOne', 'api::task.task'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     users_permissions_user: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;

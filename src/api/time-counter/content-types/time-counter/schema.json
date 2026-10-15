@@ -26,6 +26,21 @@
     },
     "description": {
       "type": "string"
+    },
+    "activity_type": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::activity-type.activity-type"
+    },
+    "dedication_type": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::dedication-type.dedication-type"
+    },
+    "task": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::task.task"
     }
   }
 }
