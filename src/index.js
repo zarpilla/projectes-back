@@ -13,6 +13,7 @@ const { ensureResetPasswordUrl } = require('./services/ensure-reset-password-url
 const { ensureAuthEmailTemplates } = require('./services/ensure-auth-email-templates');
 const { recalcZeroQuoteTotals } = require('./services/recalc-zero-quote-totals');
 const { zeroVatExpenseTypes } = require('./services/zero-vat-expense-types');
+const { recalcMismatchedDocumentTotals } = require('./services/recalc-mismatched-document-totals');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -91,6 +92,8 @@ module.exports = {
       ['recalcZeroQuoteTotals', recalcZeroQuoteTotals, { runOnce: true }],
       // issues/033: 0 % expense types were budgeted at 21 % VAT.
       ['zeroVatExpenseTypes', zeroVatExpenseTypes, { runOnce: true }],
+      // issues/045: documents saved while issues/002 doubled their lines kept the doubled total.
+      ['recalcMismatchedDocumentTotals', recalcMismatchedDocumentTotals, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
