@@ -24,7 +24,9 @@ const LINKS = [
   { line: 'api::phase-expense.phase-expense', field: 'expense', doc: 'api::received-expense.received-expense' },
 ];
 
-const TOLERANCE = 0.01;
+// A cent of difference is rounding, not a mismatch; compared in whole cents
+// because 78.18 - 78.17 is 0.010000000000005 in floating point.
+const differs = (base, assigned) => Math.round(Math.abs(base - assigned) * 100) > 1;
 const CHUNK = 500;
 
 const keyOf = (link) => `${link.line}#${link.field}`;
@@ -85,7 +87,7 @@ async function refreshLineWarnings(docs) {
         assigned.set(docId, (assigned.get(docId) || 0) + (Number(line.quantity) || 0) * (Number(line.amount) || 0));
       }
       const warns = new Map(
-        documents.map((d) => [d.id, Math.abs((Number(d.total_base) || 0) - (assigned.get(d.id) || 0)) > TOLERANCE]),
+        documents.map((d) => [d.id, differs(Number(d.total_base) || 0, assigned.get(d.id) || 0)]),
       );
 
       const set = { true: [], false: [] };

@@ -76,8 +76,12 @@ describe('«Imports diferents» warning of project lines (issues/094)', () => {
 
   it('accepts a difference of a cent and leaves right lines untouched', async () => {
     const { updates } = mockStrapi({
-      documents: { [EMITTED]: [{ id: 9, total_base: 2452.41 }] },
-      lines: [{ uid: INCOME, id: 5, invoice: 9, quantity: 1, amount: 2452.4, warning: false, project: 1 }],
+      documents: { [EMITTED]: [{ id: 9, total_base: 2452.41 }, { id: 110, total_base: 78.18 }] },
+      lines: [
+        { uid: INCOME, id: 5, invoice: 9, quantity: 1, amount: 2452.4, warning: false, project: 1 },
+        // 78.18 - 78.17 is 0.010000000000005 in floating point
+        { uid: INCOME, id: 6, invoice: 110, quantity: 1, amount: 78.17, warning: false, project: 1 },
+      ],
     });
     const { documentsOfProject, refreshLineWarnings } = load();
     await refreshLineWarnings(await documentsOfProject(1));
