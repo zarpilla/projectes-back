@@ -12,6 +12,7 @@
  * strapi.services.x -> strapi.service('api::x.x'); sanitizeEntity removed.
  */
 const fs = require('fs');
+const { resolvePdfLogo } = require('../../../services/pdf-logo');
 const crypto = require('crypto');
 const moment = require('moment');
 const sharp = require('sharp');
@@ -307,12 +308,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
     const qrWidth = 96;
     const logoWidth = 100;
-    const logoUrl = `./public${me.logo?.url || ''}`;
-    let logo = logoUrl;
-    if (logoUrl.endsWith('.svg')) {
-      logo = './public/uploads/invoice-logo.jpg';
-      await sharp(logoUrl).png().toFile(logo);
-    }
+    // null when there is no logo or its file is missing: the PDF is drawn without it
+    const logo = await resolvePdfLogo(me, { sharp, log: strapi.log });
 
     const urls = [];
     for (const order of ordersEntities) {
@@ -393,7 +390,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       const myInvoice = new MicroInvoiceOrder({
         style: {
           header: {
-            image: { path: logo, width: logoWidth, height: me.logo?.height ? me.logo.height / ratio : 100 },
+            image: logo ? { path: logo, width: logoWidth, height: me.logo?.height ? me.logo.height / ratio : 100 } : null,
             qr: { path: qrCodeImage, width: qrWidth, height: qrWidth },
           },
         },

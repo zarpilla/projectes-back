@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const moment = require('moment');
 const sharp = require('sharp');
 const MicroInvoice = require('../../../../utils/microinvoice');
+const { resolvePdfLogo } = require('../../../services/pdf-logo');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
@@ -209,12 +210,8 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     });
     const me = await getMe();
 
-    const logoUrl = me.logo ? `./public${me.logo.url}` : null;
-    let logo = logoUrl;
-    if (logoUrl && logoUrl.endsWith('.svg')) {
-      logo = './public/uploads/invoice-logo.jpg';
-      await sharp(logoUrl).png().toFile(logo);
-    }
+    // null when there is no logo or its file is missing: the PDF is drawn without it
+    const logo = await resolvePdfLogo(me, { sharp, log: strapi.log });
 
     const width = me.logo ? me.logo.width : 150;
     const height = me.logo ? me.logo.height : 150;
@@ -348,7 +345,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     const myInvoice = new MicroInvoice({
       style: {
         header: {
-          image: { path: logo, width: logoWidth, height: height / ratio },
+          image: logo ? { path: logo, width: logoWidth, height: height / ratio } : null,
           qr: qr ? { path: qr, verifactu: true, width: qrWidth, height: qrWidth } : null,
         },
       },
