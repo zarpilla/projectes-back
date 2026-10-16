@@ -13,6 +13,7 @@ const {
 const { numericId } = require('../../../middlewares/v3-compat');
 const { getDailyDedications, getFestives } = require('../services/projectCache');
 const { getMe } = require('../../../services/me-settings');
+const { documentsOfProject, mergeDocuments, refreshLineWarnings } = require('../../../services/refresh-line-warnings');
 const {
   buildProjectRows,
   aggregateRowsByYear,
@@ -1550,6 +1551,10 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       for (const section of sections) {
         const info = data[section.info];
         if (data[section.flag] && data[section.phases] && info) {
+          // The documents the execution lines point to, before and after the
+          // save, get their «Imports diferents» warning recomputed (issues/094).
+          const execution = section.entity === 'project-phases';
+          const linkedBefore = execution ? await documentsOfProject(id) : null;
           await strapi
             .controller('api::project.project')
             .updatePhases(
@@ -1561,6 +1566,9 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
               info.deletedExpenses || [],
               info.deletedHours || [],
             );
+          if (execution) {
+            await refreshLineWarnings(mergeDocuments(linkedBefore, await documentsOfProject(id)));
+          }
         }
         // Phases are managed exclusively through updatePhases, so they never
         // belong on a core update — whether or not this request edited them. The
