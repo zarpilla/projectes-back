@@ -53,20 +53,8 @@ const getValidationKey = (entityType, entityId, subType = null) => {
   return `${entityType}:${entityId}`;
 };
 
-// Compute the effect of a single treasury row on the running balance.
-const applyRowToBalance = (row, currentAccountBalance) => {
-  if (row.is_real_balance_adjustment) {
-    const desiredBalance = row.desired_balance;
-    const adjustment = desiredBalance - currentAccountBalance;
-    row.total_amount = adjustment;
-    return { accountBalance: desiredBalance, delta: adjustment };
-  }
-  if (row.is_balance_annotation && row.account_balance !== undefined) {
-    const adjustment = row.account_balance - currentAccountBalance;
-    return { accountBalance: row.account_balance, delta: adjustment };
-  }
-  return { accountBalance: currentAccountBalance + row.total_amount, delta: row.total_amount };
-};
+// running balances per account and in total
+const { walkBalances } = require('../services/balances');
 
 module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -1122,32 +1110,12 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     });
 
     const treasuryData = _.sortBy(treasury2, 'datef');
-    const treasuryDataX = [];
 
-    // Track balance per bank account
-    const balanceByAccount = {};
-    let subtotal = 0;
-
-    for (let i = 0; i < treasuryData.length; i++) {
-      const t = treasuryData[i];
-      const account = t.bank_account || 'default';
-
-      // Initialize account balance if needed
-      if (balanceByAccount[account] === undefined) {
-        balanceByAccount[account] = 0;
-      }
-
-      const { accountBalance, delta } = applyRowToBalance(t, balanceByAccount[account]);
-      balanceByAccount[account] = accountBalance;
-      subtotal += delta;
-
-      treasuryDataX.push({
-        ...t,
-        datex: moment(treasuryData[i].datef, 'YYYYMMDD').format('DD-MM-YYYY'),
-        subtotal,
-        account_subtotal: accountBalance, // per-account balance
-      });
-    }
+    // running balance per bank account and in total (services/balances)
+    const treasuryDataX = walkBalances(treasuryData).map((t) => ({
+      ...t,
+      datex: moment(t.datef, 'YYYYMMDD').format('DD-MM-YYYY'),
+    }));
 
     vat.deductible_vat_pct = (vat.deductible_vat_pct_sum / vat.deductible_vat_pct_n) * 100;
     vat.deductible_vat_pct = parseFloat(vat.deductible_vat_pct.toFixed(2));
@@ -1180,20 +1148,9 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
               selectedBankAccountNames.includes(t.bank_account) || !t.bank_account || t.bank_account === null,
           );
 
-          // Recalculate subtotals for the filtered account-specific data,
-          // reusing the same per-row logic as the global walk so that
-          // is_real_balance_adjustment and is_balance_annotation rows snap the
-          // running balance correctly, and account_subtotal stays in sync.
-          let accountSubtotal = 0;
-          filteredTreasuryDataX = filteredTreasuryDataX.map((t) => {
-            const { accountBalance, delta } = applyRowToBalance(t, accountSubtotal);
-            accountSubtotal = accountBalance;
-            return {
-              ...t,
-              subtotal: accountSubtotal,
-              account_subtotal: accountSubtotal,
-            };
-          });
+          // Recalculate the balances over the selected accounts only: one
+          // balance per account, the total as their sum (services/balances)
+          filteredTreasuryDataX = walkBalances(filteredTreasuryDataX);
         }
       }
     }
