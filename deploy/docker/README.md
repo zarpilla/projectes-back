@@ -45,6 +45,15 @@ The scripts on the server are copies of `deploy/docker/`. After changing them he
 
 Secrets in GitHub: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`. Add required reviewers to the `production` environment to approve each deploy by hand.
 
+## Access logs (response times and sizes)
+
+Caddy logs every API request as one JSON line on the proxy's stdout (`docker logs esstrapis-back-proxy`): tenant (logger `http.log.access.<tenant>`), method, URI, status, `duration` (seconds) and `size` (bytes sent, gzipped when compressed). Request and response headers are not logged, the client IP is cut to /16 and tokens in the query string are replaced by `REDACTED` (see the `access_log` snippet in `render.sh`). The proxy's Docker log is capped at 3 × 10 MB.
+
+They reach Grafana through the host promtail, like the backend logs:
+
+- `logging/promtail-caddy-access.yaml`: the `caddy-access` job to append under `scrape_configs:` in `/etc/promtail/promtail-config.yaml` (then `sudo systemctl restart promtail`). Labels `job="caddy"`, `instance="<tenant>"`; other Caddy lines (admin API health checks, reloads) are dropped.
+- `logging/caddy-access-dashboard.json`: the "API requests — duration & size" dashboard. Copy it to `~/centralized-logging/grafana/dashboards/`; Grafana loads it within 30 s. It shows requests, p95 duration, 5xx and response size per tenant, the slowest and largest endpoints (ids collapsed to `:id`), and the requests slower than a threshold.
+
 ## Adding a tenant
 
 Point the domain's DNS at the VPS, then on the server:

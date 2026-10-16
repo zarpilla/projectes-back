@@ -1,0 +1,34 @@
+  # ------------------------------------------------------------------
+  # Caddy access logs (container esstrapis-back-proxy, see render.sh):
+  # one JSON line per API request, logger "http.log.access.<instance>".
+  # Append this job under `scrape_configs:` in /etc/promtail/promtail-config.yaml.
+  # Labels: job="caddy", instance="<instance>". Dashboard: caddy-access-dashboard.json.
+  # ------------------------------------------------------------------
+  - job_name: caddy-access
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+        filters:
+          # Filter at discovery, not with a relabel `keep` (see strapi-docker).
+          - name: name
+            values: ["^/esstrapis-back-proxy$"]
+    relabel_configs:
+      - target_label: job
+        replacement: caddy
+      - target_label: source
+        replacement: docker
+    pipeline_stages:
+      # Keep only access lines: Caddy also logs its admin API (health checks
+      # every 30 s), reloads and startup.
+      - match:
+          selector: '{job="caddy"} != "\"logger\":\"http.log.access."'
+          action: drop
+          drop_counter_reason: not_access_log
+      - json:
+          expressions:
+            logger: logger
+      - regex:
+          source: logger
+          expression: '^http\.log\.access\.(?P<instance>.+)$'
+      - labels:
+          instance:

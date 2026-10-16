@@ -41,6 +41,10 @@ services:
     container_name: esstrapis-back-proxy
     restart: unless-stopped
     network_mode: host
+    # Access logs go to stdout (one JSON line per request, shipped to Loki by promtail).
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
     volumes:
       - ./caddy:/etc/caddy:ro
       - caddy-data:/data
@@ -82,6 +86,35 @@ YAML
 		trusted_proxies static 127.0.0.1/32 ::1/128
 	}
 }
+
+# One JSON line per request on stdout, logger "http.log.access.<tenant>"
+# (promtail turns it into the instance label). Headers are dropped, the client
+# IP truncated and secrets in the query string redacted.
+(access_log) {
+	log {args[0]} {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+				request>tls delete
+				request>remote_ip delete
+				request>remote_port delete
+				request>client_ip ip_mask 16 32
+				request>uri query {
+					replace access_token REDACTED
+					replace id_token REDACTED
+					replace token REDACTED
+					replace code REDACTED
+					replace confirmation REDACTED
+					replace password REDACTED
+					replace jwt REDACTED
+				}
+				resp_headers delete
+			}
+		}
+	}
+}
 CADDY
   for line in "${TENANTS[@]}"; do
     read -r name port uploads <<<"$line"
@@ -92,6 +125,7 @@ CADDY
 
 # $name ($color)
 :$port {
+	import access_log $name
 	reverse_proxy 127.0.0.1:$p {
 		lb_try_duration 30s
 		lb_try_interval 250ms
