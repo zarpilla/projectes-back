@@ -15,6 +15,7 @@ const { ensureAuthEmailTemplates } = require('./services/ensure-auth-email-templ
 const { recalcZeroQuoteTotals } = require('./services/recalc-zero-quote-totals');
 const { zeroVatExpenseTypes } = require('./services/zero-vat-expense-types');
 const { recalcMismatchedDocumentTotals } = require('./services/recalc-mismatched-document-totals');
+const { refreshAllLineWarnings } = require('./services/refresh-line-warnings');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -97,6 +98,8 @@ module.exports = {
       ['zeroVatExpenseTypes', zeroVatExpenseTypes, { runOnce: true }],
       // issues/045: documents saved while issues/002 doubled their lines kept the doubled total.
       ['recalcMismatchedDocumentTotals', recalcMismatchedDocumentTotals, { runOnce: true }],
+      // issues/094: the «Imports diferents» warning went stale when project lines changed.
+      ['refreshAllLineWarnings', refreshAllLineWarnings, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
