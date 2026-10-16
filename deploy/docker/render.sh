@@ -89,7 +89,9 @@ YAML
 
 # One JSON line per request on stdout, logger "http.log.access.<tenant>"
 # (promtail turns it into the instance label). Headers are dropped, the client
-# IP truncated and secrets in the query string redacted.
+# IP truncated and secrets and user-typed text in the query string redacted.
+# Caddy can only redact named keys: add any new query parameter that carries
+# text people type or personal data (names, usernames) to the list below.
 (access_log) {
 	log {args[0]} {
 		output stdout
@@ -109,6 +111,10 @@ YAML
 					replace confirmation REDACTED
 					replace password REDACTED
 					replace jwt REDACTED
+					replace _q REDACTED
+					replace name REDACTED
+					replace [code_contains] REDACTED
+					replace _where[users_permissions_user.username] REDACTED
 				}
 				resp_headers delete
 			}

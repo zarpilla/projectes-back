@@ -51,6 +51,13 @@ describe("render.sh access logs (issue 053)", () => {
     }
   });
 
+  test("text people type and usernames in the query string are redacted", () => {
+    const snippet = caddyfile.match(/\(access_log\) \{[\s\S]*?\n\}\n/)[0];
+    for (const key of ["_q", "name", "[code_contains]", "_where[users_permissions_user.username]"]) {
+      expect(snippet).toContain(`replace ${key} REDACTED\n`);
+    }
+  });
+
   test("the proxy container's Docker log is capped", () => {
     const proxy = compose.match(/\n {2}proxy:\n[\s\S]*?(?=\n {2}[a-z]|\nvolumes:)/)[0];
     expect(proxy).toMatch(/logging:\n\s+driver: json-file\n\s+options: \{ max-size: 10m, max-file: "3" \}/);
