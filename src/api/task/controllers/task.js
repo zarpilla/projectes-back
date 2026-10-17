@@ -13,8 +13,10 @@ const _ = require('lodash');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { doneStateId } = require('../services/done-state');
+const { taskEmailAllowed } = require('../services/email-gate');
+const { getMe } = require('../../../services/me-settings');
 
-const sendEmail = async (data, config) => {
+const sendEmail = async (data, config, me) => {
   if (!data) return;
 
   const emailFrom =
@@ -56,7 +58,7 @@ const sendEmail = async (data, config) => {
     text += '<br><br>';
   }
 
-  if (data.email === process.env.TASK_EMAIL_TO || process.env.TASK_EMAIL_TO === '*') {
+  if (taskEmailAllowed(data.email, { me })) {
     const subject = hasFinalWarnings
       ? '[ESSSTRAPIS] Resum de tasques - ÚLTIM AVÍS'
       : '[ESSSTRAPIS] Resum de tasques';
@@ -237,11 +239,13 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
       .value();
 
     const config = await strapi.documents('api::config.config').findFirst();
+    // Configuració general · "Avisos de tasques per correu"
+    const me = await getMe();
 
     const sentEmails = [];
     if (emails.length) {
       for (const email of emails) {
-        const msg = await sendEmail(email, config);
+        const msg = await sendEmail(email, config, me);
         sentEmails.push(msg);
       }
     }
