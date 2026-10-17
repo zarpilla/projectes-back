@@ -16,6 +16,7 @@ const { recalcZeroQuoteTotals } = require('./services/recalc-zero-quote-totals')
 const { zeroVatExpenseTypes } = require('./services/zero-vat-expense-types');
 const { recalcMismatchedDocumentTotals } = require('./services/recalc-mismatched-document-totals');
 const { refreshAllLineWarnings } = require('./services/refresh-line-warnings');
+const { mergeDuplicateCities } = require('./services/merge-duplicate-cities');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -100,6 +101,8 @@ module.exports = {
       ['recalcMismatchedDocumentTotals', recalcMismatchedDocumentTotals, { runOnce: true }],
       // issues/094: the «Imports diferents» warning went stale when project lines changed.
       ['refreshAllLineWarnings', refreshAllLineWarnings, { runOnce: true }],
+      // issues/093: «Barcelona» / «Barcelona », «Manlleu» / «Manlleu » and «Cabrils» existed twice.
+      ['mergeDuplicateCities', mergeDuplicateCities, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
