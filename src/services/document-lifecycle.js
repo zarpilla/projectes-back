@@ -198,6 +198,12 @@ async function resolveComponentLines(uid, lines) {
  * `{ id }` references v5 leaves in a lifecycle payload). Shared with the
  * recalcZeroDocumentTotals startup script so both compute the same numbers.
  */
+// Each line's base, VAT and IRPF are rounded to cents before adding them up,
+// as the views show them and as Facturae sends them (face-queue
+// getInvoiceLineAmounts): adding unrounded lines gave a base a cent away from
+// the sum of its lines (emitted invoice 642, issues/073).
+const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
+
 function computeLineTotals(lines) {
   let total_base = 0;
   let total_vat = 0;
@@ -208,13 +214,15 @@ function computeLineTotals(lines) {
     if (i.discount) {
       base = base * (1 - i.discount / 100.0);
     }
-    const vat = (base * (i.vat ? i.vat : 0)) / 100.0;
-    const irpf = (base * (i.irpf ? i.irpf : 0)) / 100.0;
+    base = round2(base);
     total_base += base;
-    total_vat += vat;
-    total_irpf += irpf;
+    total_vat += round2((base * (i.vat ? i.vat : 0)) / 100.0);
+    total_irpf += round2((base * (i.irpf ? i.irpf : 0)) / 100.0);
   });
-  return { total_base, total_vat, total_irpf, total: total_base + total_vat - total_irpf };
+  total_base = round2(total_base);
+  total_vat = round2(total_vat);
+  total_irpf = round2(total_irpf);
+  return { total_base, total_vat, total_irpf, total: round2(total_base + total_vat - total_irpf) };
 }
 
 /** Quote totals: same as the other documents, but quotes never carry IRPF. */

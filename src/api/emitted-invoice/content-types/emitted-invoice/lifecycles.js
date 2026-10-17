@@ -23,6 +23,7 @@ const { scheduleFromEntityProjects } = require('../../../project/services/totals
 const { rawExecute } = require('../../../../services/raw-sql');
 const { getMe } = require('../../../../services/me-settings');
 const { relationId } = require('../../../../services/relation-input');
+const { computeLineTotals } = require('../../../../services/document-lifecycle');
 // A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
 // so the rule that rejected the write never reaches the user. ApplicationError
 // answers 400 with the message, which the views already display.
@@ -372,24 +373,8 @@ async function calculateTotals(data) {
   if (data._internal) return;
   if (data.lines) {
     const lines = await resolveLines(data.lines);
-    let total_base = 0;
-    let total_vat = 0;
-    let total_irpf = 0;
-    lines.forEach((i) => {
-      let base = (i.base ? i.base : 0) * (i.quantity ? i.quantity : 0);
-      if (i.discount) {
-        base = base * (1 - i.discount / 100.0);
-      }
-      const vat = (base * (i.vat ? i.vat : 0)) / 100.0;
-      const irpf = (base * (i.irpf ? i.irpf : 0)) / 100.0;
-      total_base += base;
-      total_vat += vat;
-      total_irpf += irpf;
-    });
-    data.total_base = total_base;
-    data.total_vat = total_vat;
-    data.total_irpf = total_irpf;
-    data.total = data.total_base + data.total_vat - data.total_irpf;
+    // same arithmetic as the other documents: lines rounded to cents (issues/073)
+    Object.assign(data, computeLineTotals(lines));
   }
 }
 
