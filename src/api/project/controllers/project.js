@@ -642,8 +642,12 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       default_dedication_type: true,
     };
 
+    // the dedication report groups the logged hours by person, dedication type and
+    // function: load them with the activities (`true` left them out)
     if (activities) {
-      populate.activities = true;
+      populate.activities = {
+        populate: { users_permissions_user: true, activity_type: true, dedication_type: true },
+      };
     }
 
     if (ctx.query._q) {
@@ -671,6 +675,18 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     }
 
     projects = projects.filter((p) => p.trashed !== true);
+
+    // their relations as ids, like with-activities (what DedicationEstPivot reads)
+    const idOf = (relation) => (relation && relation.id) || null;
+    for (const p of projects) {
+      if (!Array.isArray(p.activities)) continue;
+      p.activities = p.activities.map((a) => ({
+        ...a,
+        users_permissions_user: idOf(a.users_permissions_user),
+        activity_type: idOf(a.activity_type),
+        dedication_type: idOf(a.dedication_type),
+      }));
+    }
 
     if (plannedHours === 'true' || plannedHours === true) {
       const [dailyDedications, festives] = await Promise.all([
