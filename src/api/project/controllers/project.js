@@ -265,6 +265,10 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
    * v3 nested them and what those views compare against.
    */
   async findWithActivities(ctx) {
+    // without the trashed projects, like the list (issues/128)
+    if (ctx.query.published_at_null === undefined) {
+      ctx.query = { ...ctx.query, published_at_null: false };
+    }
     if (ctx.query.populate === undefined) {
       ctx.query = { ...ctx.query, populate: firstLevelPopulateWithComponentRelations(DEFAULT_POPULATE_SKIPS) };
     }

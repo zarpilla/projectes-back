@@ -84,4 +84,18 @@ describe('project list', () => {
       grantable_contacts: { populate: { contact: true } },
     });
   });
+
+  // issues/128: the Panell de projectes counted (and summed) the trashed
+  // projects: Arran de Terra 47 «actiu» against 32 in the projects list
+  it('with-activities: leaves the trashed projects out', async () => {
+    const ctx = { query: { _where: { project_state_eq: 1 } }, state: {} };
+    await controller.findWithActivities(ctx);
+    expect(superFind.mock.calls[0][0].query.filters).toMatchObject({ trashed: false });
+  });
+
+  it('with-activities: still answers the trashed ones when asked', async () => {
+    const ctx = { query: { published_at_null: true }, state: {} };
+    await controller.findWithActivities(ctx);
+    expect(superFind.mock.calls[0][0].query.filters).toMatchObject({ trashed: true });
+  });
 });
