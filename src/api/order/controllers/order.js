@@ -15,6 +15,7 @@ const fs = require('fs');
 const { resolvePdfLogo } = require('../../../services/pdf-logo');
 const crypto = require('crypto');
 const moment = require('moment');
+const { orderLineConcept } = require('../services/invoice-line-concept');
 const sharp = require('sharp');
 const QRCode = require('qrcode');
 const { PDFDocument } = require('pdf-lib');
@@ -704,7 +705,7 @@ async function invoiceRun(ctx) {
           payment_method: paymentMethod,
           document_concept: documentConcept,
           lines: contactOrders.map((o) => ({
-            concept: `Comanda ${o.estimated_delivery_date} | ${o.id.toString().padStart(4, '0')} | ${o.route?.name}`,
+            concept: orderLineConcept(o),
             base: o.price - (o.volume_discount || 0),
             quantity: 1,
             price: o.price,
