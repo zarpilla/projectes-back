@@ -12,6 +12,7 @@ const moment = require('moment');
 const _ = require('lodash');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { doneStateId } = require('../services/done-state');
 
 const sendEmail = async (data, config) => {
   if (!data) return;
@@ -87,8 +88,13 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
     const messages = [];
     const fifteenDaysAgo = moment().subtract(15, 'days');
 
+    const states = await strapi.db.query('api::task-state.task-state').findMany({ select: ['id', 'order'] });
+    const doneId = doneStateId(states);
+    const where = { archived: false };
+    if (doneId !== null) where.task_state = { $ne: doneId };
+
     const tasks = await strapi.db.query('api::task.task').findMany({
-      where: { task_state: { $ne: 3 }, archived: false },
+      where,
       populate: {
         users_permissions_users: true,
         project: true,
