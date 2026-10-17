@@ -15,6 +15,7 @@ const { getDailyDedications, getFestives } = require('../services/projectCache')
 const { getMe } = require('../../../services/me-settings');
 const { documentsOfProject, mergeDocuments, refreshLineWarnings } = require('../../../services/refresh-line-warnings');
 const { activitiesByProjectMonth } = require('../services/economic-detail-activities');
+const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDocuments');
 const {
   buildProjectRows,
   aggregateRowsByYear,
@@ -1620,6 +1621,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         'activity_types',
         'received_incomes',
         'received_expenses',
+        // the documents linked through their `projects` relation (issues/120)
+        ...LINKED_POPULATE,
         'global_activity_types',
         'treasury_annotations',
         'activities',
@@ -1678,7 +1681,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       if (calculatedData.is_mother) {
         await calculateMotherProjectTotals(calculatedData);
       }
-      return calculatedData;
+      return mergeLinkedDocuments(calculatedData);
     }
 
     if (data && data.is_mother) {
