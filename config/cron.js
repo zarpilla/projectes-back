@@ -7,6 +7,9 @@
  *   - totals drain (2 min) -> totalsRefreshScheduler.processDirty (PM2-safe)
  *   - face check-status (30 min) -> api::face-queue.face-queue cronCheckStatus (P8.1)
  *   - face retry-pending (5 min)  -> api::face-queue.face-queue cronRetryPending (P8.1)
+ * and, new in v5:
+ *   - task notifications (1 min) -> api/task/services/notify.js processQueue: the
+ *     assignment and mention emails, after their wait
  *
  * Every task runs under withCronLock: during a zero-downtime deploy the old and
  * the new instance of a tenant overlap for a few seconds, and a job must not run
@@ -39,6 +42,10 @@ module.exports = {
   // Check FACe invoice status every 30 minutes (ported in P8.1).
   '*/30 * * * *': {
     task: ({ strapi }) => withCronLock('face-check-status', () => strapi.service('api::face-queue.face-queue').cronCheckStatus()),
+  },
+  // Queued task emails (assignments, mentions) whose wait is over.
+  '* * * * *': {
+    task: () => withCronLock('task-notifications', () => require('../src/api/task/services/notify').processQueue()),
   },
   // Retry pending FACe submissions every 5 minutes, max 10 attempts (ported in P8.1).
   '*/5 * * * *': {

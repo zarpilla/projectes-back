@@ -16,7 +16,7 @@ const { doneStateId } = require('../services/done-state');
 const { taskEmailAllowed } = require('../services/email-gate');
 const { getMe } = require('../../../services/me-settings');
 const { nextTaskData } = require('../services/recurrence');
-const { newlyAssigned, notifyAssigned } = require('../services/notify');
+const { newlyAssigned, removedFrom, notifyAssigned, dropAssigned } = require('../services/notify');
 
 const TASK_UID = 'api::task.task';
 const POPULATE_FULL = {
@@ -57,8 +57,10 @@ const loadTask = (where) => strapi.db.query(TASK_UID).findOne({ where, populate:
 async function afterTaskSave(before, after, actor) {
   if (!after) return;
   try {
-    const added = newlyAssigned(before ? before.users_permissions_users : [], after.users_permissions_users, actor && actor.id);
-    await notifyAssigned(after, added, actor);
+    const beforeUsers = before ? before.users_permissions_users : [];
+    // queued (services/notify.js): sent a few minutes later if still assigned
+    await notifyAssigned(after, newlyAssigned(beforeUsers, after.users_permissions_users, actor && actor.id), actor);
+    await dropAssigned(after, removedFrom(beforeUsers, after.users_permissions_users));
   } catch (error) {
     strapi.log.error(`task ${after.id} assignment email: ${error.message}`);
   }

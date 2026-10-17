@@ -4,7 +4,7 @@
 /**
  * task-comment controller (v5). The author is whoever writes it; only they can
  * edit or delete it. Mentioned people (`mentions`, ids picked with @ in the front)
- * get an email at once (services/notify.js).
+ * get an email a few minutes later, if the comment is still there (services/notify.js).
  */
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');

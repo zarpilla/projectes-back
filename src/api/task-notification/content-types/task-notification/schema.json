@@ -1,0 +1,48 @@
+{
+  "kind": "collectionType",
+  "collectionName": "task_notifications",
+  "info": {
+    "singularName": "task-notification",
+    "pluralName": "task-notifications",
+    "displayName": "Task notification",
+    "description": "Pending task emails (assignments, mentions), sent by the cron after a wait"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "kind": {
+      "type": "enumeration",
+      "enum": ["assigned", "mention"],
+      "required": true
+    },
+    "recipient": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "actor": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "task": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::task.task"
+    },
+    "comment": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::task-comment.task-comment"
+    },
+    "send_after": {
+      "type": "datetime"
+    },
+    "attempts": {
+      "type": "integer",
+      "default": 0
+    }
+  }
+}
