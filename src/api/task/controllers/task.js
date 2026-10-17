@@ -28,6 +28,26 @@ const POPULATE_FULL = {
   checklist: { populate: { user: true } },
 };
 
+// The v3 default populate ('*', v3-compat middleware) stops at the first level, so the
+// checklist came without its person: the task modal showed «Ningú» and saving the task
+// emptied them. Reads and writes of tasks populate the checklist's person too.
+const TASK_POPULATE = {
+  task_state: true,
+  users_permissions_users: true,
+  project: true,
+  activity_type: true,
+  documents: true,
+  created: true,
+  task_comments: true,
+  // only the name: the user record carries cost and salary fields
+  checklist: { populate: { user: { fields: ['username'] } } },
+};
+function deepDefaultPopulate(ctx) {
+  if (ctx.query.populate === '*' || ctx.query.populate === undefined) {
+    ctx.query = { ...ctx.query, populate: TASK_POPULATE };
+  }
+}
+
 const loadTask = (where) => strapi.db.query(TASK_UID).findOne({ where, populate: POPULATE_FULL });
 
 /**
@@ -114,10 +134,17 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
   // v5-native queries pass through untouched.
   async find(ctx) {
     adaptCtxQuery(ctx);
+    deepDefaultPopulate(ctx);
     return super.find(ctx);
   },
 
+  async findOne(ctx) {
+    deepDefaultPopulate(ctx);
+    return super.findOne(ctx);
+  },
+
   async create(ctx) {
+    deepDefaultPopulate(ctx);
     const response = await super.create(ctx);
     const id = response && response.data && response.data.id;
     if (id) await afterTaskSave(null, await loadTask({ id }), ctx.state.user);
@@ -127,6 +154,7 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
   async update(ctx) {
     const documentId = ctx.params.id;
     const before = await loadTask({ documentId });
+    deepDefaultPopulate(ctx);
     const response = await super.update(ctx);
     await afterTaskSave(before, await loadTask({ documentId }), ctx.state.user);
     return response;
