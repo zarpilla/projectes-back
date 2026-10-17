@@ -397,6 +397,9 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
           breakdown,
           expected: expectedHours,
           festive: festiveHours,
+          // hours but no working day defined to compare with: the percentage
+          // is not 0 % (issues/077)
+          noSchedule: !(expectedHours > 0),
           diff,
         };
         return;
