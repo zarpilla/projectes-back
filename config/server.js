@@ -16,8 +16,11 @@ module.exports = ({ env }) => ({
   webhooks: {
     populateRelations: env.bool('WEBHOOKS_POPULATE_RELATIONS', false),
   },
-  // Cron tasks are defined in config/cron.js
+  // Cron tasks are defined in config/cron.js. Strapi 5 only runs the ones listed
+  // here (server.cron.tasks): without this line no job ran (daily task digest,
+  // totals refresh, FACe status and retries).
   cron: {
     enabled: env.bool('CRON_ENABLED', true),
+    tasks: require('./cron'),
   },
 });
