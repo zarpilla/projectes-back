@@ -22,6 +22,7 @@ const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
 const { lockIssuedInvoiceComponents } = require('./services/lock-issued-invoices');
+const { registerAppPermissions } = require('./services/register-app-permissions');
 
 module.exports = {
   /**
@@ -33,6 +34,8 @@ module.exports = {
     strapi.documents.use(changeLogMiddleware);
     // Issued invoices keep their lines and client's details (issues/023, issues/035).
     strapi.documents.use(lockIssuedInvoiceComponents);
+    // The app permissions are enforced on every content-API route (issues/099).
+    strapi.log.info(`[app-permissions] enforced on ${registerAppPermissions(strapi)} routes`);
   },
 
   /**

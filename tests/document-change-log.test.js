@@ -217,7 +217,7 @@ describe('document change log (issues/001)', () => {
   it('is registered as a document-service middleware on boot', () => {
     const use = jest.fn();
     const app = require('../src/index');
-    app.register({ strapi: { documents: { use } } });
+    app.register({ strapi: { documents: { use }, log: { info: jest.fn() }, apis: {}, plugins: {} } });
     expect(use).toHaveBeenCalledWith(require('../src/services/change-log').changeLogMiddleware);
   });
 });
