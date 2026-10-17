@@ -17,6 +17,7 @@ const { zeroVatExpenseTypes } = require('./services/zero-vat-expense-types');
 const { recalcMismatchedDocumentTotals } = require('./services/recalc-mismatched-document-totals');
 const { refreshAllLineWarnings } = require('./services/refresh-line-warnings');
 const { mergeDuplicateCities } = require('./services/merge-duplicate-cities');
+const { refreshPlannedHoursTotals } = require('./services/refresh-planned-hours-totals');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -103,6 +104,8 @@ module.exports = {
       ['refreshAllLineWarnings', refreshAllLineWarnings, { runOnce: true }],
       // issues/093: «Barcelona» / «Barcelona », «Manlleu» / «Manlleu » and «Cabrils» existed twice.
       ['mergeDuplicateCities', mergeDuplicateCities, { runOnce: true }],
+      // issues/067: stored planned hours older than the current hours rules.
+      ['refreshPlannedHoursTotals', refreshPlannedHoursTotals, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
