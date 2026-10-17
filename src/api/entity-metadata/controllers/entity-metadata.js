@@ -80,6 +80,20 @@ const FIELD_TRANSLATIONS = {
   codeName: 'Nom de codi',
   project_scope: 'Àmbit de projecte',
   projectScope: 'Àmbit de projecte',
+  // the fields of Taules auxiliars that showed their English name (issues/103)
+  can_assign_activities: 'Admet hores',
+  can_assign_documents: 'Admet documents',
+  projects: 'Projectes',
+  iban: 'IBAN',
+  invoice_text: 'Text a la factura',
+  nameTreasury: 'Nom a tresoreria',
+  bank_account: 'Compte bancari',
+  leadingZeros: 'Zeros a l\'esquerra',
+  emitted_invoice_number: 'Número de factura',
+  rectificative: 'Rectificativa',
+  vat_pct: '% IVA',
+  trashed: 'Esborrat',
+  max: 'Màxim de dies',
 };
 
 // Admin-manageable entities: v5 singular folder → v5 API plural path.
