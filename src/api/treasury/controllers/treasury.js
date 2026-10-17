@@ -27,6 +27,7 @@ const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { getMe } = require('../../../services/me-settings');
 const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
+const { addExpectedVat } = require('../services/vat-forecast');
 
 const getDeductiblePct = (years, emitted) => {
   const year = years.find(
@@ -257,39 +258,24 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             const date_est = e.date_estimate_document || e.date;
             if (date_est && e.expense_type && e.expense_type.vat_pct) {
               const vatAmount = (e.total_amount * e.expense_type.vat_pct) / 100;
-              vat_expected.paid += vatAmount;
-
-              // Add document to the list
-              vat_expected.documents.push({
-                id: e.id,
-                project_id: p.id,
-                project_name: p.name,
-                concept: e.concept || '-',
-                type: 'phase-expense',
-                total: e.total_amount,
-                total_vat: vatAmount,
-                vat_pct: e.expense_type.vat_pct,
+              addExpectedVat(vat_expected, vat_expected_by_quarter, {
+                kind: 'paid',
+                amount: vatAmount,
                 date: date_est,
-                expense_type: e.expense_type.name,
-                provider: e.provider && e.provider.name ? e.provider.name : '-',
+                document: {
+                  id: e.id,
+                  project_id: p.id,
+                  project_name: p.name,
+                  concept: e.concept || '-',
+                  type: 'phase-expense',
+                  total: e.total_amount,
+                  total_vat: vatAmount,
+                  vat_pct: e.expense_type.vat_pct,
+                  date: date_est,
+                  expense_type: e.expense_type.name,
+                  provider: e.provider && e.provider.name ? e.provider.name : '-',
+                },
               });
-
-              // Group by quarter
-              const dateEstMoment = moment(date_est, 'YYYY-MM-DD');
-              const quarter = dateEstMoment.quarter();
-              const year = dateEstMoment.year();
-              const key = `${year}-Q${quarter}`;
-
-              if (!vat_expected_by_quarter[key]) {
-                vat_expected_by_quarter[key] = {
-                  year,
-                  quarter,
-                  paid: 0,
-                  received: 0,
-                };
-              }
-
-              vat_expected_by_quarter[key].paid += vatAmount;
             }
           }
           if (e.invoice && e.invoice.id) {
@@ -361,39 +347,24 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
             if (date_est && i.income_type && i.income_type.vat_pct) {
               const vatAmount = (i.total_amount * i.income_type.vat_pct) / 100;
-              vat_expected.received += vatAmount;
-
-              // Add document to the list
-              vat_expected.documents.push({
-                id: i.id,
-                project_id: p.id,
-                project_name: p.name,
-                concept: i.concept || '-',
-                type: 'phase-income',
-                total: i.total_amount,
-                total_vat: vatAmount,
-                vat_pct: i.income_type.vat_pct,
+              addExpectedVat(vat_expected, vat_expected_by_quarter, {
+                kind: 'received',
+                amount: vatAmount,
                 date: date_est,
-                income_type: i.income_type.name,
-                client: i.client && i.client.name ? i.client.name : '-',
+                document: {
+                  id: i.id,
+                  project_id: p.id,
+                  project_name: p.name,
+                  concept: i.concept || '-',
+                  type: 'phase-income',
+                  total: i.total_amount,
+                  total_vat: vatAmount,
+                  vat_pct: i.income_type.vat_pct,
+                  date: date_est,
+                  income_type: i.income_type.name,
+                  client: i.client && i.client.name ? i.client.name : '-',
+                },
               });
-
-              // Group by quarter
-              const dateEstMoment = moment(date_est, 'YYYY-MM-DD');
-              const quarter = dateEstMoment.quarter();
-              const year = dateEstMoment.year();
-              const key = `${year}-Q${quarter}`;
-
-              if (!vat_expected_by_quarter[key]) {
-                vat_expected_by_quarter[key] = {
-                  year,
-                  quarter,
-                  paid: 0,
-                  received: 0,
-                };
-              }
-
-              vat_expected_by_quarter[key].received += vatAmount;
             }
           }
           if (i.invoice && i.invoice.id) {
