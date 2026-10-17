@@ -101,7 +101,7 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
   //    leaders payload and to compute each cell's expected hours.
   const users = await strapi.db
     .query('plugin::users-permissions.user')
-    .findMany({ populate: { daily_dedications: true } });
+    .findMany({ populate: { daily_dedications: true, permissions: true } });
 
   // Leaders payload (projected to the fields the client needs). Computed here
   // so the empty-activities early return below can reuse it.
@@ -109,6 +109,9 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
     id: u.id,
     username: u.username,
     hidden: !!u.hidden,
+    // can log hours: logistics members (orders only) are users too, and were
+    // listed as «persones sense hores» (issues/109)
+    works: (u.permissions || []).some((pm) => ['projects', 'hours'].includes(pm && pm.permission)),
     daily_dedications: (u.daily_dedications || []).map((dd) => ({
       from: dd.from,
       to: dd.to,

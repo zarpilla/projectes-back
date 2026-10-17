@@ -13,7 +13,8 @@ function mockStrapi() {
   const users = [
     // a working-day period of 0 h (without any period the default is 8 h/day)
     { id: 1, username: 'sense-jornada', hidden: false, daily_dedications: [{ from: '2026-01-01', to: '2026-12-31', hours: 0 }] },
-    { id: 2, username: 'amb-jornada', hidden: false, daily_dedications: [{ from: '2026-01-01', to: '2026-12-31', hours: 8 }] },
+    { id: 2, username: 'amb-jornada', hidden: false, daily_dedications: [{ from: '2026-01-01', to: '2026-12-31', hours: 8 }], permissions: [{ permission: 'projects' }] },
+    { id: 3, username: 'Sòcia SCCL', hidden: false, daily_dedications: [], permissions: [{ permission: 'orders' }] },
   ];
   const activities = [
     { date: '2026-03-02', hours: 34.66, users_permissions_user: { id: 1 }, project: { id: 9, name: 'P' } },
@@ -39,5 +40,14 @@ describe('dedication gantt cells without a working day (issues/077)', () => {
     const key = Object.keys(cells[1])[0];
     expect(cells[1][key]).toMatchObject({ hours: '34.66', noSchedule: true });
     expect(cells[2][key]).toMatchObject({ hours: '0.30', percentage: '0', noSchedule: false });
+  });
+
+  // issues/109: logistics members (orders only) were listed as «persones sense hores»
+  it('says which people can log hours', async () => {
+    const { buildRealDedicationGantt } = require('../src/api/project/services/realDedicationGantt');
+    const { leaders } = await buildRealDedicationGantt({ projectStateIds: [], year: 2026, view: 'month' });
+    expect(leaders.map((l) => [l.username, l.works])).toEqual([
+      ['sense-jornada', false], ['amb-jornada', true], ['Sòcia SCCL', false],
+    ]);
   });
 });
