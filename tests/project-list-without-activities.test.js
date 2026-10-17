@@ -64,12 +64,24 @@ describe('project list', () => {
   it('with-activities: nests each project\'s activities, their relations as ids', async () => {
     const ctx = { query: {}, state: {} };
     const response = await controller.findWithActivities(ctx);
-    expect(ctx.query.populate).not.toContain('activities');
+    expect(ctx.query.populate).not.toHaveProperty('activities');
     expect(activityQuery.mock.calls[0][0].where).toEqual({ project: { id: { $in: [1, 2] } } });
     expect(response.data[0].activities).toEqual([
       { id: 10, hours: 2, date: '2026-01-05', project: 1, users_permissions_user: 7, activity_type: 3, dedication_type: null },
       { id: 11, hours: 1, date: '2026-01-06', project: 1, users_permissions_user: 8, activity_type: null, dedication_type: 4 },
     ]);
     expect(response.data[1].activities).toEqual([]);
+  });
+
+  // issues/059: populating a component doesn't populate its relations, so the
+  // grant years came without their `year` and Justificacions crashed on them
+  it('with-activities: the grant years come with their year', async () => {
+    const ctx = { query: {}, state: {} };
+    await controller.findWithActivities(ctx);
+    expect(ctx.query.populate).toMatchObject({
+      leader: true,
+      grantable_years: { populate: { year: true } },
+      grantable_contacts: { populate: { contact: true } },
+    });
   });
 });
