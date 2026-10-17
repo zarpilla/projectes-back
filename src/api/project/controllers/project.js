@@ -22,6 +22,7 @@ const {
   buildSingleProjectActivitiesMap,
   calculateEstimatedTotals,
   getProjectDefaultYear,
+  buildPlannedHoursByMonth,
 } = require('../services/projectFinancials');
 
 /**
@@ -603,9 +604,12 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   // nesting) so both measures can be computed from a single request.
   //   _where[project_state_in]=1,2,3   (optional, comma-separated)
   //   activities=true                  (optional, also load activities)
+  //   plannedHours=true                (optional, add `planned_hours`: the
+  //                                     project's hours by person and month,
+  //                                     computed like its stored total; issues/067)
   async findWithPhasesBoth(ctx) {
     let projects;
-    const { published_at_null, _limit, activities, hoursType, ...where } = ctx.query;
+    const { published_at_null, _limit, activities, plannedHours, hoursType, ...where } = ctx.query;
 
     const project_state_in = (where._where && where._where.project_state_in) || where.project_state_in;
 
@@ -666,7 +670,21 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       });
     }
 
-    return projects.filter((p) => p.trashed !== true);
+    projects = projects.filter((p) => p.trashed !== true);
+
+    if (plannedHours === 'true' || plannedHours === true) {
+      const [dailyDedications, festives] = await Promise.all([
+        strapi.db
+          .query('api::daily-dedication.daily-dedication')
+          .findMany({ populate: { users_permissions_user: true } }),
+        strapi.db.query('api::festive.festive').findMany({ populate: { users_permissions_user: true } }),
+      ]);
+      for (const p of projects) {
+        p.planned_hours = await buildPlannedHoursByMonth(p, dailyDedications, festives);
+      }
+    }
+
+    return projects;
   },
 
   // precomputed cells) plus the per-day dedications rows used by the Excel

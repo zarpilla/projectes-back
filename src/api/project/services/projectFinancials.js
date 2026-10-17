@@ -744,6 +744,57 @@ const groupTotalsByYearMonth = (rows) =>
     }))
     .value();
 
+/**
+ * Planned hours of one project by person and month, for the "Prev./Real"
+ * pivot (issues/067). Built from the same per-day rows as the project's stored
+ * `total_estimated_hours` (working days, festives, only lines with a person),
+ * so the pivot's total for a project matches the projects panel.
+ *   estimated_hours           current plan (project_phases)
+ *   original_estimated_hours  locked baseline (project_original_phases)
+ *   estimated_hours_today     current plan up to and including `today`
+ */
+const buildPlannedHoursByMonth = async (p, dailyDedications, festives, today = moment()) => {
+  const todayStr = moment(today).format('YYYY-MM-DD');
+  const byKey = new Map();
+
+  const add = async (phases, field, real) => {
+    if (!phases || !phases.length) return;
+    const { totalsByDay } = await calculateEstimatedTotals(
+      { id: p.id, name: p.name },
+      phases,
+      dailyDedications,
+      festives,
+      real,
+    );
+    for (const t of totalsByDay) {
+      const year = t.day.format('YYYY');
+      const month = t.day.format('MM');
+      const key = `${year}.${month}.${t.userId}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          year,
+          month,
+          user: t.userId,
+          estimated_hours: 0,
+          original_estimated_hours: 0,
+          estimated_hours_today: 0,
+        });
+      }
+      const row = byKey.get(key);
+      row[field] += t.q;
+      if (field === 'estimated_hours' && t.day.format('YYYY-MM-DD') <= todayStr) {
+        row.estimated_hours_today += t.q;
+      }
+    }
+  };
+
+  // Same arguments as pushHoursRows, which feeds the stored totals.
+  await add(p.project_phases, 'estimated_hours', true);
+  await add(p.project_original_phases, 'original_estimated_hours', false);
+
+  return _.sortBy([...byKey.values()], ['year', 'month', 'user']);
+};
+
 const pushHoursRows = async (out, p, projectInfo, ctx) => {
   // Hores originals come from project_original_phases (locked baseline).
   const { totalsByDay: originalTotalsByDay } = await calculateEstimatedTotals(
@@ -1322,6 +1373,7 @@ module.exports = {
   noPhaseInfo,
   makeGetDeductibleRatioForDate,
   groupTotalsByYearMonth,
+  buildPlannedHoursByMonth,
   // Stored-totals migration (step 1 — not yet wired into lifecycles):
   STORED_TOTAL_FIELDS,
   PROJECT_GRAPH_FOR_TOTALS,
