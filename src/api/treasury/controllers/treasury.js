@@ -28,6 +28,7 @@ const { getMe } = require('../../../services/me-settings');
 const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { addExpectedVat } = require('../services/vat-forecast');
+const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
 
 const getDeductiblePct = (years, emitted) => {
   const year = years.find(
@@ -1135,6 +1136,23 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       vat_by_quarter: vatByQuarter,
       forecast_by_year,
       forecast_payrolls_by_year,
+    };
+  },
+
+  // Informes › Previsió facturació: the planned incomes still to invoice (all
+  // project states; the report filters them) and the invoiced base per month
+  // over the last 12 months.
+  async invoicingForecast(ctx) {
+    const projects = await strapi.db.query('api::project.project').findMany({ populate: PROJECT_POPULATE });
+    const from = moment().subtract(12, 'months').startOf('month').format('YYYY-MM-DD');
+    const invoices = await strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
+      select: ['id', 'emitted', 'total_base'],
+      where: { emitted: { $gte: from } },
+    });
+    ctx.body = {
+      today: moment().format('YYYY-MM-DD'),
+      rows: pendingInvoicingRows(projects),
+      invoiced_by_month: invoicedByMonth(invoices, from),
     };
   },
 }));

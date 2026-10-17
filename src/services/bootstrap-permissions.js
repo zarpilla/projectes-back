@@ -202,7 +202,7 @@ async function importSeedPermissions() {
     regions: ['find', 'findOne'],
     task: ['create', 'find', 'findOne', 'update', 'delete'],
     'task-state': ['find', 'findOne'],
-    treasury: ['create', 'find', 'forecast', 'findOne', 'update', 'delete'],
+    treasury: ['create', 'find', 'forecast', 'invoicingForecast', 'findOne', 'update', 'delete'],
     'treasury-validation': ['toggle', 'find', 'findByKey', 'delete'],
     'kanban-view': ['create', 'find', 'findOne', 'update', 'delete'],
     justifications: ['create', 'find', 'findOne', 'update', 'delete'],
