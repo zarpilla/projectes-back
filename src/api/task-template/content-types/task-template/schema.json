@@ -1,0 +1,22 @@
+{
+  "kind": "collectionType",
+  "collectionName": "task_templates",
+  "info": {
+    "singularName": "task-template",
+    "pluralName": "task-templates",
+    "displayName": "Task template"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "items": {
+      "type": "json"
+    }
+  }
+}

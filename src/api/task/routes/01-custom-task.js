@@ -18,5 +18,10 @@ module.exports = {
       path: '/tasks/email',
       handler: 'task.email',
     },
+    {
+      method: 'GET',
+      path: '/tasks/hours',
+      handler: 'task.hours',
+    },
   ],
 };

@@ -49,7 +49,11 @@
       "type": "media",
       "multiple": true,
       "relation": "oneToMany",
-      "allowedTypes": ["images", "files", "videos"]
+      "allowedTypes": [
+        "images",
+        "files",
+        "videos"
+      ]
     },
     "checklist": {
       "type": "component",
@@ -60,6 +64,41 @@
       "type": "relation",
       "relation": "oneToOne",
       "target": "plugin::users-permissions.user"
+    },
+    "priority": {
+      "type": "enumeration",
+      "enum": [
+        "high",
+        "normal",
+        "low"
+      ],
+      "default": "normal"
+    },
+    "start_date": {
+      "type": "date"
+    },
+    "estimated_hours": {
+      "type": "decimal"
+    },
+    "recurrence": {
+      "type": "enumeration",
+      "enum": [
+        "weekly",
+        "biweekly",
+        "monthly",
+        "quarterly",
+        "yearly"
+      ]
+    },
+    "recurrence_spawned": {
+      "type": "boolean",
+      "default": false
+    },
+    "task_comments": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::task-comment.task-comment",
+      "mappedBy": "task"
     }
   }
 }

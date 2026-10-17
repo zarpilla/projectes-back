@@ -15,6 +15,41 @@ const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { doneStateId } = require('../services/done-state');
 const { taskEmailAllowed } = require('../services/email-gate');
 const { getMe } = require('../../../services/me-settings');
+const { nextTaskData } = require('../services/recurrence');
+const { newlyAssigned, notifyAssigned } = require('../services/notify');
+
+const TASK_UID = 'api::task.task';
+const POPULATE_FULL = {
+  users_permissions_users: true,
+  project: true,
+  activity_type: true,
+  task_state: true,
+  created: true,
+  checklist: { populate: { user: true } },
+};
+
+const loadTask = (where) => strapi.db.query(TASK_UID).findOne({ where, populate: POPULATE_FULL });
+
+/**
+ * After a save: tell the newly assigned people, and when a recurring task reaches
+ * the done state create its next occurrence (once).
+ */
+async function afterTaskSave(before, after, actor) {
+  if (!after) return;
+  try {
+    const added = newlyAssigned(before ? before.users_permissions_users : [], after.users_permissions_users, actor && actor.id);
+    await notifyAssigned(after, added, actor);
+  } catch (error) {
+    strapi.log.error(`task ${after.id} assignment email: ${error.message}`);
+  }
+  if (!after.recurrence || after.recurrence_spawned || after.archived) return;
+  const states = await strapi.db.query('api::task-state.task-state').findMany({ select: ['id', 'order'] });
+  const doneId = doneStateId(states);
+  if (doneId === null || !after.task_state || after.task_state.id !== doneId) return;
+  const first = states.reduce((a, b) => ((b.order ?? 0) < (a.order ?? 0) ? b : a));
+  await strapi.db.query(TASK_UID).update({ where: { id: after.id }, data: { recurrence_spawned: true } });
+  await strapi.documents(TASK_UID).create({ data: nextTaskData(after, first.id) });
+}
 
 const sendEmail = async (data, config, me) => {
   if (!data) return;
@@ -80,6 +115,44 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
   async find(ctx) {
     adaptCtxQuery(ctx);
     return super.find(ctx);
+  },
+
+  async create(ctx) {
+    const response = await super.create(ctx);
+    const id = response && response.data && response.data.id;
+    if (id) await afterTaskSave(null, await loadTask({ id }), ctx.state.user);
+    return response;
+  },
+
+  async update(ctx) {
+    const documentId = ctx.params.id;
+    const before = await loadTask({ documentId });
+    const response = await super.update(ctx);
+    await afterTaskSave(before, await loadTask({ documentId }), ctx.state.user);
+    return response;
+  },
+
+  /**
+   * GET /api/tasks/hours?ids=1,2,3 → { "1": 4.5, "3": 2 }
+   * Hours logged in Hores dedicades against each task.
+   */
+  async hours(ctx) {
+    const ids = String(ctx.query.ids || '')
+      .split(',')
+      .map((x) => Number(x))
+      .filter((x) => Number.isInteger(x) && x > 0);
+    if (!ids.length) return {};
+    const activities = await strapi.db.query('api::activity.activity').findMany({
+      where: { task: { id: { $in: ids } } },
+      select: ['hours'],
+      populate: { task: { select: ['id'] } },
+    });
+    const totals = {};
+    for (const a of activities) {
+      if (!a.task) continue;
+      totals[a.task.id] = Math.round(((totals[a.task.id] || 0) + Number(a.hours || 0)) * 100) / 100;
+    }
+    return totals;
   },
 
   /**
