@@ -36,7 +36,7 @@ async function recalcZeroQuoteTotals() {
       .update({
         total_base: round2(totals.total_base),
         total_vat: round2(totals.total_vat),
-        total_irpf: 0,
+        total_irpf: round2(totals.total_irpf),
         total: round2(totals.total),
       });
     fixed += 1;

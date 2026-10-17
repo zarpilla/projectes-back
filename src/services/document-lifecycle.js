@@ -225,10 +225,10 @@ function computeLineTotals(lines) {
   return { total_base, total_vat, total_irpf, total: round2(total_base + total_vat - total_irpf) };
 }
 
-/** Quote totals: same as the other documents, but quotes never carry IRPF. */
-function computeQuoteTotals(lines) {
-  const { total_base, total_vat } = computeLineTotals(lines);
-  return { total_base, total_vat, total_irpf: 0, total: total_base + total_vat };
-}
+/**
+ * Quote totals: same as the other documents. v3 left IRPF out of quotes, so the
+ * stored total differed from the form's whenever a line had IRPF (issues/011).
+ */
+const computeQuoteTotals = computeLineTotals;
 
 module.exports = { createDocumentLifecycles, computeLineTotals, computeQuoteTotals, resolveComponentLines };

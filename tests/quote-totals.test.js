@@ -6,8 +6,8 @@
  * v5 persists the lines component before the db lifecycle runs and leaves only
  * `{ id, __pivot }` references in `data.lines`; the quote lifecycle summed
  * `base`/`quantity`/`vat` off those references. The other documents already
- * read the lines back (document-lifecycle.js); quotes now do too. Quotes never
- * carry IRPF: total = base + VAT. An update that doesn't send the lines (e.g.
+ * read the lines back (document-lifecycle.js); quotes now do too. Since
+ * issues/011 quotes carry IRPF like invoices: total = base + VAT − IRPF. An update that doesn't send the lines (e.g.
  * marking it accepted) keeps the stored totals instead of zeroing them.
  * Found by the front's e2e tests on 2026-10-09.
  */
@@ -41,8 +41,8 @@ function mockStrapi({ quotes = [] } = {}) {
   return { componentQuery, updates };
 }
 
-// 2 × 100 − 10 % = 180 + 21 % VAT 37.8; 50 + 10 % VAT 5
-const EXPECTED = { total_base: 230, total_vat: 42.8, total_irpf: 0, total: 272.8 };
+// 2 × 100 − 10 % = 180 + 21 % VAT 37.8 − 15 % IRPF 27; 50 + 10 % VAT 5
+const EXPECTED = { total_base: 230, total_vat: 42.8, total_irpf: 27, total: 245.8 };
 
 describe('quote totals (issues/022)', () => {
   beforeEach(() => jest.resetModules());
@@ -56,7 +56,7 @@ describe('quote totals (issues/022)', () => {
     await lifecycles().beforeCreate({ params: { data } });
     expect(data.total_base).toBeCloseTo(EXPECTED.total_base, 6);
     expect(data.total_vat).toBeCloseTo(EXPECTED.total_vat, 6);
-    expect(data.total_irpf).toBe(0);
+    expect(data.total_irpf).toBeCloseTo(EXPECTED.total_irpf, 6);
     expect(data.total).toBeCloseTo(EXPECTED.total, 6);
   });
 
@@ -82,6 +82,6 @@ describe('quote totals (issues/022)', () => {
       ],
     });
     await require('../src/services/recalc-zero-quote-totals').recalcZeroQuoteTotals();
-    expect(updates).toEqual([{ id: 5, total_base: 230, total_vat: 42.8, total_irpf: 0, total: 272.8 }]);
+    expect(updates).toEqual([{ id: 5, ...EXPECTED }]);
   });
 });

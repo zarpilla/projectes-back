@@ -7,7 +7,7 @@ const UID = 'api::quote.quote';
 
 /**
  * quote lifecycles (v5). Ported from v3 api/quote/models/quote.js.
- * contact_info denormalization + serie numbering + line totals (irpf forced 0).
+ * contact_info denormalization + serie numbering + line totals (with IRPF, issues/011).
  * The v3 afterFindOne pdf default moves to the quote controller's findOne override
  * (v5 removed afterFindOne).
  */
