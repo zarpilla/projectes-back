@@ -208,6 +208,16 @@ const firstLevelPopulateWithout = (skip) => {
   );
 };
 
+// The same as an object populate, with the relations inside the grant
+// components: populating a component doesn't populate its relations, so
+// grantable_years came without their `year` and Justificacions couldn't tell
+// which year an amount was for (issues/059).
+const firstLevelPopulateWithComponentRelations = (skip) => ({
+  ...Object.fromEntries(firstLevelPopulateWithout(skip).map((name) => [name, true])),
+  grantable_years: { populate: { year: true } },
+  grantable_contacts: { populate: { contact: true } },
+});
+
 // v3 plural entity names used by the phase helpers -> v5 UIDs
 // ('project-phases' / 'project-original-phases').
 const PHASE_ENTITY_UIDS = {
@@ -254,7 +264,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
    */
   async findWithActivities(ctx) {
     if (ctx.query.populate === undefined) {
-      ctx.query = { ...ctx.query, populate: firstLevelPopulateWithout(DEFAULT_POPULATE_SKIPS) };
+      ctx.query = { ...ctx.query, populate: firstLevelPopulateWithComponentRelations(DEFAULT_POPULATE_SKIPS) };
     }
     const response = await strapi.controller('api::project.project').find(ctx);
     const rows = (response && response.data) || [];
