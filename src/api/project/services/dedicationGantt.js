@@ -140,7 +140,7 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
   // 2) Users (leaders) with their daily dedications.
   const users = await strapi.db
     .query('plugin::users-permissions.user')
-    .findMany({ populate: { daily_dedications: true } });
+    .findMany({ populate: { daily_dedications: true, permissions: true } });
 
   // 3) Festives for the target year onward, with festive_type and user.
   const festives = await strapi.db.query('api::festive.festive').findMany({
@@ -185,6 +185,9 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
     id: u.id,
     username: u.username,
     hidden: !!u.hidden,
+    // can log hours: logistics members (orders only) are users too, and were
+    // listed as «persones sense hores» (issues/109)
+    works: (u.permissions || []).some((pm) => ['projects', 'hours'].includes(pm && pm.permission)),
     daily_dedications: (u.daily_dedications || []).map((dd) => ({
       from: dd.from,
       to: dd.to,
