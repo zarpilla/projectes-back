@@ -14,6 +14,7 @@ const { numericId } = require('../../../middlewares/v3-compat');
 const { getDailyDedications, getFestives } = require('../services/projectCache');
 const { getMe } = require('../../../services/me-settings');
 const { documentsOfProject, mergeDocuments, refreshLineWarnings } = require('../../../services/refresh-line-warnings');
+const { activitiesByProjectMonth } = require('../services/economic-detail-activities');
 const {
   buildProjectRows,
   aggregateRowsByYear,
@@ -847,53 +848,10 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     // Filter out mother projects to avoid double-counting (children are already included)
     projects = projects.filter((p) => !p.is_mother);
 
-    // console.log('projects', projects[0].activities ? projects[0].activities[0] : 0)
-    const activities = _.flatten(
-      projects.map((p) => {
-        return p.activities ? p.activities : [];
-      }),
-    );
-
-    // projects.forEach((p) => {
-    //   p.activities.forEach((a) => {
-    //     if (!year || (a.date && a.date.substring(0, 4) === year.toString())) {
-    //       activities.push(a);
-    //     }
-    //   });
-    // });
-
     let response;
 
-    const activitiesPYM = activities
-      .filter((a) => a.date && a.project)
-      .map((a) => {
-        return {
-          ...a,
-          pym: `${a.project}.${moment(a.date, 'YYYY-MM-DD').year()}.${moment(a.date, 'YYYY-MM-DD').month()}`,
-        };
-      });
-    const groupedActivities = _(activitiesPYM)
-      .groupBy('pym')
-      .map((rows, id) => {
-        return {
-          projectId: parseInt(id.split('.')[0]),
-          year: parseInt(id.split('.')[1]),
-          month: parseInt(id.split('.')[2]) + 1,
-          cost: _.sumBy(rows, (r) => r.hours * r.cost_by_hour),
-          hours: _.sumBy(rows, 'hours'),
-        };
-      });
-
-    const groupedActivitiesObj = JSON.parse(JSON.stringify(groupedActivities));
-
-    // Create a Map for faster activity lookup by projectId
-    const activitiesByProject = new Map();
-    groupedActivitiesObj.forEach((activity) => {
-      if (!activitiesByProject.has(activity.projectId)) {
-        activitiesByProject.set(activity.projectId, []);
-      }
-      activitiesByProject.get(activity.projectId).push(activity);
-    });
+    // executed hours per project and month (issues/060)
+    const activitiesByProject = activitiesByProjectMonth(projects);
 
     const me = await getMe();
     const fallback_deductible_vat_pct =
