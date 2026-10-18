@@ -118,4 +118,4 @@ const wrapEmailProvider = (strapiInstance) => {
   provider.normalizesBody = true;
 };
 
-module.exports = { buildEmailBody, htmlToText, normalizeEmailBody, wrapEmailProvider };
+module.exports = { buildEmailBody, htmlToText, normalizeEmailBody, wrapEmailProvider, escapeHtml };

@@ -85,7 +85,7 @@ describe('orders/table gives what the quick edit needs to pick a rate (issues/15
       path.join(__dirname, '..', 'src', 'api', 'order', 'controllers', 'order.js'),
       'utf8',
     );
-    const table = src.slice(src.indexOf('const TABLE_POPULATE'), src.indexOf('const assertWithinNextDayCutoff'));
+    const table = src.slice(src.indexOf('const TABLE_POPULATE'), src.indexOf('const DATE_RULES_EXEMPT'));
     expect(table).toMatch(/collection_point/);
     expect(table).toMatch(/route_rate/);
   });

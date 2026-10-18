@@ -24,11 +24,32 @@
  * 4. A worker (`hours`, without full access) reads and changes only her own
  *    hours, time counters, workday logs and personal holidays, and reads her
  *    own working periods (daily dedications) without the salary fields.
+ * 5. A member's order keeps only what she decides (issues/163): the price,
+ *    the discounts, the invoice and the moves of the office are dropped from
+ *    what she sends, and the price is computed by the server. A driver
+ *    (`orders_delivery` without the office) changes only the operation fields
+ *    of an order (state, deposit, pickup, transfer, delivery).
+ * 6. A member changes only the address and contact fields of her delivery
+ *    points, and of the shared ones only the address (issues/164).
+ * 7. Saved pivot views are read and changed only for the screens the user's
+ *    permissions open (issues/166).
+ * 8. Every response is cleaned of the salaries, the identity of the people and
+ *    the projects' finances, however deep the populate went
+ *    (services/response-sanitizer.js, issues/165); members also get only the
+ *    contacts they can see on «Punts d'entrega».
  *
  * Public routes (no user) are left to the Public role.
  */
 const { errors } = require('@strapi/utils');
-const { isAllowed, isOrdersMember, FULL_ACCESS } = require('../services/app-access-rules');
+const {
+  isAllowed,
+  isOrdersMember,
+  isDriver,
+  pivotIdentifiersFor,
+  FULL_ACCESS,
+  LOGISTICS,
+} = require('../services/app-access-rules');
+const { rulesFor, sanitizeResponse, modelUidOfAction } = require('../services/response-sanitizer');
 
 const ORDER = 'api::order.order';
 const CONTACT = 'api::contact.contact';
@@ -39,10 +60,127 @@ const TIME_COUNTER = 'api::time-counter.time-counter';
 const WORKDAY_LOG = 'api::workday-log.workday-log';
 const DAILY_DEDICATION = 'api::daily-dedication.daily-dedication';
 const FESTIVE = 'api::festive.festive';
+const PIVOT_VIEW = 'api::pivot-table-view.pivot-table-view';
 
 // What a member may change on an order delivered to her contact but owned by
 // another member (PickupPoints: the boxes she picked up; incidences modal).
 const PICKUP_POINT_FIELDS = new Set(['lines', 'picked_up', 'incidences', '_tracking_user']);
+
+// The office's fields of an order (issues/163). The member's order form posts
+// the whole order, these included, so they are dropped rather than refused.
+// The price and the discounts are computed by the server (order lifecycles,
+// route-price.js) from what she chose; the deposit is hers («Dipòsits»), but
+// always in her name.
+const OFFICE_ORDER_FIELDS = [
+  'price',
+  'multidelivery_discount',
+  'volume_discount',
+  'contact_pickup_discount',
+  'emitted_invoice',
+  'emitted_invoice_datetime',
+  'delivery_date',
+  'route_date',
+  'pickup_date',
+  'pickup_user',
+  'transfer',
+  'transfer_start_date',
+  'transfer_start_user',
+  'transfer_end_date',
+  'transfer_end_user',
+  'transfer_pickup_origin',
+  'transfer_pickup_destination',
+  'transfer_route',
+  'transfer_route_date',
+  'manual_transfer_route',
+  'last_mile',
+  'is_collection_order',
+  'collection_order',
+  'collection_orders',
+  'deposit_user',
+];
+
+// What the price of an order depends on: when one of them changes, the price
+// is computed again.
+const PRICE_INPUTS = [
+  'kilograms',
+  'lines',
+  'route_rate',
+  'route',
+  'pickup',
+  'delivery_type',
+  'collection_point',
+];
+
+// What a member still changes on her order once the office has processed it:
+// the boxes picked up, the incidences, the deposit and cancelling.
+const MEMBER_LATE_FIELDS = new Set([...PICKUP_POINT_FIELDS, 'status', 'deposit_date']);
+
+// What a driver changes on an order (Operacions, Transferències, Dipòsits, the
+// state of the Comandes list and the incidences).
+const DRIVER_ORDER_FIELDS = new Set([
+  'status',
+  'delivery_date',
+  'deposit_date',
+  'deposit_user',
+  'pickup_date',
+  'pickup_user',
+  'transfer_start_date',
+  'transfer_start_user',
+  'transfer_end_date',
+  'transfer_end_user',
+  'picked_up',
+  'incidences',
+  '_tracking_user',
+]);
+
+// A move and the user it is recorded with: always whoever makes it.
+const MOVES = {
+  deposit_date: 'deposit_user',
+  pickup_date: 'pickup_user',
+  transfer_start_date: 'transfer_start_user',
+  transfer_end_date: 'transfer_end_user',
+};
+
+// What a member changes on her own delivery points (ContactsUserForm), and on
+// the shared ones or the ones of other members her orders go to: the address
+// only (issues/164). Discounts, partner data and the office's flags stay with
+// the office.
+const SHARED_CONTACT_FIELDS = [
+  'address',
+  'city',
+  'postcode',
+  'country',
+  'state',
+  'phone',
+  'contact_person',
+  'contact_phone',
+  'email',
+  'time_slot_1_ini',
+  'time_slot_1_end',
+  'time_slot_2_ini',
+  'time_slot_2_end',
+];
+const MEMBER_CONTACT_FIELDS = [
+  ...SHARED_CONTACT_FIELDS,
+  'name',
+  'trade_name',
+  'nif',
+  'website',
+  'notes',
+  'legal_form',
+  'sector',
+  'owner',
+  'users_permissions_user',
+];
+// a new point from the order form is tagged as a delivery point
+const MEMBER_NEW_CONTACT_FIELDS = [...MEMBER_CONTACT_FIELDS, 'contact_types'];
+
+// What a worker gets of the contacts (the Dedicació pivot loads the list).
+const CONTACT_NAME_FIELDS = ['id', 'documentId', 'name', 'trade_name'];
+
+// A member deletes an incidence of her order while it is open and less than a
+// day old, like the Incidències screen lets her.
+const INCIDENCE_DELETE_HOURS = 24;
 
 // Left out of `GET /api/me` for users without full access.
 const ME_PRIVATE_FIELDS = [
@@ -53,18 +191,6 @@ const ME_PRIVATE_FIELDS = [
   'bank_account_vat',
   'google_credentials',
   'face_certificate',
-];
-
-// Left out of the daily dedications for users without full access: what the
-// hours screens need is the period and its hours per day.
-const DEDICATION_SALARY_FIELDS = [
-  'costByHour',
-  'monthly_salary',
-  'scheme',
-  'quota',
-  'pct_irpf',
-  'pct_other',
-  'pct_quota',
 ];
 
 const forbidden = () => new errors.ForbiddenError('No tens permís per fer aquesta acció');
@@ -161,6 +287,53 @@ function memberMayChangeStatus(current, requested) {
   return current === 'pending' && requested === 'cancelled';
 }
 
+const omit = (payload, fields) => {
+  for (const field of fields) delete payload[field];
+};
+
+const pick = (payload, fields) => {
+  for (const key of Object.keys(payload)) if (!fields.includes(key)) delete payload[key];
+};
+
+/** Each move sent is recorded in the name of `userId` (or cleared with its date). */
+function ownMoves(payload, userId) {
+  for (const [date, user] of Object.entries(MOVES)) {
+    if (date in payload) payload[user] = payload[date] ? userId : null;
+    else delete payload[user];
+  }
+}
+
+/**
+ * What a member sends for her order, without the office's fields (issues/163).
+ * The pickup discount is the one of the delivery point, and the price is left
+ * for the server to compute (route-price.js, the form's tiers) when the order
+ * is new or one of its inputs changes; the discounts are the lifecycles'.
+ */
+async function memberOrderPayload(strapi, payload, userId, { creating }) {
+  const depositSent = 'deposit_date' in payload;
+  omit(payload, OFFICE_ORDER_FIELDS);
+  if (depositSent) payload.deposit_user = payload.deposit_date ? userId : null;
+  const contactId = idOf(payload.contact);
+  if (contactId !== undefined && contactId !== null) {
+    const contact = await strapi.db
+      .query(CONTACT)
+      .findOne({ where: { id: contactId }, select: ['id', 'pickup_discount'] });
+    payload.contact_pickup_discount = (contact && contact.pickup_discount) || 0;
+  }
+  if (creating || PRICE_INPUTS.some((field) => field in payload)) payload.price = null;
+  return payload;
+}
+
+/** A member's own order: the order form, the Comandes list, Dipòsits. */
+async function memberOwnOrderUpdate(strapi, order, payload, userId) {
+  if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
+    throw forbidden();
+  if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
+  // once the office has the order, the form is read-only for her
+  if (order.status !== 'pending') pick(payload, [...MEMBER_LATE_FIELDS]);
+  await memberOrderPayload(strapi, payload, userId, { creating: false });
+}
+
 // ---------------------------------------------------------------------------
 // Member scopes: action -> (ctx, next, { strapi, userId }) handler
 // ---------------------------------------------------------------------------
@@ -183,25 +356,31 @@ async function scopeOrderRow(ctx, next, { strapi, userId }) {
     if (access === 'pickup') {
       if (Object.keys(payload).some((key) => !PICKUP_POINT_FIELDS.has(key))) throw forbidden();
     } else {
-      if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
-        throw forbidden();
-      if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
+      await memberOwnOrderUpdate(strapi, order, payload, userId);
     }
   }
   return next();
 }
 
-async function scopeOrderCreate(ctx, next, { userId }) {
+async function scopeOrderCreate(ctx, next, { strapi, userId }) {
   const payload = payloadOf(ctx);
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
     throw forbidden();
   payload.owner = userId;
+  // a new order is the office's to process (issues/163)
+  payload.status = 'pending';
+  await memberOrderPayload(strapi, payload, userId, { creating: true });
   return next();
 }
 
-async function scopeOrderCsv(ctx, next, { userId }) {
+async function scopeOrderCsv(ctx, next, { strapi, userId }) {
   const body = ctx.request.body || {};
   if (body.owner !== undefined && body.owner !== null && idOf(body.owner) !== userId) throw forbidden();
+  // a new point (a contact without id): the office's fields of a contact stay out too
+  if (body.contact && typeof body.contact === 'object' && body.contact.id === undefined) {
+    pick(body.contact, MEMBER_NEW_CONTACT_FIELDS);
+  }
+  await memberOrderPayload(strapi, body, userId, { creating: true });
   // createCSV reads `owner.id`, and gives the same owner to a contact it creates
   body.owner = { id: userId };
   return next();
@@ -259,8 +438,17 @@ async function scopeIncidenceRow(ctx, next, { strapi, userId }) {
     .findOne({ where, populate: { order: { select: ['id'] } } });
   if (!incidence) return next();
   const order = incidence.order ? await loadOrder(strapi, { id: incidence.order.id }) : null;
-  if (!orderAccess(order, userId, await memberContactIds(strapi, userId))) throw forbidden();
+  const access = orderAccess(order, userId, await memberContactIds(strapi, userId));
+  if (!access) throw forbidden();
+  if (ctx.method === 'DELETE' && !memberMayDeleteIncidence(incidence, access)) throw forbidden();
   return next();
+}
+
+/** Her order's incidence, still open, less than a day old (IncidencesTable's canDelete). */
+function memberMayDeleteIncidence(incidence, access) {
+  if (access !== 'owner' || incidence.state === 'closed') return false;
+  const created = Date.parse(incidence.createdAt || incidence.created_at);
+  return Number.isFinite(created) && Date.now() - created < INCIDENCE_DELETE_HOURS * 3600 * 1000;
 }
 
 /** Invoices addressed to the member's own contact («Factures»). */
@@ -295,31 +483,87 @@ async function scopeContactCreate(ctx, next, { userId }) {
   const payload = payloadOf(ctx);
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
     throw forbidden();
+  pick(payload, MEMBER_NEW_CONTACT_FIELDS);
   payload.owner = userId;
   return next();
 }
 
+/** The ids of the contacts her orders go to. */
+async function orderContactIds(strapi, userId) {
+  const orders = await strapi.db.query(ORDER).findMany({
+    where: { owner: { id: userId } },
+    select: ['id'],
+    populate: { contact: { select: ['id'] } },
+  });
+  return [...new Set(orders.map((o) => idOf(o.contact)).filter((id) => id !== undefined && id !== null))];
+}
+
 /**
- * The contacts a member can open on «Punts d'entrega»: hers (owner or her own
- * contact), the shared ones, and the ones her orders go to.
+ * The contacts a member sees on «Punts d'entrega» and in the order form (issues/165):
+ * hers (owner or her own contact), the shared ones, and the ones her orders go to.
  */
-async function scopeContactUpdate(ctx, next, { strapi, userId }) {
-  const where = addressedRow(ctx);
-  if (!where) throw forbidden();
+async function scopeContactList(ctx, next, { strapi, userId }) {
+  const ids = idList(await orderContactIds(strapi, userId));
+  narrowQuery(
+    ctx,
+    {
+      _or: [
+        { 'owner.id': userId },
+        { 'users_permissions_user.id': userId },
+        { 'multiowner_eq': true },
+        { 'multidelivery_eq': true },
+        { 'id_in': ids },
+      ],
+    },
+    {
+      $or: [
+        { owner: { id: userId } },
+        { users_permissions_user: { id: userId } },
+        { multiowner: true },
+        { multidelivery: true },
+        { id: { $in: ids } },
+      ],
+    },
+  );
+  return next();
+}
+
+async function loadVisibleContact(strapi, where, userId) {
   const contact = await strapi.db.query(CONTACT).findOne({
     where,
     populate: { owner: { select: ['id'] }, users_permissions_user: { select: ['id'] } },
   });
-  if (!contact) return next();
+  if (!contact) return { contact: null };
+  const own = idOf(contact.owner) === userId || idOf(contact.users_permissions_user) === userId;
   const visible =
-    idOf(contact.owner) === userId ||
-    idOf(contact.users_permissions_user) === userId ||
+    own ||
     contact.multiowner === true ||
     contact.multidelivery === true ||
     (await strapi.db.query(ORDER).count({ where: { owner: { id: userId }, contact: { id: contact.id } } })) >
       0;
   if (!visible) throw forbidden();
+  return { contact, own };
+}
+
+async function scopeContactRow(ctx, next, { strapi, userId }) {
+  const where = addressedRow(ctx);
+  if (!where) throw forbidden();
+  await loadVisibleContact(strapi, where, userId);
+  return next();
+}
+
+/**
+ * The contacts a member can open on «Punts d'entrega»: hers (owner or her own
+ * contact), the shared ones, and the ones her orders go to. Hers she edits but
+ * for the office's fields; the others, only their address (issues/164).
+ */
+async function scopeContactUpdate(ctx, next, { strapi, userId }) {
+  const where = addressedRow(ctx);
+  if (!where) throw forbidden();
+  const { contact, own } = await loadVisibleContact(strapi, where, userId);
+  if (!contact) return next();
   const payload = payloadOf(ctx);
+  pick(payload, own ? MEMBER_CONTACT_FIELDS : SHARED_CONTACT_FIELDS);
   // the form sends her as the owner; anyone else would hand the contact over
   if (
     payload.owner !== undefined &&
@@ -341,6 +585,85 @@ async function scopeOrdersImport(ctx, next, { userId }) {
   const payload = payloadOf(ctx);
   payload.users_permissions_user = userId;
   return next();
+}
+
+// ---------------------------------------------------------------------------
+// Driver scopes (issues/163): `orders_delivery` without the office. She makes
+// the moves of any order; the orders themselves are the office's, or the
+// member's when she is one too.
+// ---------------------------------------------------------------------------
+
+const asMember = (scope) =>
+  async function scopeDriverAsMember(ctx, next, deps) {
+    if (!deps.permissions.includes('orders')) throw forbidden();
+    return scope(ctx, next, deps);
+  };
+
+async function scopeDriverOrderUpdate(ctx, next, { strapi, userId, permissions }) {
+  const where = addressedRow(ctx);
+  if (!where) throw forbidden();
+  const order = await loadOrder(strapi, where);
+  if (!order) return next();
+  const payload = payloadOf(ctx);
+  // her own pending order, when she is a member too
+  if (permissions.includes('orders') && idOf(order.owner) === userId && order.status === 'pending') {
+    await memberOwnOrderUpdate(strapi, order, payload, userId);
+    return next();
+  }
+  if (Object.keys(payload).some((key) => !DRIVER_ORDER_FIELDS.has(key))) throw forbidden();
+  const { status } = payload;
+  if (status !== undefined && status !== null && status !== order.status) {
+    // invoicing is the office's, and so is what has been invoiced
+    if (status === 'invoiced' || order.status === 'invoiced') throw forbidden();
+  }
+  ownMoves(payload, userId);
+  return next();
+}
+
+// ---------------------------------------------------------------------------
+// Saved pivot views (issues/166): only the ones of her screens.
+// ---------------------------------------------------------------------------
+
+async function scopePivotViewList(ctx, next, { permissions }) {
+  const identifiers = idList(pivotIdentifiersFor(permissions));
+  narrowQuery(ctx, { 'identifier_in': identifiers }, { identifier: { $in: identifiers } });
+  return next();
+}
+
+async function scopePivotViewRow(ctx, next, { strapi, permissions }) {
+  const where = addressedRow(ctx);
+  if (!where) throw forbidden();
+  const identifiers = pivotIdentifiersFor(permissions);
+  const view = await strapi.db.query(PIVOT_VIEW).findOne({ where, select: ['id', 'identifier'] });
+  if (!view) return next();
+  if (!identifiers.includes(view.identifier)) throw forbidden();
+  const payload = payloadOf(ctx);
+  if (ctx.method === 'PUT' && payload.identifier !== undefined && !identifiers.includes(payload.identifier)) {
+    throw forbidden();
+  }
+  return next();
+}
+
+async function scopePivotViewCreate(ctx, next, { permissions }) {
+  if (!pivotIdentifiersFor(permissions).includes(payloadOf(ctx).identifier)) throw forbidden();
+  return next();
+}
+
+/**
+ * The contact list (`contacts/basic`): members see the contacts of «Punts
+ * d'entrega»; a worker, who only loads it with the Dedicació pivot, gets their
+ * names (issues/165).
+ */
+async function scopeContactBasic(ctx, next, deps) {
+  const { permissions } = deps;
+  if (isOrdersMember(permissions)) return scopeContactList(ctx, next, deps);
+  if (permissions.some((p) => LOGISTICS.includes(p))) return next();
+  await next();
+  if (Array.isArray(ctx.body)) {
+    ctx.body = ctx.body.map((contact) =>
+      Object.fromEntries(CONTACT_NAME_FIELDS.filter((f) => f in contact).map((f) => [f, contact[f]])),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -404,19 +727,6 @@ async function scopeActivityImportCalendar(ctx, next, { userId }) {
   return next();
 }
 
-function stripDedications(body) {
-  const data = body && typeof body === 'object' && 'data' in body ? body.data : body;
-  for (const row of Array.isArray(data) ? data : [data]) {
-    if (row && typeof row === 'object') for (const field of DEDICATION_SALARY_FIELDS) delete row[field];
-  }
-}
-
-const withoutSalary = (scope) =>
-  async function scopeDedications(ctx, next, deps) {
-    await scope(ctx, next, deps);
-    stripDedications(ctx.body);
-  };
-
 const OWN_SCOPES = {
   [`${ACTIVITY}.find`]: scopeOwnList,
   [`${ACTIVITY}.getForCalendar`]: scopeOwnList,
@@ -436,8 +746,9 @@ const OWN_SCOPES = {
   [`${WORKDAY_LOG}.create`]: scopeOwnCreate,
   [`${WORKDAY_LOG}.update`]: scopeOwnRow(WORKDAY_LOG),
   [`${WORKDAY_LOG}.delete`]: scopeOwnRow(WORKDAY_LOG),
-  [`${DAILY_DEDICATION}.find`]: withoutSalary(scopeOwnList),
-  [`${DAILY_DEDICATION}.findOne`]: withoutSalary(scopeOwnRow(DAILY_DEDICATION)),
+  // without the salary fields: the response sanitizer drops them
+  [`${DAILY_DEDICATION}.find`]: scopeOwnList,
+  [`${DAILY_DEDICATION}.findOne`]: scopeOwnRow(DAILY_DEDICATION),
   // the holidays for everyone stay readable (calendars); the festive controller
   // already keeps their changes to admins (issues/140)
   [`${FESTIVE}.create`]: scopeOwnCreate,
@@ -461,10 +772,37 @@ const MEMBER_SCOPES = {
   [`${INCIDENCE}.delete`]: scopeIncidenceRow,
   'api::emitted-invoice.emitted-invoice.findBasic': scopeEmittedInvoiceList,
   'api::received-income.received-income.findBasic': scopeInvoiceList,
+  [`${CONTACT}.find`]: scopeContactList,
+  [`${CONTACT}.findOne`]: scopeContactRow,
   [`${CONTACT}.create`]: scopeContactCreate,
   [`${CONTACT}.update`]: scopeContactUpdate,
   'api::orders-import.orders-import.create': scopeOrdersImport,
 };
+
+const DRIVER_SCOPES = {
+  [`${ORDER}.update`]: scopeDriverOrderUpdate,
+  [`${ORDER}.create`]: asMember(scopeOrderCreate),
+  [`${ORDER}.createCSV`]: asMember(scopeOrderCsv),
+  'api::orders-import.orders-import.create': asMember(scopeOrdersImport),
+};
+
+// for every user without full access
+const GENERAL_SCOPES = {
+  [`${PIVOT_VIEW}.find`]: scopePivotViewList,
+  [`${PIVOT_VIEW}.findOne`]: scopePivotViewRow,
+  [`${PIVOT_VIEW}.update`]: scopePivotViewRow,
+  [`${PIVOT_VIEW}.delete`]: scopePivotViewRow,
+  [`${PIVOT_VIEW}.create`]: scopePivotViewCreate,
+  [`${CONTACT}.basic`]: scopeContactBasic,
+};
+
+// the user's own data: nothing to clean
+const OWN_DATA_ACTIONS = new Set([
+  'api::me.me.find',
+  'plugin::users-permissions.user.me',
+  'plugin::users-permissions.user.home',
+  'plugin::users-permissions.user.updateHome',
+]);
 
 function stripMe(body) {
   const me =
@@ -488,11 +826,21 @@ module.exports = (config, { strapi }) =>
       stripMe(ctx.body);
       return;
     }
-    const scope = OWN_SCOPES[action] || (isOrdersMember(permissions) && MEMBER_SCOPES[action]);
-    if (scope) return scope(ctx, next, { strapi, userId: user.id });
-    return next();
+    const member = isOrdersMember(permissions);
+    const scope =
+      OWN_SCOPES[action] ||
+      (member && MEMBER_SCOPES[action]) ||
+      (isDriver(permissions) && DRIVER_SCOPES[action]) ||
+      GENERAL_SCOPES[action];
+    if (scope) await scope(ctx, next, { strapi, userId: user.id, permissions });
+    else await next();
+    if (!OWN_DATA_ACTIONS.has(action)) {
+      sanitizeResponse(strapi, modelUidOfAction(action), ctx.body, rulesFor({ member, selfId: user.id }));
+    }
   };
 
 module.exports.actionOf = actionOf;
 module.exports.MEMBER_SCOPES = MEMBER_SCOPES;
 module.exports.OWN_SCOPES = OWN_SCOPES;
+module.exports.DRIVER_SCOPES = DRIVER_SCOPES;
+module.exports.GENERAL_SCOPES = GENERAL_SCOPES;

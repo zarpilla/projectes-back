@@ -45,49 +45,63 @@ const { orderTotals, TOTALS_SELECT } = require('../services/order-totals');
 const TABLE_POPULATE = ['route', 'owner', 'contact', 'pickup', 'delivery_type', 'contact_legal_form', 'route_rate'];
 const TABLE_POPULATE_SELECT = { collection_point: { select: ['id'] } };
 
-/**
- * Enforce the next-day cutoff: orders targeting tomorrow's delivery cannot be
- * created past the configured cutoff hour, unless the user has `orders_admin`.
- * Cutoff read from me.orders_options.next_day_limit_hour (default 14).
- */
-const assertWithinNextDayCutoff = async (ctx) => {
-  const { estimated_delivery_date } = ctx.request.body || {};
-  if (!estimated_delivery_date) return true;
+// The permissions that skip the delivery date rules: the logistics office and
+// the entity's staff.
+const DATE_RULES_EXEMPT = ['orders_admin', 'projects', 'admin'];
 
-  const now = moment();
-  const tomorrow = moment().add(1, 'day');
-  if (!moment(estimated_delivery_date).isSame(tomorrow, 'day')) return true;
+const orderPayloadOf = (body) =>
+  body && typeof body === 'object' && body.data && typeof body.data === 'object' ? body.data : body || {};
 
-  // Admins (orders_admin) are exempt
-  if (ctx.state.user) {
-    const user = await strapi.db
-      .query('plugin::users-permissions.user')
-      .findOne({ where: { id: ctx.state.user.id }, populate: { permissions: true } });
-    const isAdmin =
-      user &&
-      Array.isArray(user.permissions) &&
-      user.permissions.some((p) => p.permission === 'orders_admin');
-    if (isAdmin) return true;
-  }
+async function exemptFromDateRules(user) {
+  if (!user) return false;
+  const row = await strapi.db
+    .query('plugin::users-permissions.user')
+    .findOne({ where: { id: user.id }, populate: { permissions: true } });
+  return Boolean(
+    row &&
+    Array.isArray(row.permissions) &&
+    row.permissions.some((p) => DATE_RULES_EXEMPT.includes(p.permission)),
+  );
+}
 
-  let nextDayLimitHour = 14;
+async function nextDayLimitHour() {
   try {
     const meSettings = await getMe();
     if (meSettings && meSettings.orders_options && meSettings.orders_options.next_day_limit_hour != null) {
-      nextDayLimitHour = meSettings.orders_options.next_day_limit_hour;
+      return meSettings.orders_options.next_day_limit_hour;
     }
   } catch {
-    // fall back to default 14
+    // fall back to the default
   }
+  return 14;
+}
 
-  if (now.hour() >= nextDayLimitHour) {
-    ctx.badRequest(
-      `No es pot crear la comanda: s'ha superat l'hora límit (${nextDayLimitHour}h) per a entregues del dia següent.`,
-    );
-    return false;
+/**
+ * Why a member can't deliver an order on `date`, or null when she can: not
+ * today nor in the past, and not tomorrow past the cutoff hour
+ * (me.orders_options.next_day_limit_hour, default 14). The office and the
+ * entity's staff are exempt.
+ *
+ * It read only the unwrapped (v3) body and ran only on create: what the front
+ * sends (`{ data }`), a date change and the CSV import skipped it, and orders
+ * for today or the past went through (issues/168).
+ */
+async function deliveryDateRefusal(date, user) {
+  if (!date) return null;
+  const day = moment(date);
+  if (!day.isValid()) return null;
+  const tomorrow = moment().add(1, 'day');
+  if (!day.isBefore(tomorrow, 'day') && !day.isSame(tomorrow, 'day')) return null;
+  if (await exemptFromDateRules(user)) return null;
+  if (day.isBefore(tomorrow, 'day')) {
+    return "No es pot crear la comanda: la data d'entrega ha de ser a partir de demà.";
   }
-  return true;
-};
+  const limit = await nextDayLimitHour();
+  if (moment().hour() >= limit) {
+    return `No es pot crear la comanda: s'ha superat l'hora límit (${limit}h) per a entregues del dia següent.`;
+  }
+  return null;
+}
 
 module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   /**
@@ -247,6 +261,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * Bulk order creation from CSV import with contact resolution.
    */
   async createCSV(ctx) {
+    const refusal = await deliveryDateRefusal(ctx.request.body?.estimated_delivery_date, ctx.state.user);
+    if (refusal) return ctx.badRequest(refusal);
     const order = { ...ctx.request.body };
     delete order.id;
     order.pickup = order.pickup?.id;
@@ -316,7 +332,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       return ctx.send(
         {
           done: false,
-          message: "Ja hi ha una facturació en curs. Espera que acabi i torna-ho a provar.",
+          message: 'Ja hi ha una facturació en curs. Espera que acabi i torna-ho a provar.',
         },
         409,
       );
@@ -328,7 +344,6 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       invoiceRunInFlight = false;
     }
   },
-
 
   /**
    * POST /api/orders/pdf
@@ -439,7 +454,9 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       const myInvoice = new MicroInvoiceOrder({
         style: {
           header: {
-            image: logo ? { path: logo, width: logoWidth, height: me.logo?.height ? me.logo.height / ratio : 100 } : null,
+            image: logo
+              ? { path: logo, width: logoWidth, height: me.logo?.height ? me.logo.height / ratio : 100 }
+              : null,
             qr: { path: qrCodeImage, width: qrWidth, height: qrWidth },
           },
         },
@@ -597,14 +614,18 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   },
 
   /**
-   * Override core create: enforce next-day cutoff + set tracking user.
+   * Override core create: enforce the delivery date rules + set tracking user.
+   * An order sent without a state is pending: with none it counted in «Totes»
+   * and in no state tab (issues/168).
    */
   async create(ctx) {
     if (!ctx.request.body._tracking_user && ctx.state.user) {
       ctx.request.body._tracking_user = ctx.state.user;
     }
-    const allowed = await assertWithinNextDayCutoff(ctx);
-    if (!allowed) return;
+    const payload = orderPayloadOf(ctx.request.body);
+    const refusal = await deliveryDateRefusal(payload.estimated_delivery_date, ctx.state.user);
+    if (refusal) return ctx.badRequest(refusal);
+    if (!payload.status) payload.status = 'pending';
     return super.create(ctx);
   },
 
@@ -629,6 +650,17 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     // a delivered, invoiced or cancelled order can't be deposited (issues/149)
     const refusal = await depositRefusal(numericId(ctx), payload);
     if (refusal) return ctx.badRequest(refusal);
+
+    // moving the delivery date follows the same rules as a new order (issues/168)
+    if (payload.estimated_delivery_date) {
+      const stored = await strapi.db
+        .query('api::order.order')
+        .findOne({ where: { id: numericId(ctx) }, select: ['id', 'estimated_delivery_date'] });
+      if (!stored || !moment(stored.estimated_delivery_date).isSame(payload.estimated_delivery_date, 'day')) {
+        const dateRefusal = await deliveryDateRefusal(payload.estimated_delivery_date, ctx.state.user);
+        if (dateRefusal) return ctx.badRequest(dateRefusal.replace('crear', 'moure'));
+      }
+    }
 
     const incidences = Array.isArray(payload.incidences) ? payload.incidences : null;
     if (incidences) delete payload.incidences;
@@ -696,12 +728,8 @@ async function invoiceRun(ctx) {
   // same selection created a duplicate draft and silently stole the orders'
   // link from the first draft; deleting the duplicate later then reset the
   // shared orders back to 'delivered' (2026-09-30 incident).
-  const invoiceable = ordersEntities.filter(
-    (o) => o.status !== 'invoiced' && !o.emitted_invoice,
-  );
-  const skipped = ordersEntities
-    .filter((o) => o.status === 'invoiced' || o.emitted_invoice)
-    .map((o) => o.id);
+  const invoiceable = ordersEntities.filter((o) => o.status !== 'invoiced' && !o.emitted_invoice);
+  const skipped = ordersEntities.filter((o) => o.status === 'invoiced' || o.emitted_invoice).map((o) => o.id);
   log('INVOICEABLE', `${invoiceable.length} of ${ordersEntities.length} orders invoiceable`);
 
   if (invoiceable.length === 0) {
@@ -872,4 +900,3 @@ async function invoiceRun(ctx) {
 
   return { orders: orderIds, invoices: invoicesByOwner.map((x) => x.invoice), skipped, timings };
 }
-

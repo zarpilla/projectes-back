@@ -16,6 +16,17 @@ module.exports = createCoreController('api::form-submission.form-submission', ({
     return super.find(ctx);
   },
 
+  /**
+   * POST /api/form-submissions («Contacta»): the sender is the logged user,
+   * whatever the body says (issues/167).
+   */
+  async create(ctx) {
+    const body = ctx.request.body || {};
+    const payload = body.data && typeof body.data === 'object' ? body.data : body;
+    payload.user = ctx.state.user ? ctx.state.user.id : null;
+    return super.create(ctx);
+  },
+
   // Default core actions (find/findOne/create/update/delete) are inherited.
   // Add custom controller methods here as they are ported in Phase 4.
 }));

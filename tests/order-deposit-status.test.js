@@ -37,9 +37,10 @@ describe('deposit guard (issues/149)', () => {
     expect(await guard.depositRefusal(id, { deposit_date: '2026-10-18T10:00:00Z' })).toMatch(/no es pot dipositar/);
   });
 
-  it('leaves alone the undo and orders already deposited', async () => {
+  it('leaves alone the undo and orders saved with the deposit they have', async () => {
     expect(await guard.depositRefusal(3, { deposit_date: null })).toBeNull();
-    expect(await guard.depositRefusal(6, { deposit_date: '2026-10-18T10:00:00Z' })).toBeNull();
+    // moving that date is refused too (issues/163, api-writes-hardening.test.js)
+    expect(await guard.depositRefusal(6, { deposit_date: '2026-10-01T08:00:00.000Z' })).toBeNull();
     expect(await guard.depositRefusal(4, { price: 3 })).toBeNull();
   });
 
