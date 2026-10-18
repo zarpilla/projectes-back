@@ -22,6 +22,7 @@ const { recountMotherFlags } = require('./services/recount-mother-flags');
 const { lineVatOverType } = require('./services/line-vat-over-type');
 const { backfillTransferDestinations } = require('./services/backfill-transfer-destinations');
 const { repairCollectionOrderRates } = require('./services/repair-collection-order-rates');
+const { refreshUnifiedOrderSnapshots } = require('./services/refresh-unified-order-snapshots');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -121,6 +122,8 @@ module.exports = {
       ['backfillTransferDestinations', backfillTransferDestinations, { runOnce: true }],
       // issues/151: open collection orders got the first route rate, whatever their route.
       ['repairCollectionOrderRates', repairCollectionOrderRates, { runOnce: true }],
+      // issues/157: orders moved by Unificar (or the quick edit) kept the old point's address.
+      ['refreshUnifiedOrderSnapshots', refreshUnifiedOrderSnapshots, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
