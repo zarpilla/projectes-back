@@ -279,6 +279,7 @@ describe('emitted-invoice beforeDelete order reset', () => {
           findOne: async () => ({ id: 55, state: 'draft', projects: [30] }),
           findMany: async () => [{ id: 1 }, { id: 2 }],
           update: async () => ({}),
+          deleteMany: async () => ({ count: 0 }), // the draft's phase income (issues/153)
         }),
         connection: (table) => ({ where: () => ({ update: async () => 1 }) }),
       },

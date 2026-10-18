@@ -255,6 +255,14 @@ module.exports = {
         `DELETE FROM orders_emitted_invoice_lnk WHERE order_id IN (${placeholders})`,
         orderIds,
       );
+      // A logistics draft («Facturar», orders/invoice) came with an income
+      // line on the project's last phase: undo it with the draft, or the
+      // project keeps an income that is no longer invoiced (issues/153).
+      if (invoice && invoice.id) {
+        await strapi.db
+          .query('api::phase-income.phase-income')
+          .deleteMany({ where: { invoice: { id: invoice.id } } });
+      }
     }
     scheduleFromEntityProjects(invoice);
   },
