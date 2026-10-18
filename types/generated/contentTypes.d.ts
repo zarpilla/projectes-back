@@ -754,7 +754,7 @@ export interface ApiDietDiet extends Struct.CollectionTypeSchema {
 export interface ApiDocumentChangeLogDocumentChangeLog extends Struct.CollectionTypeSchema {
   collectionName: 'document_change_logs';
   info: {
-    description: 'Who changed what on an emitted/received invoice, and when (issues/001). Written by services/change-log.js only.';
+    description: 'Who changed what on an emitted/received invoice (issues/001) or an order (issues/119), and when. Written by services/change-log.js only.';
     displayName: 'Document Change Log';
     pluralName: 'document-change-logs';
     singularName: 'document-change-log';

@@ -158,14 +158,13 @@ describe('db.query write signatures', () => {
     expect(offending).toEqual([]);
   });
 
-  it('the collection order and tracking creates use the v5 shape', () => {
+  // the tracking create went with issues/119 (history in services/change-log.js)
+  it('the collection order create uses the v5 shape', () => {
     const source = fs.readFileSync(
       path.join(SRC, 'api', 'order', 'content-types', 'order', 'lifecycles.js'),
       'utf8'
     );
     expect(source).toContain('.create({ data: createData })');
-    expect(source).toContain('.create({ data: trackingData })');
     expect(source).not.toMatch(/\.create\(createData\)/);
-    expect(source).not.toMatch(/\.create\(trackingData\)/);
   });
 });

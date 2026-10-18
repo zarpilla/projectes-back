@@ -17,6 +17,9 @@ const {
   forOrdersWhere,
 } = require('../services/for-orders');
 const { contactSnapshot, loadContact } = require('../../order/services/contact-snapshot');
+const changeLog = require('../../../services/change-log');
+
+const ORDER = 'api::order.order';
 
 module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -196,11 +199,14 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
       const snapshot = contactSnapshot(targetContact);
       let movedCount = 0;
       for (const order of orders) {
-        await strapi.db.query('api::order.order').update({
+        // a raw entity-layer write: the change log needs the row before it (issues/119)
+        const before = await changeLog.snapshot(ORDER, { id: order.id }).catch(() => null);
+        await strapi.db.query(ORDER).update({
           where: { id: order.id },
           // the moved order carries the target point's data (issues/157)
           data: { contact: targetContactId, ...snapshot },
         });
+        await changeLog.logRawUpdate(ORDER, before);
         movedCount++;
       }
 
