@@ -3,6 +3,7 @@
 const { createCoreController } = require('@strapi/strapi').factories;
 const _ = require('lodash');
 const moment = require('moment');
+const { liveChildrenWhere } = require('../services/motherChildren');
 const {
   adaptQuery,
   adaptCtxQuery,
@@ -187,7 +188,7 @@ const doProjectInfoCalculations = async (data, id) => {
   }
 
   // Calculate is_mother: true if there are any projects with this project as their mother
-  const childProjects = await strapi.db.query('api::project.project').count({ where: { mother: id } });
+  const childProjects = await strapi.db.query('api::project.project').count({ where: liveChildrenWhere(id) });
   data.is_mother = childProjects > 0;
 
   return data;
@@ -1137,7 +1138,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         },
       };
       const childrenAll = await strapi.db.query('api::project.project').findMany({
-        where: { mother: id },
+        where: liveChildrenWhere(id),
         populate: {
           project_phases: phasePopulate,
           project_original_phases: phasePopulate,
@@ -2184,7 +2185,7 @@ async function calculateMotherProjectTotals(motherProject) {
   try {
     const children = await strapi.db
       .query('api::project.project')
-      .findMany({ where: { mother: motherProject.id } });
+      .findMany({ where: liveChildrenWhere(motherProject.id) });
     if (!children || children.length === 0) return;
 
     for (const f of [
