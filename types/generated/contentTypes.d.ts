@@ -1456,32 +1456,6 @@ export interface ApiOrdersImportOrdersImport extends Struct.CollectionTypeSchema
   };
 }
 
-export interface ApiOrdersTrackingOrdersTracking extends Struct.CollectionTypeSchema {
-  collectionName: 'orders_trackings';
-  info: {
-    displayName: 'OrdersTracking';
-    pluralName: 'orders-trackings';
-    singularName: 'orders-tracking';
-  };
-  options: {
-    draftAndPublish: false;
-  };
-  attributes: {
-    admin_user: Schema.Attribute.Relation<'oneToOne', 'admin::user'>;
-    createdAt: Schema.Attribute.DateTime;
-    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
-    locale: Schema.Attribute.String & Schema.Attribute.Private;
-    localizations: Schema.Attribute.Relation<'oneToMany', 'api::orders-tracking.orders-tracking'> &
-      Schema.Attribute.Private;
-    order_id: Schema.Attribute.Integer;
-    order_status: Schema.Attribute.String;
-    publishedAt: Schema.Attribute.DateTime;
-    updatedAt: Schema.Attribute.DateTime;
-    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
-    users_permissions_user: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
-  };
-}
-
 export interface ApiPaymentMethodPaymentMethod extends Struct.CollectionTypeSchema {
   collectionName: 'payment_methods';
   info: {
@@ -3440,7 +3414,6 @@ declare module '@strapi/strapi' {
       'api::month.month': ApiMonthMonth;
       'api::order.order': ApiOrderOrder;
       'api::orders-import.orders-import': ApiOrdersImportOrdersImport;
-      'api::orders-tracking.orders-tracking': ApiOrdersTrackingOrdersTracking;
       'api::payment-method.payment-method': ApiPaymentMethodPaymentMethod;
       'api::payroll.payroll': ApiPayrollPayroll;
       'api::phase-expense.phase-expense': ApiPhaseExpensePhaseExpense;

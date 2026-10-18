@@ -292,3 +292,77 @@ describe('raw status writes', () => {
     ]);
   });
 });
+
+describe('writes behind the document service (issues/119)', () => {
+  // rows by id; findOne reads the current copy, `write` changes it the way a
+  // db.query update would, running the subscriber around it
+  let rows;
+  let logs;
+  const event = (where, data, result) => ({ model: { uid: ORDER }, params: { where, data }, state: {}, result });
+
+  beforeEach(() => {
+    rows = {
+      42: { ...baseOrder() },
+      43: { ...baseOrder(), id: 43, documentId: 'ord43', multidelivery_discount: '10.00' },
+    };
+    ({ logs } = mockStrapi());
+    global.strapi.db.query = jest.fn((uid) =>
+      uid === LOG
+        ? { create: async ({ data }) => logs.push(data) }
+        : {
+            findOne: async ({ where }) => {
+              const row = Object.values(rows).find((r) => r.id === where.id || r.documentId === where.documentId);
+              return row ? JSON.parse(JSON.stringify(row)) : null;
+            },
+          },
+    );
+  });
+
+  async function write(id, data) {
+    const e = event({ id }, data);
+    await changeLog.beforeRowUpdate(e);
+    Object.assign(rows[id], data);
+    await changeLog.afterRowUpdate(e);
+  }
+
+  it("records what a save's follow-up writes change on other orders, not on the saved one", async () => {
+    await changeLog.changeLogMiddleware({ uid: ORDER, action: 'update', params: { documentId: 'ord42' } }, async () => {
+      Object.assign(rows[42], { status: 'processed' }); // the document service's own write
+      await write(42, { transfer: true, _internal: true }); // the saved order's own follow-up
+      await write(43, { multidelivery_discount: 0, _internal: true }); // a sibling's discount
+      return { id: 42 };
+    });
+
+    expect(logs.map((l) => [l.entity_id, l.changes])).toEqual([
+      [42, [{ field: 'status', from: 'pending', to: 'processed' }]],
+      [43, [{ field: 'multidelivery_discount', from: '10.00', to: 0 }]],
+    ]);
+    expect(logs[1]).toMatchObject({ entity: 'order', action: 'update', username: 'oficina' });
+  });
+
+  it('records a write made outside any order action right away (merging contacts)', async () => {
+    await write(43, { comments: 'Nou punt' });
+    expect(logs).toEqual([
+      expect.objectContaining({ entity_id: 43, changes: [{ field: 'comments', from: null, to: 'Nou punt' }] }),
+    ]);
+  });
+
+  it('adds nothing for a follow-up write that changes nothing', async () => {
+    await write(43, { multidelivery_discount: 10, _internal: true });
+    expect(logs).toEqual([]);
+  });
+
+  it('records the collection order a new order creates, and the new order once', async () => {
+    rows[50] = { ...baseOrder(), id: 50, status: 'pending' };
+    await changeLog.changeLogMiddleware({ uid: ORDER, action: 'create', params: { data: {} } }, async () => {
+      await changeLog.afterRowCreate(event(undefined, { status: 'pending' }, { id: 42 })); // the order itself
+      await changeLog.afterRowCreate(event(undefined, { is_collection_order: true, _internal: true }, { id: 50 }));
+      return { id: 42 };
+    });
+
+    expect(logs.map((l) => [l.action, l.entity_id])).toEqual([
+      ['create', 42],
+      ['create', 50],
+    ]);
+  });
+});

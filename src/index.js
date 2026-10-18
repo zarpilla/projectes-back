@@ -27,7 +27,7 @@ const { frontUrlsWithoutHash } = require('./services/front-urls-without-hash');
 const { clearQuotePreviewLinks } = require('./services/clear-quote-preview-links');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
-const { changeLogMiddleware } = require('./services/change-log');
+const { changeLogMiddleware, registerOrderRowWrites } = require('./services/change-log');
 const { lockIssuedInvoiceComponents } = require('./services/lock-issued-invoices');
 const { registerAppPermissions } = require('./services/register-app-permissions');
 
@@ -63,6 +63,8 @@ module.exports = {
     registerRolePermissionsInvalidation();
     // users with hours, payrolls or work periods can't be deleted (issues/050)
     registerUserDeleteGuard();
+    // the orders' writes behind the document service go in their history (issues/119)
+    registerOrderRowWrites();
     wrapEmailProvider(strapi);
 
     // A brand-new database gets its catalogs, settings and home menu (what used

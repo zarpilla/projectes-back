@@ -20,15 +20,23 @@
  * payment in the emitted-invoice controller, invoicing orders and deleting
  * their draft, merging contacts.
  *
- * The order lifecycles' own follow-up writes (discounts, collection orders,
- * transfer route) go through strapi.db.query, which this middleware doesn't
- * see: they add no rows of their own, and what they change on the saved order
- * itself shows up in that save's diff.
+ * Orders also change behind the document service: the order lifecycles'
+ * follow-up writes (a sibling's discounts, the collection order they create
+ * and keep up to date, the transfer route) and merging contacts go through
+ * strapi.db.query. A db lifecycle subscriber (registerOrderRowWrites) records
+ * those too. Inside an order's document action it hands its rows to the
+ * action, which drops the ones about the order being saved: those changes are
+ * already in the action's own diff.
  *
  * Logging never fails the write it describes: errors are reported and dropped.
  */
 
+const { AsyncLocalStorage } = require('async_hooks');
+
 const LOG_UID = 'api::document-change-log.document-change-log';
+
+// The document action in progress: { uid, id, action, entries }.
+const actionScope = new AsyncLocalStorage();
 
 const ORDER_UID = 'api::order.order';
 
@@ -165,14 +173,14 @@ function sameValue(a, b) {
 }
 
 /**
- * Field-by-field differences between two rows of `uid`.
+ * Field-by-field differences between two rows of `uid` (only `fields`, when given).
  * @returns {{ field: string, from: any, to: any }[]}
  */
-function diff(uid, before, after) {
+function diff(uid, before, after, fields = null) {
   const changes = [];
   const attributes = attributesOf(uid);
   for (const [field, attr] of Object.entries(attributes)) {
-    if (isIgnored(uid, field)) continue;
+    if (isIgnored(uid, field) || (fields && !fields.includes(field))) continue;
     const from = normalizeValue(attr, before ? before[field] : null);
     const to = normalizeValue(attr, after ? after[field] : null);
     if (!sameValue(from, to)) changes.push({ field, from, to });
@@ -252,7 +260,8 @@ async function changeLogMiddleware(context, next) {
     }
   }
 
-  const result = await next();
+  const scope = { uid, id: before ? before.id : null, action, entries: [] };
+  const result = await actionScope.run(scope, () => next());
 
   try {
     if (action === 'create') {
@@ -271,7 +280,99 @@ async function changeLogMiddleware(context, next) {
     report(error, uid, action);
   }
 
+  // what the follow-up writes changed on other rows
+  const mainId = action === 'create' ? result && result.id : before && before.id;
+  for (const entry of scope.entries) {
+    if (entry.row.id === mainId) continue;
+    try {
+      await record(uid, entry);
+    } catch (error) {
+      report(error, uid, entry.action);
+    }
+  }
+
   return result;
+}
+
+// --- writes behind the document service (orders) ---------------------------
+
+const ROW_WRITES = [ORDER_UID];
+
+/** The tracked attributes a db.query write sets. */
+function fieldsWritten(uid, data) {
+  const attributes = attributesOf(uid);
+  return Object.keys(data || {}).filter((f) => attributes[f] && !isIgnored(uid, f));
+}
+
+async function rowWith(uid, where, fields) {
+  const all = populateFor(uid);
+  const populate = {};
+  for (const f of fields) if (all[f]) populate[f] = all[f];
+  return strapi.db.query(uid).findOne({ where, populate });
+}
+
+// Inside a document action of the same type the row waits for the action
+// (which knows which row it saved); anywhere else it is written now.
+async function emit(uid, entry) {
+  const scope = actionScope.getStore();
+  if (scope && scope.uid === uid) scope.entries.push(entry);
+  else await record(uid, entry);
+}
+
+const isMainRow = (scope, uid, id) => Boolean(scope && scope.uid === uid && scope.id != null && scope.id === id);
+
+async function beforeRowUpdate(event) {
+  const uid = event.model && event.model.uid;
+  try {
+    const { where, data } = event.params || {};
+    if (!where || isMainRow(actionScope.getStore(), uid, where.id)) return;
+    const fields = fieldsWritten(uid, data);
+    if (fields.length === 0) return;
+    const before = await rowWith(uid, where, fields);
+    if (before) event.state.changeLog = { before, fields };
+  } catch (error) {
+    report(error, uid, 'update');
+  }
+}
+
+async function afterRowUpdate(event) {
+  const uid = event.model && event.model.uid;
+  const pending = event.state && event.state.changeLog;
+  if (!pending) return;
+  try {
+    const { before, fields } = pending;
+    const after = await rowWith(uid, { id: before.id }, fields);
+    const changes = diff(uid, before, after, fields);
+    if (changes.length > 0) await emit(uid, { action: 'update', row: after || before, changes });
+  } catch (error) {
+    report(error, uid, 'update');
+  }
+}
+
+async function afterRowCreate(event) {
+  const uid = event.model && event.model.uid;
+  try {
+    const id = event.result && event.result.id;
+    if (!id) return;
+    // the action's own row: it records it itself (the lifecycles flag theirs)
+    const scope = actionScope.getStore();
+    const data = (event.params && event.params.data) || {};
+    if (scope && scope.uid === uid && scope.action === 'create' && !data._internal) return;
+    const created = await snapshot(uid, { id });
+    if (created) await emit(uid, { action: 'create', row: created, snapshot: summarize(uid, created) });
+  } catch (error) {
+    report(error, uid, 'create');
+  }
+}
+
+/** Records the orders' db.query writes (issues/119). Called from bootstrap. */
+function registerOrderRowWrites() {
+  strapi.db.lifecycles.subscribe({
+    models: ROW_WRITES,
+    beforeUpdate: beforeRowUpdate,
+    afterUpdate: afterRowUpdate,
+    afterCreate: afterRowCreate,
+  });
 }
 
 /**
@@ -333,4 +434,8 @@ module.exports = {
   logRawUpdate,
   logChanges,
   historyOf,
+  registerOrderRowWrites,
+  beforeRowUpdate,
+  afterRowUpdate,
+  afterRowCreate,
 };
