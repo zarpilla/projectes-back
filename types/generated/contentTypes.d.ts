@@ -1318,6 +1318,7 @@ export interface ApiMeMe extends Struct.SingleTypeSchema {
     quote_footer: Schema.Attribute.Text;
     quotes: Schema.Attribute.Component<'options.quotes', false>;
     state: Schema.Attribute.String;
+    task_emails: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     verifactu: Schema.Attribute.Enumeration<['no', 'test', 'real']>;
@@ -2497,6 +2498,62 @@ export interface ApiStrategyStrategy extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiTaskCommentTaskComment extends Struct.CollectionTypeSchema {
+  collectionName: 'task_comments';
+  info: {
+    displayName: 'Task comment';
+    pluralName: 'task-comments';
+    singularName: 'task-comment';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    author: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::task-comment.task-comment'> &
+      Schema.Attribute.Private;
+    mentions: Schema.Attribute.Relation<'oneToMany', 'plugin::users-permissions.user'>;
+    publishedAt: Schema.Attribute.DateTime;
+    task: Schema.Attribute.Relation<'manyToOne', 'api::task.task'>;
+    text: Schema.Attribute.Text & Schema.Attribute.Required;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
+export interface ApiTaskNotificationTaskNotification extends Struct.CollectionTypeSchema {
+  collectionName: 'task_notifications';
+  info: {
+    description: 'Pending task emails (assignments, mentions), sent by the cron after a wait';
+    displayName: 'Task notification';
+    pluralName: 'task-notifications';
+    singularName: 'task-notification';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    actor: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
+    attempts: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    comment: Schema.Attribute.Relation<'oneToOne', 'api::task-comment.task-comment'>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    kind: Schema.Attribute.Enumeration<['assigned', 'mention']> & Schema.Attribute.Required;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::task-notification.task-notification'> &
+      Schema.Attribute.Private;
+    publishedAt: Schema.Attribute.DateTime;
+    recipient: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
+    send_after: Schema.Attribute.DateTime;
+    task: Schema.Attribute.Relation<'oneToOne', 'api::task.task'>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
 export interface ApiTaskStateTaskState extends Struct.CollectionTypeSchema {
   collectionName: 'task_states';
   info: {
@@ -2515,6 +2572,30 @@ export interface ApiTaskStateTaskState extends Struct.CollectionTypeSchema {
       Schema.Attribute.Private;
     name: Schema.Attribute.String;
     order: Schema.Attribute.Integer;
+    publishedAt: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
+export interface ApiTaskTemplateTaskTemplate extends Struct.CollectionTypeSchema {
+  collectionName: 'task_templates';
+  info: {
+    displayName: 'Task template';
+    pluralName: 'task-templates';
+    singularName: 'task-template';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    items: Schema.Attribute.JSON;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::task-template.task-template'> &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String & Schema.Attribute.Required;
     publishedAt: Schema.Attribute.DateTime;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
@@ -2541,11 +2622,17 @@ export interface ApiTaskTask extends Struct.CollectionTypeSchema {
     description: Schema.Attribute.RichText;
     documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     due_date: Schema.Attribute.Date;
+    estimated_hours: Schema.Attribute.Decimal;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::task.task'> & Schema.Attribute.Private;
     name: Schema.Attribute.String;
+    priority: Schema.Attribute.Enumeration<['high', 'normal', 'low']> & Schema.Attribute.DefaultTo<'normal'>;
     project: Schema.Attribute.Relation<'oneToOne', 'api::project.project'>;
     publishedAt: Schema.Attribute.DateTime;
+    recurrence: Schema.Attribute.Enumeration<['weekly', 'biweekly', 'monthly', 'quarterly', 'yearly']>;
+    recurrence_spawned: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    start_date: Schema.Attribute.Date;
+    task_comments: Schema.Attribute.Relation<'oneToMany', 'api::task-comment.task-comment'>;
     task_state: Schema.Attribute.Relation<'oneToOne', 'api::task-state.task-state'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
@@ -3277,6 +3364,7 @@ export interface PluginUsersPermissionsUser extends Struct.CollectionTypeSchema 
       }>;
     fullname: Schema.Attribute.String;
     hidden: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    home: Schema.Attribute.JSON & Schema.Attribute.Private;
     ical: Schema.Attribute.String;
     identity_number: Schema.Attribute.String;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -3382,7 +3470,10 @@ declare module '@strapi/strapi' {
       'api::social-entity.social-entity': ApiSocialEntitySocialEntity;
       'api::startup-script.startup-script': ApiStartupScriptStartupScript;
       'api::strategy.strategy': ApiStrategyStrategy;
+      'api::task-comment.task-comment': ApiTaskCommentTaskComment;
+      'api::task-notification.task-notification': ApiTaskNotificationTaskNotification;
       'api::task-state.task-state': ApiTaskStateTaskState;
+      'api::task-template.task-template': ApiTaskTemplateTaskTemplate;
       'api::task.task': ApiTaskTask;
       'api::ticket.ticket': ApiTicketTicket;
       'api::time-counter.time-counter': ApiTimeCounterTimeCounter;
