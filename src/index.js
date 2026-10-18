@@ -15,6 +15,7 @@ const { ensureAuthEmailTemplates } = require('./services/ensure-auth-email-templ
 const { recalcZeroQuoteTotals } = require('./services/recalc-zero-quote-totals');
 const { zeroVatExpenseTypes } = require('./services/zero-vat-expense-types');
 const { recalcMismatchedDocumentTotals } = require('./services/recalc-mismatched-document-totals');
+const { clearQuotePreviewLinks } = require('./services/clear-quote-preview-links');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -97,6 +98,8 @@ module.exports = {
       ['zeroVatExpenseTypes', zeroVatExpenseTypes, { runOnce: true }],
       // issues/045: documents saved while issues/002 doubled their lines kept the doubled total.
       ['recalcMismatchedDocumentTotals', recalcMismatchedDocumentTotals, { runOnce: true }],
+      // issues/160: quotes kept a link to the front's removed quote preview as their PDF.
+      ['clearQuotePreviewLinks', clearQuotePreviewLinks, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

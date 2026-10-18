@@ -205,7 +205,8 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
 
     const invoice = await strapi.db.query(docUid).findOne({
       where: { id },
-      populate: { contact: true, document_type: true, payment_method: true, lines: true },
+      // contact_info: the client as saved with the document, which the PDF prints
+      populate: { contact: true, contact_info: true, document_type: true, payment_method: true, lines: true },
     });
     const me = await getMe();
 
