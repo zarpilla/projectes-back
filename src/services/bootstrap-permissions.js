@@ -266,7 +266,8 @@ async function importSeedPermissions() {
     me: ['find', 'update', 'dir3SearchNif', 'dir3SearchName', 'ticketsLogin'],
     // users-permissions plugin actions for authenticated users
     // (merged into the SAME call because updateRole REPLACES the role's set)
-    user: ['find', 'findOne', 'create', 'update', 'count', 'me'],
+    // home/updateHome: the person's own Inici (services/user-home.js)
+    user: ['find', 'findOne', 'create', 'update', 'count', 'me', 'home', 'updateHome'],
     // POST /api/auth/logout revokes the refresh session (needs a Bearer token).
     auth: ['logout'],
     // v3 "userspermissions: getroles" -> the roles read action

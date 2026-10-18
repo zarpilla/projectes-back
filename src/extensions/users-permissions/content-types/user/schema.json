@@ -101,6 +101,10 @@
     },
     "multidelivery_discount": {
       "type": "boolean"
+    },
+    "home": {
+      "type": "json",
+      "private": true
     }
   }
 }

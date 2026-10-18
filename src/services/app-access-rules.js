@@ -53,8 +53,9 @@ const api = (name) => `api::${name}.${name}`;
 
 // --- every user -------------------------------------------------------------
 // The app reads the user, the entity's name and logo, and the tickets login
-// (changelog, reachable from the profile) whatever the permissions.
-allow('plugin::users-permissions.user', ['me'], ANY);
+// (changelog, reachable from the profile) whatever the permissions, and keeps
+// their own Inici (GET/PUT /users/me/home).
+allow('plugin::users-permissions.user', ['me', 'home', 'updateHome'], ANY);
 allow(api('me'), ['find', 'ticketsLogin'], ANY);
 allow(api('logo'), READ, ANY);
 

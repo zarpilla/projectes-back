@@ -15,10 +15,14 @@
  *
  * The role's permissions are kept in memory between requests instead of being
  * read on each one (issues/016, services/role-permissions-cache.js).
+ *
+ * GET/PUT /users/me/home keep each person's Inici (pinned menu entries and the
+ * page opened after login) on their own user (services/user-home.js).
  */
 const { errors } = require('@strapi/utils');
 const { isAppAdmin } = require('../../services/app-permissions');
 const { cachePermissionReads } = require('../../services/role-permissions-cache');
+const userHome = require('../../services/user-home');
 
 module.exports = (plugin) => {
   const adminOnly = (action) => async (ctx, ...rest) => {
@@ -32,6 +36,14 @@ module.exports = (plugin) => {
   const { user } = plugin.controllers;
   user.create = adminOnly(user.create);
   user.update = adminOnly(user.update);
+  user.home = userHome.controllers.home;
+  user.updateHome = userHome.controllers.updateHome;
+
+  const contentApi = plugin.routes && plugin.routes['content-api'];
+  if (contentApi) {
+    // before the plugin's own /users/:id routes
+    contentApi.routes = [...userHome.routes, ...contentApi.routes];
+  }
 
   const authFactory = plugin.controllers.auth;
   plugin.controllers.auth = (deps) => {
