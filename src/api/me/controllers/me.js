@@ -14,6 +14,7 @@ const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { getMe } = require('../../../services/me-settings');
 const { ticketsConfig, buildTicketsLoginUrl } = require('../../../services/tickets-sso');
+const { docsConfig, buildDocsLoginUrl } = require('../../../services/docs-sso');
 
 module.exports = createCoreController('api::me.me', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -105,6 +106,36 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
       return ctx.badRequest('Your user has no email address');
     }
     const url = buildTicketsLoginUrl({ ...config, email: user.email, name: user.username || user.email });
+    ctx.set('Cache-Control', 'no-store');
+    return { url };
+  },
+
+  /**
+   * Login link to the documentation site for the current user, with her app
+   * permissions (they pick the chapters she reads) and, from ?route=, the screen
+   * she is on. The front opens the returned URL in a new tab.
+   */
+  async docsLogin(ctx) {
+    const user = ctx.state.user;
+    if (!user) {
+      return ctx.unauthorized();
+    }
+    const me = await getMe([]);
+    const config = docsConfig(process.env, me && me.name);
+    if (!config) {
+      return ctx.badRequest('Documentation is not configured on this instance');
+    }
+    const full = await strapi.db
+      .query('plugin::users-permissions.user')
+      .findOne({ where: { id: user.id }, populate: { permissions: true } });
+    const roles = ((full && full.permissions) || []).map((p) => p && p.permission).filter(Boolean);
+    const url = buildDocsLoginUrl({
+      ...config,
+      email: user.email || '',
+      name: user.username || user.email || '',
+      roles,
+      route: ctx.query && ctx.query.route,
+    });
     ctx.set('Cache-Control', 'no-store');
     return { url };
   },
