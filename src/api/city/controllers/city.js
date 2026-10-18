@@ -6,6 +6,7 @@
  */
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { townPostcodes } = require('../services/town-postcodes');
 
 module.exports = createCoreController('api::city.city', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -14,6 +15,17 @@ module.exports = createCoreController('api::city.city', ({ strapi }) => ({
   async find(ctx) {
     adaptCtxQuery(ctx);
     return super.find(ctx);
+  },
+
+  /**
+   * GET /api/cities/postcodes — { town: postcode }, the code the contacts of
+   * each town use most (issues/182). Keys are the town in lower case, without
+   * accents.
+   */
+  async postcodes() {
+    const { tableName } = strapi.db.metadata.get('api::contact.contact');
+    const rows = await strapi.db.connection(tableName).select('city', 'postcode').whereNotNull('postcode');
+    return townPostcodes(rows);
   },
 
   // Default core actions (find/findOne/create/update/delete) are inherited.
