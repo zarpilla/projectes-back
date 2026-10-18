@@ -17,6 +17,9 @@ module.exports = {
       method: 'GET',
       path: '/face-queues/verify-setup',
       handler: 'face-queue.verifySetup',
+      // A diagnostic of the entity's FACe setup, certificate included: admin
+      // only (ticket 159).
+      config: { policies: ['global::isAdmin'] },
     },
     {
       method: 'GET',

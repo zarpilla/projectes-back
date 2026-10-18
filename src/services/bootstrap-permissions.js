@@ -242,7 +242,9 @@ async function importSeedPermissions() {
     'estimated-hours': ['find', 'findOne', 'create', 'update', 'delete'],
     'phase-income': ['find', 'findAssigned'],
     'phase-expense': ['find', 'findAssigned'],
-    verifactu: ['find'], // single-type: no findOne route in v5
+    // single-type: no findOne route in v5. `update` is admin only (isAdmin on
+    // the route); without it «Verifactu» in the app could not save (ticket 159).
+    verifactu: ['find', 'update'],
     'verifactu-declaration': ['find', 'findOne', 'create'],
     'verifactu-chain': ['find', 'findOne', 'create', 'update', 'delete'],
     'face-queue': ['find', 'findOne', 'create', 'update', 'delete', 'checkStatus', 'verifySetup'],
@@ -266,6 +268,8 @@ async function importSeedPermissions() {
     strategy: ['create', 'find', 'findOne', 'update', 'delete'],
     year: ['create', 'find', 'findOne', 'update', 'delete'],
     'entity-metadata': ['adminEntities'],
+    // AEAT and FACe certificates, admin only (isAdmin on the routes, ticket 159)
+    certificate: ['status', 'replace', 'remove'],
     me: ['find', 'update', 'dir3SearchNif', 'dir3SearchName', 'ticketsLogin', 'docsLogin'],
     // users-permissions plugin actions for authenticated users
     // (merged into the SAME call because updateRole REPLACES the role's set)

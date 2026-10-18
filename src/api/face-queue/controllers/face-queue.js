@@ -53,7 +53,8 @@ module.exports = createCoreController(FACE_QUEUE_UID, ({ strapi }) => ({
     // Check 2: Certificate uploaded
     checks.details.certificate = {
       status: !!(me.face_certificate && me.face_certificate.url),
-      value: me.face_certificate ? me.face_certificate.name || me.face_certificate.url : null,
+      // the name only: the URL and the path on disk are not shown (ticket 159)
+      value: me.face_certificate ? me.face_certificate.name || "[uploaded]" : null,
       message: me.face_certificate && me.face_certificate.url
         ? "✅ Certificate uploaded"
         : "❌ Certificate not uploaded"
@@ -94,7 +95,7 @@ module.exports = createCoreController(FACE_QUEUE_UID, ({ strapi }) => ({
 
       checks.details.certificate_file = {
         status: certificateExists,
-        value: certificatePath,
+        value: certificateExists,
         message: certificateExists
           ? "✅ Certificate file exists on disk"
           : "❌ Certificate file not found on disk"
