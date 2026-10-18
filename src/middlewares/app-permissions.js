@@ -16,7 +16,8 @@
  *    entity's certificates.
  * 3. A member (`orders` only) is limited to her own orders: the ones she owns,
  *    plus the ones delivered to her own contact (her pickup point), on which
- *    she can only mark what was picked up. Incidences follow their order, and
+ *    she can only mark what was picked up. The only state change she makes is
+ *    cancelling a pending order of hers. Incidences follow their order, and
  *    her invoices are the ones addressed to her contact. She can't give an
  *    order or a contact to someone else, and only changes contacts she can see
  *    on «Punts d'entrega».
@@ -149,6 +150,17 @@ async function loadOrder(strapi, where) {
     .findOne({ where, populate: { owner: { select: ['id'] }, contact: { select: ['id'] } } });
 }
 
+/**
+ * A member changes the state of her own orders only to cancel a pending one
+ * (the order form's «Anul·la la comanda»); sending the status unchanged is
+ * fine (the form saves it). Processed, delivered, invoiced or cancelled orders
+ * are the office's: no going back to Pendent (issues/144).
+ */
+function memberMayChangeStatus(current, requested) {
+  if (requested === undefined || requested === null || requested === current) return true;
+  return current === 'pending' && requested === 'cancelled';
+}
+
 // ---------------------------------------------------------------------------
 // Member scopes: action -> (ctx, next, { strapi, userId }) handler
 // ---------------------------------------------------------------------------
@@ -170,8 +182,10 @@ async function scopeOrderRow(ctx, next, { strapi, userId }) {
     const payload = payloadOf(ctx);
     if (access === 'pickup') {
       if (Object.keys(payload).some((key) => !PICKUP_POINT_FIELDS.has(key))) throw forbidden();
-    } else if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId) {
-      throw forbidden();
+    } else {
+      if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
+        throw forbidden();
+      if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
     }
   }
   return next();
