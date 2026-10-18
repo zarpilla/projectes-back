@@ -114,16 +114,21 @@ describe('document change log (issues/001)', () => {
     const { logs } = mockStrapi({ rows: [before, after] });
 
     await changeLog.changeLogMiddleware(
-      { uid: RECEIVED, action: 'update', params: { documentId: 'doc7' } },
+      { uid: RECEIVED, action: 'update', params: { documentId: 'doc7', data: { lines: [] } } },
       async () => ({ id: 7 }),
     );
 
     expect(logs).toHaveLength(1);
     expect(logs[0].entity).toBe('received-invoice');
     expect(logs[0].changes.map((c) => c.field).sort()).toEqual(['lines', 'total']);
+    // line by line since issues/161, not both whole lists
     const lines = logs[0].changes.find((c) => c.field === 'lines');
-    expect(lines.from).toEqual([{ concept: 'Hores', base: 100, quantity: 1, vat: 21 }]);
-    expect(lines.to).toEqual([{ concept: 'Hores', base: 100, quantity: 2, vat: 21 }]);
+    expect(lines).toEqual({
+      field: 'lines',
+      from: 1,
+      to: 1,
+      lines: { added: [], removed: [], changed: [{ index: 1, changes: [{ field: 'quantity', from: 1, to: 2 }] }] },
+    });
   });
 
   it('logs nothing when only bookkeeping fields moved (pdf regeneration, updatedAt, ids)', async () => {
@@ -164,7 +169,9 @@ describe('document change log (issues/001)', () => {
     }
   });
 
-  it('falls back to user_last when there is no request user', async () => {
+  // issues/161: user_last named the last person who saved the invoice as the
+  // author of what a job or worker did; now nobody is (the history: «Sistema»)
+  it('records no author when there is no request user', async () => {
     const before = baseRow();
     const after = { ...baseRow(), paid: true };
     const { logs } = mockStrapi({ rows: [before, after], user: null });
@@ -174,7 +181,7 @@ describe('document change log (issues/001)', () => {
       async () => ({ id: 7 }),
     );
 
-    expect(logs[0]).toMatchObject({ user_id: 9, username: 'last-editor' });
+    expect(logs[0]).toMatchObject({ user_id: null, username: null });
   });
 
   it('never fails the write when the log cannot be stored', async () => {
@@ -195,7 +202,7 @@ describe('document change log (issues/001)', () => {
     const { docQuery } = mockStrapi({ rows: [baseRow()] });
     const next = jest.fn(async () => 'ok');
 
-    await changeLog.changeLogMiddleware({ uid: 'api::quote.quote', action: 'update', params: {} }, next);
+    await changeLog.changeLogMiddleware({ uid: 'api::project.project', action: 'update', params: {} }, next);
     await changeLog.changeLogMiddleware({ uid: EMITTED, action: 'findMany', params: {} }, next);
 
     expect(next).toHaveBeenCalledTimes(2);

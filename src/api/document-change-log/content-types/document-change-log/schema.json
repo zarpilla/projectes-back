@@ -5,12 +5,19 @@
     "singularName": "document-change-log",
     "pluralName": "document-change-logs",
     "displayName": "Document Change Log",
-    "description": "Who changed what on an emitted/received invoice (issues/001) or an order (issues/119), and when. Written by services/change-log.js only."
+    "description": "Who changed what on an emitted/received invoice (issues/001), an order (issues/119), a received income/expense or a quote (issues/161), and when; also an emitted invoice's emails, VeriFactu and FACe statuses. Written by services/change-log.js only."
   },
   "options": {
     "draftAndPublish": false
   },
-  "pluginOptions": {},
+  "pluginOptions": {
+    "content-manager": {
+      "visible": false
+    },
+    "content-type-builder": {
+      "visible": false
+    }
+  },
   "attributes": {
     "entity": {
       "type": "string",
@@ -27,7 +34,10 @@
       "enum": [
         "create",
         "update",
-        "delete"
+        "delete",
+        "email",
+        "verifactu",
+        "face"
       ],
       "required": true
     },
@@ -35,6 +45,9 @@
       "type": "json"
     },
     "snapshot": {
+      "type": "json"
+    },
+    "details": {
       "type": "json"
     },
     "user_id": {

@@ -118,13 +118,19 @@ describe('order change history (issues/119)', () => {
     };
     const { logs } = mockStrapi({ rows: [before, after] });
 
-    await run('update', { documentId: 'ord42' });
+    await run('update', { documentId: 'ord42', data: { lines: [] } });
 
     expect(logs).toHaveLength(1);
     expect(logs[0].changes).toEqual([
       { field: 'multidelivery_discount', from: '0.00', to: '10.00' },
       { field: 'route', from: { id: 3, label: 'Ruta Nord' }, to: { id: 4, label: 'Ruta Sud' } },
-      { field: 'lines', from: [{ units: 2, kilograms: 10 }], to: [{ units: 3, kilograms: 10 }] },
+      // line by line since issues/161
+      {
+        field: 'lines',
+        from: 1,
+        to: 1,
+        lines: { added: [], removed: [], changed: [{ index: 1, changes: [{ field: 'units', from: 2, to: 3 }] }] },
+      },
     ]);
   });
 
@@ -146,7 +152,7 @@ describe('order change history (issues/119)', () => {
 
   it('reads only the id and label columns of the related rows', async () => {
     const { findOne } = mockStrapi({ rows: [baseOrder()] });
-    await run('update', { documentId: 'ord42' });
+    await run('update', { documentId: 'ord42', data: { lines: [] } });
     const { populate } = findOne.mock.calls[0][0];
     expect(populate.route).toEqual({ select: ['id', 'code', 'name'] });
     expect(populate.lines).toBe(true);

@@ -754,7 +754,7 @@ export interface ApiDietDiet extends Struct.CollectionTypeSchema {
 export interface ApiDocumentChangeLogDocumentChangeLog extends Struct.CollectionTypeSchema {
   collectionName: 'document_change_logs';
   info: {
-    description: 'Who changed what on an emitted/received invoice (issues/001) or an order (issues/119), and when. Written by services/change-log.js only.';
+    description: "Who changed what on an emitted/received invoice (issues/001), an order (issues/119), a received income/expense or a quote (issues/161), and when; also an emitted invoice's emails, VeriFactu and FACe statuses. Written by services/change-log.js only.";
     displayName: 'Document Change Log';
     pluralName: 'document-change-logs';
     singularName: 'document-change-log';
@@ -762,11 +762,21 @@ export interface ApiDocumentChangeLogDocumentChangeLog extends Struct.Collection
   options: {
     draftAndPublish: false;
   };
+  pluginOptions: {
+    'content-manager': {
+      visible: false;
+    };
+    'content-type-builder': {
+      visible: false;
+    };
+  };
   attributes: {
-    action: Schema.Attribute.Enumeration<['create', 'update', 'delete']> & Schema.Attribute.Required;
+    action: Schema.Attribute.Enumeration<['create', 'update', 'delete', 'email', 'verifactu', 'face']> &
+      Schema.Attribute.Required;
     changes: Schema.Attribute.JSON;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    details: Schema.Attribute.JSON;
     document_code: Schema.Attribute.String;
     entity: Schema.Attribute.String & Schema.Attribute.Required;
     entity_id: Schema.Attribute.Integer;

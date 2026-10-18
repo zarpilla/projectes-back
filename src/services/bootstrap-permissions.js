@@ -165,7 +165,9 @@ async function importSeedPermissions() {
     ],
     'received-invoice': ['create', 'find', 'findBasic', 'findOne', 'update', 'delete', 'upload'],
     // Read-only: rows are written by services/change-log.js (issues/001).
-    'document-change-log': ['find', 'findOne'],
+    // `history`: one record's page for the forms (issues/161); like find, only
+    // `projects`/`admin` pass the app permissions (not in app-access-rules).
+    'document-change-log': ['find', 'findOne', 'history'],
     'received-income': ['create', 'find', 'findBasic', 'findOne', 'update', 'delete'],
     'received-expense': ['create', 'find', 'findBasic', 'findOne', 'update', 'delete', 'upload'],
     payroll: ['create', 'find', 'findOne', 'update', 'delete', 'createAll'],
