@@ -18,6 +18,7 @@ const { recalcMismatchedDocumentTotals } = require('./services/recalc-mismatched
 const { refreshAllLineWarnings } = require('./services/refresh-line-warnings');
 const { mergeDuplicateCities } = require('./services/merge-duplicate-cities');
 const { refreshPlannedHoursTotals } = require('./services/refresh-planned-hours-totals');
+const { recountMotherFlags } = require('./services/recount-mother-flags');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -109,6 +110,8 @@ module.exports = {
       ['mergeDuplicateCities', mergeDuplicateCities, { runOnce: true }],
       // issues/067: stored planned hours older than the current hours rules.
       ['refreshPlannedHoursTotals', refreshPlannedHoursTotals, { runOnce: true }],
+      // issues/135: a project whose children are all trashed was still a mother.
+      ['recountMotherFlags', recountMotherFlags, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

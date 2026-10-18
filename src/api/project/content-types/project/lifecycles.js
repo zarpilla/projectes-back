@@ -20,6 +20,7 @@
  */
 const { PROJECT_GRAPH_FOR_TOTALS_POPULATE } = require('../../services/projectFinancials');
 const { resolveComponentRefs } = require('../../../../services/component-refs');
+const { liveChildrenWhere } = require('../../services/motherChildren');
 
 module.exports = {
   async beforeCreate(event) {
@@ -69,8 +70,9 @@ module.exports = {
     const data = event.params.data;
     const id = event.params.where.id || event.params.where.documentId;
 
-    // Store the old mother when the mother field changes.
-    if (data.mother !== undefined) {
+    // Store the old mother when the mother field changes, or the mother whose
+    // live children change when the project goes in or out of the trash (issues/135).
+    if (data.mother !== undefined || data.trashed !== undefined) {
       const current = await strapi.db
         .query('api::project.project')
         .findOne({ where: { id }, populate: { mother: true } });
@@ -114,13 +116,17 @@ module.exports = {
   },
 
   async afterUpdate(event) {
-    // Maintain is_mother on the old/new mother when the mother field changed.
+    // Maintain is_mother on the old/new mother when the mother field changed,
+    // or on the mother when the project went in or out of the trash.
     const state = event.state || {};
     if (state.oldMotherId !== undefined) {
       const data = event.params.data || {};
       const oldMotherId = state.oldMotherId;
       const newMotherId = relationId(data.mother);
-      if (oldMotherId !== newMotherId) {
+      if (data.mother === undefined) {
+        // only the trash state changed: the same mother
+        if (oldMotherId) await updateIsMother(oldMotherId);
+      } else if (oldMotherId !== newMotherId) {
         if (oldMotherId) await updateIsMother(oldMotherId);
         if (newMotherId) await updateIsMother(newMotherId);
       }
@@ -152,9 +158,10 @@ function relationId(value) {
   return null;
 }
 
-// Set is_mother from the live child count (direct db update: lifecycle bypass).
+// Set is_mother from the live child count, trashed children left out (direct
+// db update: lifecycle bypass).
 async function updateIsMother(motherId) {
-  const count = await strapi.db.query('api::project.project').count({ where: { mother: motherId } });
+  const count = await strapi.db.query('api::project.project').count({ where: liveChildrenWhere(motherId) });
   await strapi.db
     .query('api::project.project')
     .update({ where: { id: motherId }, data: { is_mother: count > 0 } });
