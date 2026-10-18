@@ -3,7 +3,7 @@
 const { createCoreController } = require('@strapi/strapi').factories;
 const _ = require('lodash');
 const moment = require('moment');
-const { liveChildrenWhere } = require('../services/motherChildren');
+const { liveChildrenWhere, addChildrenTotals, addChildrenTotalsToList } = require('../services/motherChildren');
 const {
   adaptQuery,
   adaptCtxQuery,
@@ -528,7 +528,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         };
       });
 
-    return newArray.map((entity) => entity);
+    // a mother shows its children's figures, like Projectes mare (issues/172)
+    return addChildrenTotalsToList(newArray);
   },
 
   async findNames(ctx) {
@@ -1236,14 +1237,14 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
             total_original_hours_price: original_hours_price,
             original_incomes_expenses: _.sumBy(rows, (r) => parseFloat(r.original_incomes_expenses || 0)),
             // Estimated dimension
-            // EXCEPTION: Estimated hours always copy from original hours
             total_estimated_incomes: _.sumBy(rows, (r) => parseFloat(r.total_estimated_incomes || 0)),
             total_estimated_expenses: _.sumBy(rows, (r) => parseFloat(r.total_estimated_expenses || 0)),
             total_estimated_expenses_vat: _.sumBy(rows, (r) =>
               parseFloat(r.total_estimated_expenses_vat || 0),
             ),
-            total_estimated_hours: original_hours,
-            total_estimated_hours_price: original_hours_price,
+            // the children's estimated hours, not their original ones (issues/172)
+            total_estimated_hours: _.sumBy(rows, (r) => parseFloat(r.total_estimated_hours || 0)),
+            total_estimated_hours_price: _.sumBy(rows, (r) => parseFloat(r.total_estimated_hours_price || 0)),
             estimated_incomes_expenses: _.sumBy(rows, (r) => parseFloat(r.estimated_incomes_expenses || 0)),
             // Real dimension
             total_real_incomes: _.sumBy(rows, (r) => parseFloat(r.total_real_incomes || 0)),
@@ -1382,12 +1383,6 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         ),
       };
 
-      // EXCEPTION: Estimated hours should always copy from original hours
-      // "Hores previstes" should always be the same as "Hores originals"
-      totals.total_estimated_hours = totals.total_original_hours;
-      totals.total_estimated_hours_price = totals.total_original_hours_price;
-
-      // Recalculate estimated balance with corrected hours
       totals.estimated_incomes_expenses =
         totals.total_estimated_incomes -
         totals.total_estimated_expenses -
@@ -2211,64 +2206,7 @@ async function calculateMotherProjectTotals(motherProject) {
     const children = await strapi.db
       .query('api::project.project')
       .findMany({ where: liveChildrenWhere(motherProject.id) });
-    if (!children || children.length === 0) return;
-
-    for (const f of [
-      'total_original_incomes',
-      'total_original_expenses',
-      'total_original_hours',
-      'total_original_hours_price',
-      'total_original_expenses_vat',
-      'original_incomes_expenses',
-      'total_estimated_incomes',
-      'total_estimated_expenses',
-      'total_estimated_hours',
-      'total_estimated_hours_price',
-      'total_estimated_expenses_vat',
-      'estimated_incomes_expenses',
-      'total_real_incomes',
-      'total_real_expenses',
-      'total_real_hours',
-      'total_real_hours_price',
-      'total_real_expenses_vat',
-      'total_real_incomes_expenses',
-      'total_incomes',
-      'total_expenses',
-      'incomes_expenses',
-    ]) {
-      motherProject[f] = 0;
-    }
-
-    for (const child of children) {
-      for (const f of [
-        'total_original_incomes',
-        'total_original_expenses',
-        'total_original_hours',
-        'total_original_hours_price',
-        'total_original_expenses_vat',
-        'original_incomes_expenses',
-        'total_estimated_incomes',
-        'total_estimated_expenses',
-        'total_estimated_hours',
-        'total_estimated_hours_price',
-        'total_estimated_expenses_vat',
-        'estimated_incomes_expenses',
-        'total_real_incomes',
-        'total_real_expenses',
-        'total_real_hours',
-        'total_real_hours_price',
-        'total_real_expenses_vat',
-        'total_real_incomes_expenses',
-      ]) {
-        motherProject[f] += parseFloat(child[f] || 0);
-      }
-      // Backwards-compat fields fall back to the estimated dimension.
-      motherProject.total_incomes += parseFloat(child.total_incomes || child.total_estimated_incomes || 0);
-      motherProject.total_expenses += parseFloat(child.total_expenses || child.total_estimated_expenses || 0);
-      motherProject.incomes_expenses += parseFloat(
-        child.incomes_expenses || child.estimated_incomes_expenses || 0,
-      );
-    }
+    addChildrenTotals(motherProject, children);
   } catch (error) {
     console.error(`Error calculating mother project totals for project ${motherProject.id}:`, error);
   }
