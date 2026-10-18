@@ -423,14 +423,20 @@ const checkTransferNeededForCollectionOrder = async (pickupId, routeId, orderDat
     return { transfer: false };
   }
 
-  // Get pickup details
-  const pickup = await strapi.db.query('api::pickup.pickup').findOne({ where: { id: pickupId } });
+  // Get pickup details. `city` and `transfer_pickup` are relations: v5 leaves
+  // them off the row unless populated, so no pickup had a town (no transfer
+  // seen) and every transfer was saved without a destination (issues/156).
+  const pickup = await strapi.db
+    .query('api::pickup.pickup')
+    .findOne({ where: { id: pickupId }, populate: { city: true } });
   if (!pickup) {
     return { transfer: false };
   }
 
   // Get route details
-  const route = await strapi.db.query('api::route.route').findOne({ where: { id: routeId } });
+  const route = await strapi.db
+    .query('api::route.route')
+    .findOne({ where: { id: routeId }, populate: { transfer_pickup: true } });
   if (!route) {
     return { transfer: false };
   }
@@ -1739,5 +1745,5 @@ module.exports = {
 // For scripts/repair-unlinked-collection-orders.js. Non-enumerable: Strapi
 // rejects any lifecycles key that is not a db action.
 Object.defineProperty(module.exports, 'collectionOrderHelpers', {
-  value: { updateCollectionOrderAggregates },
+  value: { updateCollectionOrderAggregates, checkTransferNeededForCollectionOrder },
 });
