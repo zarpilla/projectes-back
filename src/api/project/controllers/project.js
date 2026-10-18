@@ -14,6 +14,7 @@ const {
 const { numericId } = require('../../../middlewares/v3-compat');
 const { getDailyDedications, getFestives } = require('../services/projectCache');
 const { getMe } = require('../../../services/me-settings');
+const { fiscalYearStartMonth } = require('../../../services/fiscal-year');
 const { documentsOfProject, mergeDocuments, refreshLineWarnings } = require('../../../services/refresh-line-warnings');
 const { activitiesByProjectMonth } = require('../services/economic-detail-activities');
 const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDocuments');
@@ -79,6 +80,7 @@ const doProjectInfoCalculations = async (data, id) => {
     deductibleVatPctByYear,
     fallback_deductible_vat_pct,
     activitiesByProject,
+    fiscalYearStartMonth: fiscalYearStartMonth(me),
   };
 
   const rows = await buildProjectRows(data, financialsCtx);
@@ -920,6 +922,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       deductibleVatPctByYear,
       fallback_deductible_vat_pct,
       activitiesByProject,
+      fiscalYearStartMonth: fiscalYearStartMonth(me),
     };
 
     // Delegate all per-project row construction to the shared engine so
@@ -941,7 +944,9 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       response = response.filter((r) => r.paid === (paid === 'true'));
     }
 
-    const returnData = _.sortBy(response, ['year', 'month', 'name']);
+    // By date within each year: with a fiscal year starting in September,
+    // sorting by month put January before the September that opens the year.
+    const returnData = _.sortBy(response, ['year', 'date', 'name']);
 
     // Removing some info
     // const newArray = projects.map(({ phases, activities, emitted_invoices, received_invoices, tickets, diets, emitted_grants, received_grants, quotes, original_phases, incomes, expenses, strategies, estimated_hours, intercooperations, clients, received_expenses, received_incomes, ...item }) => item)

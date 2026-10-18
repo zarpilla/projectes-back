@@ -19,6 +19,7 @@
 const _ = require('lodash');
 const moment = require('moment');
 const { adaptQuery, toDbArgs } = require('../../../services/query-adapter');
+const { fiscalYearOf, fiscalYearEnd } = require('../../../services/fiscal-year');
 /* global strapi */ // strapi injected at runtime for the stored-totals refresh functions.
 
 const noPhaseInfo = { phase: '-', subphase: '-' };
@@ -676,7 +677,14 @@ const pushOriginalIncomeAndExpenseRows = (out, p, projectInfo, getDeductibleRati
   }
 };
 
-const pushPeriodificationRows = (out, p, projectInfo) => {
+// A periodification row's year is a fiscal year: its amounts are dated on
+// the year's last day (31/12 for calendar-year entities).
+const periodificationDate = (pp, startMonth = 1) => {
+  const date = fiscalYearEnd(pp.year, startMonth);
+  return { date, year: pp.year.toString(), month: date.substring(5, 7) };
+};
+
+const pushPeriodificationRows = (out, p, projectInfo, startMonth = 1) => {
   if (!p.periodification || !p.periodification.length) return;
   for (let j = 0; j < p.periodification.length; j++) {
     const pp = p.periodification[j];
@@ -712,9 +720,7 @@ const pushPeriodificationRows = (out, p, projectInfo) => {
       income_orig: 0,
       income_esti: pp.incomes || 0,
       income_real: pp.real_incomes || 0,
-      date: `${pp.year}-12-31`,
-      year: pp.year.toString(),
-      month: '12',
+      ...periodificationDate(pp, startMonth),
       row_type: 'Periodificació',
     });
 
@@ -728,9 +734,7 @@ const pushPeriodificationRows = (out, p, projectInfo) => {
       expense_esti_vat: 0,
       expense_real: -1 * (pp.real_expenses || 0),
       expense_real_vat: 0,
-      date: `${pp.year}-12-31`,
-      year: pp.year.toString(),
-      month: '12',
+      ...periodificationDate(pp, startMonth),
       row_type: 'Periodificació',
     });
   }
@@ -881,6 +885,23 @@ const pushHoursRows = async (out, p, projectInfo, ctx) => {
 };
 
 /**
+ * Rows are built with the calendar year of their date (the deductible VAT %
+ * is looked up by it). For an entity whose fiscal year doesn't start in
+ * January, `year` becomes the fiscal year so the form's years, the pivot and
+ * its `year_eq` filter all follow it; `month` stays the calendar month.
+ * Undated rows keep the UNDATED_YEAR bucket.
+ */
+const toFiscalYears = (rows, startMonth = 1) => {
+  if (!startMonth || startMonth <= 1) return rows;
+  for (const row of rows) {
+    if (row.year === UNDATED_YEAR) continue;
+    const year = fiscalYearOf(row.date, startMonth);
+    if (year) row.year = year;
+  }
+  return rows;
+};
+
+/**
  * Build the flat row stream for a single project.
  *
  * @param {object} p - populated project entity (with project_phases,
@@ -893,6 +914,7 @@ const pushHoursRows = async (out, p, projectInfo, ctx) => {
  *     deductibleVatPctByYear: Map<string, number>,
  *     fallback_deductible_vat_pct: number,
  *     activitiesByProject: Map<number, [{year,month,cost,hours}]>,
+ *     fiscalYearStartMonth: number (1–12, optional; 1 = calendar year),
  *   }
  * @returns {Promise<Array>} row stream
  */
@@ -910,14 +932,14 @@ const buildProjectRows = async (p, ctx) => {
   pushEstimatedIncomeRows(rows, p, projectInfo);
   pushEstimatedExpenseRows(rows, p, projectInfo, getDeductibleRatio);
   pushOriginalIncomeAndExpenseRows(rows, p, projectInfo, getDeductibleRatio);
-  pushPeriodificationRows(rows, p, projectInfo);
+  pushPeriodificationRows(rows, p, projectInfo, ctx.fiscalYearStartMonth);
 
   const projectActivities = ctx.activitiesByProject.get(projectInfo.id) || [];
   pushRealActivityRows(rows, projectInfo, projectActivities);
 
   await pushHoursRows(rows, p, projectInfo, ctx);
 
-  return rows;
+  return toFiscalYears(rows, ctx.fiscalYearStartMonth);
 };
 
 /**
@@ -1396,6 +1418,7 @@ module.exports = {
   getRealYear,
   UNDATED_YEAR,
   rowYear,
+  toFiscalYears,
   findUndatedLines,
   // Exposed for tests / future reuse:
   noPhaseInfo,
