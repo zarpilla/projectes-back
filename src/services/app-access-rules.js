@@ -148,6 +148,10 @@ allow(api('route'), ['create', 'update'], ORDERS_ADMIN);
 allow(api('pickup'), WRITE, ORDERS_ADMIN);
 allow(api('delivery-type'), WRITE, ORDERS_ADMIN);
 allow(api('city'), ['update', 'delete'], ORDERS_ADMIN);
+// …and the route rates, and opens those tables in the app (only those: the
+// metadata controller narrows the list for her)
+allow(api('route-rate'), WRITE, ORDERS_ADMIN);
+allow(api('entity-metadata'), ['adminEntities'], ORDERS_ADMIN);
 // «Facturar comandes»: the project's last invoices; the contact form's DIR3 search
 allow(api('emitted-invoice'), ['find'], ORDERS_ADMIN);
 allow(api('me'), ['dir3SearchNif', 'dir3SearchName'], ORDERS_ADMIN);

@@ -19,13 +19,17 @@ const path = require('path');
 describe('admin metadata of the tables that needed the Strapi admin', () => {
   beforeEach(() => {
     jest.resetModules();
-    global.strapi = { dirs: { app: { root: path.join(__dirname, '..') } } };
+    const permissions = { 1: ['admin'], 2: ['orders_admin'] };
+    global.strapi = {
+      dirs: { app: { root: path.join(__dirname, '..') } },
+      db: { query: () => ({ findOne: async ({ where }) => ({ id: where.id, permissions: (permissions[where.id] || []).map((permission) => ({ permission })) }) }) },
+    };
   });
   afterEach(() => { delete global.strapi; });
 
-  const load = async () => {
+  const load = async (userId = 1) => {
     const controller = require('../src/api/entity-metadata/controllers/entity-metadata');
-    const body = await controller.adminEntities({});
+    const body = await controller.adminEntities({ state: { user: { id: userId } } });
     const byName = Object.fromEntries(body.entities.map((e) => [e.name, e]));
     return { body, byName };
   };
@@ -44,16 +48,22 @@ describe('admin metadata of the tables that needed the Strapi admin', () => {
     expect(body.entityToApiPath[name]).toBe(apiPath);
   });
 
-  it('shows a pickup point with its town and lets the form pick its users', async () => {
+  it('shows a pickup point with its town, without its users (issues/159)', async () => {
     const { byName, body } = await load();
     const pickup = byName.pickup;
     expect(Object.keys(pickup.attributes).slice(0, 4)).toEqual(['name', 'alias', 'city', 'pickup']);
     expect(pickup.attributes.city).toMatchObject({ label: 'Població', target: 'api::city.city' });
     expect(pickup.attributes.pickup.label).toBe('Recollida a la finca');
-    expect(pickup.attributes.allowed_users.editable).toBe(true);
+    // nothing reads allowed_users, and as a one-to-many it moved users between points
+    expect(pickup.attributes.allowed_users).toBeUndefined();
     // the relation targets resolve to an API path
     expect(body.entityToApiPath.city).toBe('cities');
     expect(body.entityToApiPath.user).toBe('users');
+  });
+
+  it('gives the logistics office only the Logística tables (issues/159)', async () => {
+    const { byName } = await load(2);
+    expect(Object.keys(byName).sort()).toEqual(['city', 'delivery-type', 'pickup', 'route-rate']);
   });
 
   it('names the document types in Catalan and picks a project from the slim list', async () => {
@@ -171,5 +181,30 @@ describe('deleting a town (issues/159)', () => {
   it('guards a delete of many too', async () => {
     counts = { 'api::contact.contact': 1 };
     await expect(lifecycles.beforeDeleteMany({ params: { where: { id: { $in: [7] } } } })).rejects.toThrow('1 contacte');
+  });
+});
+
+describe('the logistics office opens Taules auxiliars › Logística (issues/159)', () => {
+  beforeEach(() => jest.resetModules());
+
+  it('writes the route rates and reads the tables metadata', () => {
+    const { isAllowed } = require('../src/services/app-access-rules');
+    for (const action of ['create', 'update', 'delete']) {
+      expect(isAllowed(`api::route-rate.route-rate.${action}`, ['orders_admin'])).toBe(true);
+      expect(isAllowed(`api::route-rate.route-rate.${action}`, ['orders'])).toBe(false);
+    }
+    expect(isAllowed('api::entity-metadata.entity-metadata.adminEntities', ['orders_admin'])).toBe(true);
+    expect(isAllowed('api::entity-metadata.entity-metadata.adminEntities', ['orders_delivery'])).toBe(false);
+  });
+
+  it('lets admins and the office through isAdminOrOffice, nobody else', async () => {
+    const perms = { 1: ['admin'], 2: ['orders_admin'], 3: ['orders', 'projects'] };
+    global.strapi = { db: { query: () => ({ findOne: async ({ where }) => ({ permissions: perms[where.id].map((permission) => ({ permission })) }) }) } };
+    const policy = require('../src/policies/isAdminOrOffice');
+    await expect(policy({ state: { user: { id: 1 } } })).resolves.toBe(true);
+    await expect(policy({ state: { user: { id: 2 } } })).resolves.toBe(true);
+    await expect(policy({ state: { user: { id: 3 } } })).rejects.toThrow('admin privileges');
+    await expect(policy({ state: {} })).rejects.toThrow('authenticated');
+    delete global.strapi;
   });
 });

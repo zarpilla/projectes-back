@@ -16,7 +16,8 @@ module.exports = {
         // v5: authentication is declared via `auth` (the users-permissions strategy),
         // not via a `plugins::users-permissions.isAuthenticated` policy (removed in v4+).
         auth: { strategy: 'users-permissions' },
-        policies: ['global::isAdmin'],
+        // the office opens Taules auxiliars › Logística (issues/159)
+        policies: ['global::isAdminOrOffice'],
       },
     },
   ],

@@ -12,13 +12,14 @@ const path = require('path');
 describe('admin entity labels (issues/103)', () => {
   beforeEach(() => {
     jest.resetModules();
-    global.strapi = { dirs: { app: { root: path.join(__dirname, '..') } } };
+    // an admin: the office gets only the logistics tables (issues/159)
+    global.strapi = { dirs: { app: { root: path.join(__dirname, '..') } }, db: { query: () => ({ findOne: async () => ({ permissions: [{ permission: 'admin' }] }) }) } };
   });
   afterEach(() => { delete global.strapi; });
 
   it('labels every field of every auxiliary table', async () => {
     const controller = require('../src/api/entity-metadata/controllers/entity-metadata');
-    const ctx = { send: jest.fn((v) => { ctx.body = v; }), body: undefined };
+    const ctx = { send: jest.fn((v) => { ctx.body = v; }), body: undefined, state: { user: { id: 1 } } };
     const result = await controller.adminEntities(ctx);
     const body = ctx.body || result;
     const entities = (body && (body.data || body.entities || body)) || [];

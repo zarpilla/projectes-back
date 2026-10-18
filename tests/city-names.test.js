@@ -11,10 +11,21 @@
 describe('city names (issues/093)', () => {
   let lifecycles;
   const stored = [{ id: 82, name: 'Barcelona' }, { id: 164, name: 'Manlleu' }];
+  let renamed;
 
   beforeEach(() => {
     jest.resetModules();
-    global.strapi = { db: { query: () => ({ findMany: async () => stored }) } };
+    renamed = [];
+    global.strapi = {
+      log: { info: jest.fn() },
+      db: {
+        query: (uid) => ({
+          findMany: async () => stored,
+          findOne: async ({ where }) => stored.find((c) => c.id === where.id),
+          updateMany: async (args) => { renamed.push({ uid, ...args }); return { count: 3 }; },
+        }),
+      },
+    };
     lifecycles = require('../src/api/city/content-types/city/lifecycles');
   });
   afterEach(() => { delete global.strapi; });
@@ -37,6 +48,25 @@ describe('city names (issues/093)', () => {
     await lifecycles.beforeUpdate(event);
     expect(event.params.data.name).toBe('Manlleu');
     await lifecycles.beforeUpdate({ params: { where: { id: 82 }, data: { order: 2 } } });
+  });
+  // issues/159: contacts (delivery points) keep the town as text, matched by
+  // name when an order is routed: renaming a town renames it on them too.
+  it('renames the town on the contacts that have it', async () => {
+    const event = { params: { where: { id: 164 }, data: { name: 'Manlleu (Osona)' } } };
+    await lifecycles.beforeUpdate(event);
+    await lifecycles.afterUpdate({ ...event, result: { id: 164, name: 'Manlleu (Osona)' } });
+    expect(renamed).toEqual([
+      { uid: 'api::contact.contact', where: { city: { $eqi: 'Manlleu' } }, data: { city: 'Manlleu (Osona)' } },
+    ]);
+  });
+
+  it('leaves the contacts alone when the name stays (or only its spaces change)', async () => {
+    for (const data of [{ name: ' manlleu ' }, { order: 3 }]) {
+      const event = { params: { where: { id: 164 }, data } };
+      await lifecycles.beforeUpdate(event);
+      await lifecycles.afterUpdate({ ...event, result: { id: 164, name: 'Manlleu' } });
+    }
+    expect(renamed).toEqual([]);
   });
 });
 
