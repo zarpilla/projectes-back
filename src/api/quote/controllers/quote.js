@@ -8,6 +8,7 @@
 const { createCoreController } = require('@strapi/strapi').factories;
 const { numericId } = require('../../../middlewares/v3-compat');
 const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { getFrontUrl } = require('../../../services/me-settings');
 
 module.exports = createCoreController('api::quote.quote', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -22,9 +23,9 @@ module.exports = createCoreController('api::quote.quote', ({ strapi }) => ({
     const response = await super.findOne(ctx);
     const quote = response?.data?.attributes || response?.data;
     if (quote && !quote.pdf) {
-      const config = await strapi.documents('api::config.config').findFirst();
-      if (config?.front_url) {
-        quote.pdf = `${config.front_url}quote/${numericId(ctx)}`;
+      const frontUrl = await getFrontUrl();
+      if (frontUrl) {
+        quote.pdf = `${frontUrl}quote/${numericId(ctx)}`;
       }
     }
     return response;

@@ -14,7 +14,7 @@ const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { doneStateId } = require('../services/done-state');
 const { taskEmailAllowed } = require('../services/email-gate');
-const { getMe } = require('../../../services/me-settings');
+const { getMe, frontUrlOf } = require('../../../services/me-settings');
 const { nextTaskData } = require('../services/recurrence');
 const { newlyAssigned, removedFrom, notifyAssigned, dropAssigned } = require('../services/notify');
 
@@ -73,7 +73,7 @@ async function afterTaskSave(before, after, actor) {
   await strapi.documents(TASK_UID).create({ data: nextTaskData(after, first.id) });
 }
 
-const sendEmail = async (data, config, me) => {
+const sendEmail = async (data, frontUrl, me) => {
   if (!data) return;
 
   const emailFrom =
@@ -84,7 +84,7 @@ const sendEmail = async (data, config, me) => {
 
   // Regular expired tasks (updated in the last 15 days)
   if (data.rows.filter((r) => r.type === 'expired' && !r.shouldStop).length > 0) {
-    text += `Hi ha <a target='_blank' href='${config.front_url}tasks'>tasques o checklists</a> amb la data límit superada:<br><br>`;
+    text += `Hi ha <a target='_blank' href='${frontUrl}tasks'>tasques o checklists</a> amb la data límit superada:<br><br>`;
     data.rows
       .filter((r) => r.type === 'expired' && !r.shouldStop)
       .forEach((r) => {
@@ -106,7 +106,7 @@ const sendEmail = async (data, config, me) => {
   }
 
   if (data.rows.filter((r) => r.type === 'new').length > 0) {
-    text += `Hi ha canvis en <a target='_blank' href='${config.front_url}tasks'>tasques o checklists</a>:<br><br>`;
+    text += `Hi ha canvis en <a target='_blank' href='${frontUrl}tasks'>tasques o checklists</a>:<br><br>`;
     data.rows
       .filter((r) => r.type === 'new')
       .forEach((r) => {
@@ -348,7 +348,7 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
     const sentEmails = [];
     if (emails.length) {
       for (const email of emails) {
-        const msg = await sendEmail(email, config, me);
+        const msg = await sendEmail(email, frontUrlOf(me, config), me);
         sentEmails.push(msg);
       }
     }
