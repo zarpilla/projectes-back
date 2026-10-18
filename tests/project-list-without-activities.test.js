@@ -98,4 +98,28 @@ describe('project list', () => {
     await controller.findWithActivities(ctx);
     expect(superFind.mock.calls[0][0].query.filters).toMatchObject({ trashed: true });
   });
+
+  // issues/169: the Panell de projectes summed the mothers, whose totals the
+  // list fills with their children's, on top of the children themselves
+  it('with-activities: a mother keeps its own totals', async () => {
+    superFind.mockResolvedValueOnce({
+      data: [
+        { id: 1, name: 'Mare', is_mother: true, total_real_incomes: 0 },
+        { id: 2, name: 'Filla', mother: { id: 1 }, total_real_incomes: 500 },
+      ],
+      meta: {},
+    });
+    global.strapi.db.query = (uid) => ({
+      findMany: uid === 'api::project.project' ? async () => [{ id: 2, total_real_incomes: 500 }] : activityQuery,
+    });
+    const response = await controller.findWithActivities({ query: {}, state: {} });
+    expect(response.data.map((row) => row.total_real_incomes)).toEqual([0, 500]);
+  });
+
+  it('the list still adds the children up on their mother', async () => {
+    superFind.mockResolvedValueOnce({ data: [{ id: 1, name: 'Mare', is_mother: true, total_real_incomes: 0 }], meta: {} });
+    global.strapi.db.query = () => ({ findMany: async () => [{ id: 2, total_real_incomes: 500 }] });
+    const response = await controller.find({ query: {}, state: {} });
+    expect(response.data[0].total_real_incomes).toBe(500);
+  });
 });
