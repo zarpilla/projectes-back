@@ -18,8 +18,13 @@
  * public/uploads directly and never reaches Node.
  */
 
-/** Extensions that can carry a private key or a full keystore. */
-const KEY_MATERIAL = /\.(p12|pfx|pem|key|jks|p8|p7b|p7s|asc|gpg|der|crt|cer)$/i;
+/**
+ * Extensions that can carry a private key or a full keystore. `json` too: the
+ * Google service-account file (`me.google_credentials`, with its private key)
+ * is a .json upload, read from disk only; uploads don't accept other JSON
+ * files (issues/159).
+ */
+const KEY_MATERIAL = /\.(p12|pfx|pem|key|jks|p8|p7b|p7s|asc|gpg|der|crt|cer|json)$/i;
 
 /** Only the upload tree — the rest of public/ is app assets. */
 const UPLOADS = /^\/uploads\//i;
