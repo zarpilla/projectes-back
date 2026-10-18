@@ -45,15 +45,16 @@ describe('finalPrice arithmetic', () => {
       .toBeCloseTo(87.5, 6);
   });
 
-  it('compounds the percentages before subtracting the fixed amount', () => {
-    // 100 * 0.9 * 0.5 = 45, then -5
+  // issues/145: the invoice's formula, (price − volume) × (1 − (md + cp) / 100)
+  it('subtracts the fixed amount, then adds up the percentages as the invoice does', () => {
+    // (100 - 5) * (1 - 0.6) = 38
     const order = {
       price: 100,
       multidelivery_discount: 10,
       contact_pickup_discount: 50,
       volume_discount: 5,
     };
-    expect(applyFinalPrice(order).finalPrice).toBeCloseTo(40, 6);
+    expect(applyFinalPrice(order).finalPrice).toBeCloseTo(38, 6);
   });
 
   it('treats a missing price as zero rather than NaN', () => {

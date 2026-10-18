@@ -21,7 +21,12 @@ const QRCode = require('qrcode');
 const { PDFDocument } = require('pdf-lib');
 const MicroInvoiceOrder = require('../../../../utils/microinvoice-order');
 const { createCoreController } = require('@strapi/strapi').factories;
-const { applyFinalPrice, applyFinalPriceToAll } = require('../services/final-price');
+const {
+  applyFinalPrice,
+  applyFinalPriceToAll,
+  orderDiscountedPrice,
+  orderInvoiceLine,
+} = require('../services/final-price');
 const { adaptQuery, adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { statsDateRange } = require('../../../services/stats-date-range');
 const { rawExecute } = require('../../../services/raw-sql');
@@ -195,10 +200,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
           refrigerated: o.refrigerated,
           fragile: o.fragile,
           route_rate: o.route_rate ? o.route_rate.name : '-',
-          price:
-            ((o.price || 0) - (o.volume_discount || 0)) *
-            (1 - (o.multidelivery_discount || 0) / 100) *
-            (1 - (o.contact_pickup_discount || 0) / 100),
+          // the invoice's amount (issues/145)
+          price: orderDiscountedPrice(o),
           pickup: o.pickup ? o.pickup.name : '-',
           delivery_type: o.delivery_type ? o.delivery_type.name : '-',
           status: o.status,
@@ -728,12 +731,12 @@ async function invoiceRun(ctx) {
           document_concept: documentConcept,
           lines: contactOrders.map((o) => ({
             concept: orderLineConcept(o),
-            base: o.price - (o.volume_discount || 0),
+            // base and discount from the shared formula (issues/145)
+            ...orderInvoiceLine(o),
             quantity: 1,
             price: o.price,
             vat: 21,
             irpf: 0,
-            discount: (o.multidelivery_discount || 0) + (o.contact_pickup_discount || 0),
           })),
           projects: [project],
           publishedAt: new Date(),
