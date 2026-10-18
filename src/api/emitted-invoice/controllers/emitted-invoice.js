@@ -24,6 +24,7 @@ const { getMe } = require('../../../services/me-settings');
 const { buildEmailBody } = require('../../../services/email-body');
 const changeLog = require('../../../services/change-log');
 const { relationId } = require('../../../services/relation-input');
+const { toLocalDay } = require('../../../services/date-fields');
 
 // Map v3 entity slug -> DB table name for the raw UPDATE in payEntity.
 const ENTITY_TABLE = {
@@ -57,6 +58,8 @@ const getYearsInfo = async () => {
  * Pay VAT on a set of documents. Uses parameter-bound rawExecute (R11 fix —
  * the v3 string-interpolation SQL injection is gone).
  */
+const VAT_FIELDS = ['vat_paid_date', 'deductible_vat_pct'];
+
 const payEntity = async (documents, entitySlug, vatPaidDate, deductibleVatPct, years) => {
   const table = ENTITY_TABLE[entitySlug];
   if (!table) throw new Error(`Unknown entity: ${entitySlug}`);
@@ -68,17 +71,18 @@ const payEntity = async (documents, entitySlug, vatPaidDate, deductibleVatPct, y
       ? years.find((y) => String(y.year) === String(emittedYear))?.deductible_vat_pct || deductibleVatPct
       : 100;
 
-    // The raw UPDATE skips the document service, so the change log is fed here.
+    // The raw UPDATE skips the document service, so the change log is fed
+    // here, reading only the two fields it writes (not the lines, issues/161).
     const uid = ENTITY_UID[entitySlug];
     const before = changeLog.isTracked(uid)
-      ? await changeLog.snapshot(uid, { id: doc.id }).catch(() => null)
+      ? await changeLog.rowWith(uid, { id: doc.id }, VAT_FIELDS).catch(() => null)
       : null;
     await rawExecute(strapi, `UPDATE ${table} SET vat_paid_date = ?, deductible_vat_pct = ? WHERE id = ?`, [
       vatPaidDate,
       deductibleVatPctYear,
       doc.id,
     ]);
-    await changeLog.logRawUpdate(uid, before);
+    await changeLog.logRawUpdate(uid, before, VAT_FIELDS);
     totalVat += (doc.total_vat * deductibleVatPctYear) / 100.0;
   }
   return totalVat;
@@ -90,6 +94,36 @@ const ENTITY_UID = {
   'received-invoice': 'api::received-invoice.received-invoice',
   'received-expense': 'api::received-expense.received-expense',
 };
+
+/**
+ * After the email went out: the invoice is sent today, and its history says
+ * who sent it to which address (issues/161). Raw UPDATE like payEntity: an
+ * issued invoice is not updatable, and a document-service save would rerun
+ * the VeriFactu/FACe enqueue of afterUpdate. Never fails the send.
+ */
+async function markSent(invoice, to) {
+  const uid = 'api::emitted-invoice.emitted-invoice';
+  try {
+    const sentDate = toLocalDay(new Date());
+    await rawExecute(strapi, 'UPDATE emitted_invoices SET sent = ?, sent_date = ? WHERE id = ?', [
+      true,
+      sentDate,
+      invoice.id,
+    ]);
+    const changes = [
+      { field: 'sent', from: Boolean(invoice.sent), to: true },
+      { field: 'sent_date', from: invoice.sent_date || null, to: sentDate },
+    ].filter((c) => c.from !== c.to);
+    await changeLog.logEvent(uid, {
+      action: 'email',
+      row: { id: invoice.id, code: invoice.code },
+      changes: changes.length ? changes : null,
+      details: { to },
+    });
+  } catch (error) {
+    strapi.log.error(`[send-email] invoice ${invoice.id} sent, but not marked as sent: ${error.message}`);
+  }
+}
 
 module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -440,6 +474,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
             }),
             attachments,
           });
+        await markSent(invoice, invoice.contact.contact_email);
         return { done: true };
       }
       // Diagnose what's missing

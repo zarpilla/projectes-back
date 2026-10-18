@@ -27,7 +27,8 @@ const { frontUrlsWithoutHash } = require('./services/front-urls-without-hash');
 const { clearQuotePreviewLinks } = require('./services/clear-quote-preview-links');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
-const { changeLogMiddleware, registerOrderRowWrites } = require('./services/change-log');
+const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
+const { ensureChangeLogIndex } = require('./services/ensure-change-log-index');
 const { lockIssuedInvoiceComponents } = require('./services/lock-issued-invoices');
 const { registerAppPermissions } = require('./services/register-app-permissions');
 
@@ -65,6 +66,8 @@ module.exports = {
     registerUserDeleteGuard();
     // the orders' writes behind the document service go in their history (issues/119)
     registerOrderRowWrites();
+    // VeriFactu and FACe statuses go in the emitted invoice's history (issues/161)
+    registerSubmissionWrites();
     wrapEmailProvider(strapi);
 
     // A brand-new database gets its catalogs, settings and home menu (what used
@@ -93,6 +96,8 @@ module.exports = {
       // tenant rebuilt by the ETL (which recreates the composite-only unique)
       // gets the real one-invoice-per-order constraint back.
       ['ensureOrderInvoiceUniqueIndex', ensureOrderInvoiceUniqueIndex, { runOnce: false }],
+      // a record's history is read by (entity, entity_id), newest first (issues/161)
+      ['ensureChangeLogIndex', ensureChangeLogIndex, { runOnce: false }],
       // Rerun on every boot for the same reason: the ETL used to copy v3's
       // component_type spelling, which duplicated component rows on save.
       ['normalizeComponentTypes', normalizeComponentTypes, { runOnce: false }],
