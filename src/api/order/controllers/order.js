@@ -28,6 +28,7 @@ const { rawExecute } = require('../../../services/raw-sql');
 const { getMe } = require('../../../services/me-settings');
 const { numericId } = require('../../../middlewares/v3-compat');
 const { processIncidences } = require('../services/order-incidences');
+const { addContactSnapshot } = require('../services/contact-snapshot');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 const TABLE_POPULATE = ['route', 'owner', 'contact', 'pickup', 'delivery_type', 'contact_legal_form'];
@@ -580,6 +581,10 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     const payload = body.data && typeof body.data === 'object' ? body.data : body;
     const incidences = Array.isArray(payload.incidences) ? payload.incidences : null;
     if (incidences) delete payload.incidences;
+
+    // a new delivery point without its data (the quick edit): copy the
+    // point's data onto the order (issues/157)
+    await addContactSnapshot(payload, numericId(ctx));
 
     const response = await super.update(ctx);
 
