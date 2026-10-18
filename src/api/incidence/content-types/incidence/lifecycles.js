@@ -12,6 +12,10 @@
 const updater = require('../../utils/updater');
 const { getMe } = require('../../../../services/me-settings');
 
+const INCIDENCE = 'api::incidence.incidence';
+// The logistics office: who answers incidences and is e-mailed about replies.
+const OFFICE_PERMISSION = 'orders_admin';
+
 module.exports = {
   async afterCreate(event) {
     try {
@@ -20,18 +24,92 @@ module.exports = {
       console.error('Error sending incidence creation email:', error);
     }
   },
+  // How many replies the incidence had, to tell in afterUpdate whether this
+  // update added one (issues/154).
+  async beforeUpdate(event) {
+    try {
+      const where = event.params && event.params.where;
+      if (!where) return;
+      const before = await strapi.db
+        .query(INCIDENCE)
+        .findOne({ where, populate: { incidence_response: true } });
+      if (before && event.state) {
+        event.state.replyCount = (before.incidence_response || []).length;
+      }
+    } catch (error) {
+      console.error('Error reading incidence replies before update:', error);
+    }
+  },
   async afterUpdate(event) {
     const currentUserId = updater.consumeCurrentUserId();
+    const replyCount = event.state ? event.state.replyCount : undefined;
     try {
-      await sendIncidenceEmail(event.result, 'updated', currentUserId);
+      await sendIncidenceEmail(event.result, 'updated', currentUserId, replyCount);
     } catch (error) {
       console.error('Error sending incidence update email:', error);
     }
   },
 };
 
-async function sendIncidenceEmail(incidence, action, updaterId = null) {
-  const fullIncidence = await strapi.db.query('api::incidence.incidence').findOne({
+/** E-mails of the active users with the logistics office permission. */
+async function officeStaffEmails() {
+  const users = await strapi.db.query('plugin::users-permissions.user').findMany({
+    where: { blocked: false },
+    populate: { permissions: true },
+  });
+  return (users || [])
+    .filter((u) => u.email && (u.permissions || []).some((p) => p && p.permission === OFFICE_PERMISSION))
+    .map((u) => ({ id: u.id, email: u.email }));
+}
+
+const splitEmails = (list) =>
+  (list || '')
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean);
+
+/** The list without repeated addresses (case-insensitive), first spelling kept. */
+function uniqueEmails(emails) {
+  const seen = new Set();
+  return emails.filter((e) => {
+    const key = e.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Who hears about a new reply (issues/154): the office (contact_form_email
+ * and every active orders_admin user) and the order's owner, except the
+ * reply's own author. Before, a member's reply went only to
+ * contact_form_email and anyone else's reply only to the member.
+ */
+async function replyRecipients(reply, updaterId, orderOwner, me) {
+  const authorId = (reply && reply.user && (reply.user.id || reply.user)) || updaterId || null;
+  const authorEmail = (reply && reply.user && reply.user.email) || null;
+  const isAuthor = (user) =>
+    (authorId && String(user.id) === String(authorId)) ||
+    (authorEmail && user.email && user.email.toLowerCase() === authorEmail.toLowerCase());
+
+  const staff = await officeStaffEmails();
+  const excluded = new Set(
+    [authorEmail, ...staff.filter(isAuthor).map((u) => u.email)]
+      .concat(orderOwner && isAuthor(orderOwner) ? [orderOwner.email] : [])
+      .filter(Boolean)
+      .map((e) => e.toLowerCase()),
+  );
+
+  const emails = [
+    ...splitEmails(me.contact_form_email),
+    ...staff.map((u) => u.email),
+    ...(orderOwner && orderOwner.email && !isAuthor(orderOwner) ? [orderOwner.email] : []),
+  ];
+  return uniqueEmails(emails.filter((e) => !excluded.has(e.toLowerCase())));
+}
+
+async function sendIncidenceEmail(incidence, action, updaterId = null, replyCountBefore = undefined) {
+  const fullIncidence = await strapi.db.query(INCIDENCE).findOne({
     where: { id: incidence.id },
     populate: {
       order: {
@@ -45,7 +123,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null) {
       },
       created_user: true,
       closed_user: true,
-      incidence_response: true,
+      incidence_response: { populate: { user: true } },
     },
   });
 
@@ -68,8 +146,14 @@ async function sendIncidenceEmail(incidence, action, updaterId = null) {
   const from =
     strapi.config.get('plugin.email.config.settings.defaultFrom', '') || process.env.EMAIL_FROM || '';
 
+  const replies = fullIncidence.incidence_response || [];
+  const replyAdded =
+    action === 'updated' && typeof replyCountBefore === 'number' && replies.length > replyCountBefore;
+
   let recipients = [];
-  if (action === 'created') {
+  if (replyAdded) {
+    recipients = await replyRecipients(replies[replies.length - 1], updaterId, orderOwner, me);
+  } else if (action === 'created') {
     recipients = me.contact_form_email.split(',').map((e) => e.trim());
     if (orderOwner && orderOwner.email) recipients.push(orderOwner.email);
   } else if (action === 'updated') {
@@ -87,6 +171,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null) {
 
   let actionLabel = 'actualitzada';
   if (action === 'created') actionLabel = 'creada';
+  else if (replyAdded) actionLabel = 'amb una resposta nova';
   else if (fullIncidence.state === 'closed') actionLabel = 'tancada';
 
   const subject = `[${me.name || 'ESSTRAPIS'}] Incidència ${actionLabel} - Comanda #${order.id}`;
@@ -103,6 +188,9 @@ async function sendIncidenceEmail(incidence, action, updaterId = null) {
     responsesHtml = '<br><b>Respostes:</b><br>';
     fullIncidence.incidence_response.forEach((response, index) => {
       responsesHtml += `<br>${index + 1}. ${response.text || 'Sense text'}<br>`;
+      if (response.user && typeof response.user === 'object') {
+        responsesHtml += `Per: ${response.user.fullname || response.user.username}<br>`;
+      }
       if (response.response_date) {
         responsesHtml += `Data: ${new Date(response.response_date).toLocaleString('ca-ES')}<br>`;
       }
@@ -110,7 +198,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null) {
   }
 
   const html = `
-    <b>Incidència ${action === 'created' ? 'Creada' : 'Actualitzada'}</b><br><br>
+    <b>Incidència ${action === 'created' ? 'Creada' : replyAdded ? 'amb una resposta nova' : 'Actualitzada'}</b><br><br>
     <b>ID Incidència:</b> <a href="${frontUrl}incidences?id=${fullIncidence.id}" target="_blank">${fullIncidence.id}</a><br>
     <b>Comanda:</b> #${order.id}<br>
     <b>Propietari Comanda:</b> ${orderOwner ? orderOwner.fullname || orderOwner.username : 'N/A'} ${orderOwner && orderOwner.email ? `(${orderOwner.email})` : ''}<br>
