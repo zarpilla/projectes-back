@@ -13,7 +13,12 @@ module.exports = createCoreController('api::verifactu.verifactu', ({ strapi }) =
   // v5-native queries pass through untouched.
   async find(ctx) {
     adaptCtxQuery(ctx);
-    return super.find(ctx);
+    const response = await super.find(ctx);
+    // the keystore's media (its URL) stays out of the API: the app reads what
+    // it needs from /api/certificates/verifactu (issues/159)
+    const data = response && response.data;
+    if (data && typeof data === 'object') delete (data.attributes || data).certificate;
+    return response;
   },
 
   // Default core actions (find/findOne/create/update/delete) are inherited.
