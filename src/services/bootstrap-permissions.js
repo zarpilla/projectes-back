@@ -239,7 +239,7 @@ async function importSeedPermissions() {
     route: ['find', 'findOne', 'create', 'update'],
     // Taules auxiliars › Tarifes de ruta (issues/139): writes admin-only (isAdmin policy)
     'route-rate': ['find', 'findOne', 'create', 'update', 'delete'],
-    city: ['find', 'findOne', 'create', 'update', 'delete'],
+    city: ['find', 'findOne', 'create', 'update', 'delete', 'postcodes'],
     'city-route': ['find', 'findOne', 'create', 'delete', 'basic'],
     'form-submission': ['create', 'find', 'findOne'],
     'route-festive': ['find', 'findOne', 'create', 'delete'],

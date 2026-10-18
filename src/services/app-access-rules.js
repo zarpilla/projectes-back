@@ -95,6 +95,8 @@ for (const name of [
 }
 allow(api('activity-type'), ['getBasic'], EVERYONE);
 allow(api('city-route'), ['basic'], EVERYONE);
+// the CP of each town, for the delivery point form (issues/182)
+allow(api('city'), ['postcodes'], EVERYONE);
 // Person pickers and owner columns on the hours and logistics screens.
 allow('plugin::users-permissions.user', ['find', 'findOne', 'count'], EVERYONE);
 // Project pickers (hours), the landing page and the member's «Factures» filter.
