@@ -266,7 +266,7 @@ async function importSeedPermissions() {
     strategy: ['create', 'find', 'findOne', 'update', 'delete'],
     year: ['create', 'find', 'findOne', 'update', 'delete'],
     'entity-metadata': ['adminEntities'],
-    me: ['find', 'update', 'dir3SearchNif', 'dir3SearchName', 'ticketsLogin'],
+    me: ['find', 'update', 'dir3SearchNif', 'dir3SearchName', 'ticketsLogin', 'docsLogin'],
     // users-permissions plugin actions for authenticated users
     // (merged into the SAME call because updateRole REPLACES the role's set)
     // home/updateHome: the person's own Inici (services/user-home.js)

@@ -3,7 +3,8 @@
 /**
  * me CUSTOM routes (v5). Ported from v3 api/me/config/routes.json.
  * These are the non-CRUD endpoints: the DIR3 proxies (ported from v3) and
- * tickets-login (login link to the tickets site, issues/019).
+ * tickets-login (login link to the tickets site, issues/019) and docs-login
+ * (login link to the documentation site).
  *
  * v5 mounts custom routes at /api + the path exactly as written — it does NOT
  * namespace them by content type, so each path keeps its v3 plural prefix.
@@ -27,6 +28,11 @@ module.exports = {
       method: 'GET',
       path: '/me/tickets-login',
       handler: 'me.ticketsLogin',
+    },
+    {
+      method: 'GET',
+      path: '/me/docs-login',
+      handler: 'me.docsLogin',
     },
   ],
 };

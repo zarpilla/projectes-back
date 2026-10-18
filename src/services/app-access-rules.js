@@ -56,7 +56,7 @@ const api = (name) => `api::${name}.${name}`;
 // (changelog, reachable from the profile) whatever the permissions, and keeps
 // their own Inici (GET/PUT /users/me/home).
 allow('plugin::users-permissions.user', ['me', 'home', 'updateHome'], ANY);
-allow(api('me'), ['find', 'ticketsLogin'], ANY);
+allow(api('me'), ['find', 'ticketsLogin', 'docsLogin'], ANY);
 allow(api('logo'), READ, ANY);
 
 // Catalogs read by the logistics and hours screens, and by the landing page

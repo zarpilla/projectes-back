@@ -13,7 +13,7 @@ nginx (domain) ──> 127.0.0.1:<port>  Caddy ("proxy" container)
 ```
 
 - `tenants.conf` lists each tenant: `<name> <port> <uploads dir>`. See `tenants.conf.example`.
-- `envs/<tenant>.env` holds the tenant's environment: database, `URL`, secrets, SMTP, `TICKETS_SSO_KEY`. It was generated from the old PM2 config with `pm2-env-to-dotenv.js`. Its `PORT` is overridden per slot.
+- `envs/<tenant>.env` holds the tenant's environment: database, `URL`, secrets, SMTP, `TICKETS_SSO_KEY`, `DOCS_SSO_KEY`. It was generated from the old PM2 config with `pm2-env-to-dotenv.js`. Its `PORT` is overridden per slot.
 - `state/<tenant>` says which slot is live (`blue` or `green`).
 - `render.sh` generates `docker-compose.yml` and `caddy/Caddyfile` from those files. Never edit the generated files.
 - The backend services are in the `backends` profile, so `docker compose up -d` without names only starts the proxy. Always name backend services explicitly.
@@ -65,7 +65,7 @@ cd /var/www/esstrapis-back
 ```
 
 `create-tenant.sh`:
-1. writes `envs/<name>.env`: the shared settings (SMTP, API keys, `TICKETS_SSO_KEY`) copied from `envs/buida.env`, plus new secrets and a new database password;
+1. writes `envs/<name>.env`: the shared settings (SMTP, API keys, `TICKETS_SSO_KEY`, `DOCS_SSO_KEY`) copied from `envs/buida.env`, plus new secrets and a new database password;
 2. creates the empty database `<name>_v5` and the MySQL user `<name>` (it asks for the MySQL admin password);
 3. adds the tenant to `tenants.conf` on the next free port, starts `<name>-blue`, waits for it and points the proxy at it;
 4. creates the front in `/var/www/projectes-<name>/docker`, starts it and adds it to the front's `sites.conf`;
