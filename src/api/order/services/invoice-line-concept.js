@@ -14,4 +14,23 @@ function orderLineConcept(order) {
   return [date ? `Comanda ${date}` : 'Comanda', String(order.id).padStart(4, '0'), route].filter(Boolean).join(' | ');
 }
 
-module.exports = { orderLineConcept };
+/**
+ * Concept of a logistics invoice: «Serveis logístics octubre 2026». The month
+ * is the orders' estimated delivery month, the one «Facturar» groups them by;
+ * it was the first order's route date, which can fall in the month before
+ * (issues/155). Orders spanning months read «setembre - octubre 2026».
+ */
+function invoiceConcept(orders) {
+  const months = (orders || [])
+    .map((o) => moment(o.estimated_delivery_date || o.route_date, 'YYYY-MM-DD'))
+    .filter((m) => m.isValid())
+    .sort((a, b) => a.valueOf() - b.valueOf());
+  const first = months.length ? months[0] : moment();
+  const last = months.length ? months[months.length - 1] : first;
+  const name = (m, withYear = true) => m.locale('ca').format(withYear ? 'MMMM YYYY' : 'MMMM');
+  if (first.isSame(last, 'month')) return `Serveis logístics ${name(first)}`;
+  const from = name(first, !first.isSame(last, 'year'));
+  return `Serveis logístics ${from} - ${name(last)}`;
+}
+
+module.exports = { orderLineConcept, invoiceConcept };

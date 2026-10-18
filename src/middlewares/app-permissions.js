@@ -270,6 +270,27 @@ async function scopeInvoiceList(ctx, next, { strapi, userId }) {
   return next();
 }
 
+/**
+ * Her emitted invoices, without the drafts: «Facturar» creates them and the
+ * office checks and issues them before she sees them (issues/155).
+ */
+async function scopeEmittedInvoiceList(ctx, next, { strapi, userId }) {
+  const contactIds = idList(await memberContactIds(strapi, userId));
+  // v3 spelling, read by the query adapter like the request's own `_where`
+  const notDraft = { _or: [{ 'state_ne': 'draft' }, { 'state_null': true }] };
+  narrowQuery(
+    ctx,
+    { _and: [{ 'contact.id_in': contactIds }, notDraft] },
+    {
+      $and: [
+        { contact: { id: { $in: contactIds } } },
+        { $or: [{ state: { $ne: 'draft' } }, { state: { $null: true } }] },
+      ],
+    },
+  );
+  return next();
+}
+
 async function scopeContactCreate(ctx, next, { userId }) {
   const payload = payloadOf(ctx);
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
@@ -436,7 +457,7 @@ const MEMBER_SCOPES = {
   [`${INCIDENCE}.findOne`]: scopeIncidenceRow,
   [`${INCIDENCE}.update`]: scopeIncidenceRow,
   [`${INCIDENCE}.delete`]: scopeIncidenceRow,
-  'api::emitted-invoice.emitted-invoice.findBasic': scopeInvoiceList,
+  'api::emitted-invoice.emitted-invoice.findBasic': scopeEmittedInvoiceList,
   'api::received-income.received-income.findBasic': scopeInvoiceList,
   [`${CONTACT}.create`]: scopeContactCreate,
   [`${CONTACT}.update`]: scopeContactUpdate,

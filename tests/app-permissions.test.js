@@ -450,8 +450,29 @@ describe('app permissions (issues/099)', () => {
 
     it('matches no row when she has no contact, instead of dropping the filter', async () => {
       setup({ ...options(), contacts: {} });
-      const ctx = await expectAllowed('api::emitted-invoice.emitted-invoice.findBasic');
+      const ctx = await expectAllowed('api::received-income.received-income.findBasic');
       expect(ctx.query._where).toEqual({ _and: [{ 'contact.id_in': [-1] }] });
+    });
+
+    // issues/155 (2026-10-18): «Facturar» creates the drafts, and the member saw
+    // them («Esborrany») in her «Factures» right away, before the office
+    // checked and issued them.
+    it('leaves the draft invoices out of her «Factures» (issues/155)', async () => {
+      const ctx = await expectAllowed('api::emitted-invoice.emitted-invoice.findBasic', {
+        query: { _where: { 'emitted_gte': '2026-01-01' } },
+      });
+      const { adaptQuery } = require('../src/services/query-adapter');
+      expect(adaptQuery(ctx.query).filters).toEqual({
+        $and: [
+          {
+            $and: [
+              { contact: { id: { $in: [MY_CONTACT] } } },
+              { $or: [{ state: { $ne: 'draft' } }, { state: { $null: true } }] },
+            ],
+          },
+          { emitted: { $gte: '2026-01-01' } },
+        ],
+      });
     });
 
     it("refuses reading or changing another member's order", async () => {

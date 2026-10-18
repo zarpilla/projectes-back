@@ -15,7 +15,7 @@ const fs = require('fs');
 const { resolvePdfLogo } = require('../../../services/pdf-logo');
 const crypto = require('crypto');
 const moment = require('moment');
-const { orderLineConcept } = require('../services/invoice-line-concept');
+const { orderLineConcept, invoiceConcept } = require('../services/invoice-line-concept');
 const sharp = require('sharp');
 const QRCode = require('qrcode');
 const { PDFDocument } = require('pdf-lib');
@@ -718,10 +718,7 @@ async function invoiceRun(ctx) {
     uniqueOwners.map(async (owner) => {
       const contact = contactsByOwnerId[owner];
       const contactOrders = invoiceable.filter((o) => o.owner?.id === owner);
-      const firstDate = contactOrders[0]?.route_date || new Date();
-      const monthName = moment(firstDate).locale('ca').format('MMMM');
-      const yr = moment(firstDate).format('YYYY');
-      const documentConcept = `Serveis logístics ${monthName} ${yr}`;
+      const documentConcept = invoiceConcept(contactOrders);
 
       const invoice = await strapi.service('api::emitted-invoice.emitted-invoice').create({
         data: {

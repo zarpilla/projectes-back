@@ -584,7 +584,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
 
   /**
    * GET /api/emitted-invoices/pending-provider
-   * Returns unpaid, sent invoices for the current user's provider contacts.
+   * Returns unpaid (no paid date), sent, issued invoices for the current user's provider contacts.
    */
   async pendingProvider(ctx) {
     try {
@@ -599,7 +599,10 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
         .query('api::emitted-invoice.emitted-invoice')
         .findMany({ where: { contact: { $in: providerIds } } });
 
-      return { invoices: invoices.filter((i) => i.paid !== true && i.sent) };
+      // one rule for «paid», the one her «Factures» list uses: the paid date
+      // (`paid` could be NULL on a paid invoice); drafts are not hers yet
+      // (issues/155)
+      return { invoices: invoices.filter((i) => !i.paid_date && i.sent && i.state !== 'draft') };
     } catch (error) {
       console.log('error', error);
       return { invoices: 0 };
