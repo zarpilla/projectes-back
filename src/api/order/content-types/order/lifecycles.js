@@ -16,6 +16,7 @@ const {
   fillMissingPrice,
   findCollectionOrderRouteRate,
 } = require('../../services/route-price');
+const { loadRouteClosures, nextRouteDay, routeRunsOn } = require('../../services/route-days');
 const { getMe } = require('../../../../services/me-settings');
 
 /**
@@ -375,49 +376,11 @@ const calculateRouteForCollectionPoint = async (collectionPointContact) => {
 };
 
 /**
- * Calculate estimated delivery date based on route
+ * Estimated delivery date of a collection order without one: the route's next
+ * open day after today. It took the route's first weekday only (Sunday never
+ * matched) and ignored its closures (issues/156).
  */
-const calculateEstimatedDeliveryDate = (route) => {
-  if (!route) {
-    return null;
-  }
-
-  const routeDayOfWeek = route.monday
-    ? 1
-    : route.tuesday
-      ? 2
-      : route.wednesday
-        ? 3
-        : route.thursday
-          ? 4
-          : route.friday
-            ? 5
-            : route.saturday
-              ? 6
-              : route.sunday
-                ? 7
-                : 0;
-
-  if (routeDayOfWeek === 0) {
-    return null;
-  }
-
-  // Find next occurrence of the route day
-  let nextDay = moment();
-  let found = false;
-  let maxIterations = 7;
-  let iterations = 0;
-
-  while (!found && iterations < maxIterations) {
-    nextDay = nextDay.add(1, 'day');
-    if (routeDayOfWeek === nextDay.day()) {
-      found = true;
-    }
-    iterations++;
-  }
-
-  return found ? nextDay.format('YYYY-MM-DD') : null;
-};
+const calculateEstimatedDeliveryDate = async (route) => (route ? nextRouteDay(route) : null);
 
 /**
  * Check if transfer is needed for a collection order
@@ -513,56 +476,33 @@ const calculateTransferRoute = async (estimatedDeliveryDate) => {
     return { transfer_route: null, transfer_route_date: null };
   }
 
-  // Helper function to get day of week from route
-  const getRouteDayOfWeek = (route) => {
-    if (route.monday) return 1;
-    if (route.tuesday) return 2;
-    if (route.wednesday) return 3;
-    if (route.thursday) return 4;
-    if (route.friday) return 5;
-    if (route.saturday) return 6;
-    if (route.sunday) return 0; // Sunday is 0 in moment.js
-    return -1; // No day configured
-  };
+  // Start from the estimated delivery date and work backwards. A transfer
+  // route runs on each of its weekdays, not only the first one, and not on
+  // the days it is closed (issues/156).
+  const maxIterations = 14; // Check up to 2 weeks back
+  const deliveryDay = moment(estimatedDeliveryDate).startOf('day');
+  const closures = await loadRouteClosures(
+    deliveryDay.clone().subtract(maxIterations, 'days'),
+    deliveryDay,
+  );
+  const currentDate = deliveryDay.clone();
 
-  // Start from the estimated delivery date and work backwards
-  let currentDate = moment(estimatedDeliveryDate);
-  let maxIterations = 14; // Check up to 2 weeks back
-  let iterations = 0;
+  for (let iterations = 0; iterations < maxIterations; iterations++) {
+    const isSameDay = currentDate.isSame(deliveryDay, 'day');
 
-  while (iterations < maxIterations) {
-    const currentDayOfWeek = currentDate.day();
-    const isSameDay = currentDate.isSame(moment(estimatedDeliveryDate), 'day');
-
-    // Check if any transfer route operates on this day
     for (const route of transferRoutes) {
-      const routeDayOfWeek = getRouteDayOfWeek(route);
+      if (!routeRunsOn(route, currentDate, closures)) continue;
+      // Date restriction based on is_transfer_route_date; null accepts any day
+      if (route.is_transfer_route_date === 'only_same_day' && !isSameDay) continue;
+      if (route.is_transfer_route_date === 'only_previous_days' && isSameDay) continue;
 
-      if (routeDayOfWeek === currentDayOfWeek) {
-        // Check date restriction based on is_transfer_route_date
-        if (route.is_transfer_route_date === 'only_same_day') {
-          // Only use this route if current date is same as estimated delivery date
-          if (!isSameDay) {
-            continue;
-          }
-        } else if (route.is_transfer_route_date === 'only_previous_days') {
-          // Only use this route if current date is before estimated delivery date
-          if (isSameDay) {
-            continue;
-          }
-        }
-        // If is_transfer_route_date is null/undefined, accept any day (existing behavior)
-
-        return {
-          transfer_route: route.id,
-          transfer_route_date: currentDate.format('YYYY-MM-DD'),
-        };
-      }
+      return {
+        transfer_route: route.id,
+        transfer_route_date: currentDate.format('YYYY-MM-DD'),
+      };
     }
 
-    // Move to previous day
-    currentDate = currentDate.subtract(1, 'day');
-    iterations++;
+    currentDate.subtract(1, 'day');
   }
 
   // No transfer route found
@@ -732,7 +672,7 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
       }
 
       if (!estimatedDeliveryDate) {
-        estimatedDeliveryDate = calculateEstimatedDeliveryDate(route);
+        estimatedDeliveryDate = await calculateEstimatedDeliveryDate(route);
       }
 
       if (!collectionPickupDate) {
@@ -750,7 +690,7 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
         estimatedDeliveryDate = moment(orderData.estimated_delivery_date).format('YYYY-MM-DD');
         collectionPickupDate = estimatedDeliveryDate;
       } else {
-        estimatedDeliveryDate = calculateEstimatedDeliveryDate(route);
+        estimatedDeliveryDate = await calculateEstimatedDeliveryDate(route);
         collectionPickupDate = estimatedDeliveryDate;
       }
     }
@@ -1698,5 +1638,10 @@ module.exports = {
 // For scripts/repair-unlinked-collection-orders.js. Non-enumerable: Strapi
 // rejects any lifecycles key that is not a db action.
 Object.defineProperty(module.exports, 'collectionOrderHelpers', {
-  value: { updateCollectionOrderAggregates, checkTransferNeededForCollectionOrder },
+  value: {
+    updateCollectionOrderAggregates,
+    checkTransferNeededForCollectionOrder,
+    calculateTransferRoute,
+    calculateEstimatedDeliveryDate,
+  },
 });
