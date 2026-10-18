@@ -3,7 +3,7 @@
 
 const moment = require('moment');
 const _ = require('lodash');
-const { buildEstimatedForecastByYear } = require('../../project/services/projectFinancials');
+const { buildEstimatedForecastByYear, lineVatPct } = require('../../project/services/projectFinancials');
 const zeroPad = (num, places) => String(num).padStart(places, '0');
 // "Nòmina 2026-03-anna". A payroll can point at a user who was deleted (v3 let
 // them be deleted; issues/050): populate gives null and the forecast answered
@@ -234,12 +234,11 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       for (let ph of p.project_phases || []) {
         for (let e of ph.expenses || []) {
           if (!e.paid) {
-            // Calculate total with VAT if vat_pct is available
-            let totalWithVat = e.total_amount ? e.total_amount : 0;
-            if (e.vat_pct && e.total_amount) {
-              const vatAmount = (e.total_amount * e.vat_pct) / 100;
-              totalWithVat = e.total_amount + vatAmount;
-            }
+            // the line's own VAT, else its type's, else 21, as in the project
+            // totals (issues/143)
+            const vat_pct = lineVatPct(e, e.expense_type);
+            const lineVat = ((e.total_amount || 0) * vat_pct) / 100;
+            const totalWithVat = (e.total_amount || 0) + lineVat;
 
             const expense = {
               expenseId: e.id,
@@ -257,8 +256,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             treasury.push(expense);
 
             const date_est = e.date_estimate_document || e.date;
-            if (date_est && e.expense_type && e.expense_type.vat_pct) {
-              const vatAmount = (e.total_amount * e.expense_type.vat_pct) / 100;
+            if (date_est && lineVat) {
+              const vatAmount = lineVat;
               addExpectedVat(vat_expected, vat_expected_by_quarter, {
                 kind: 'paid',
                 amount: vatAmount,
@@ -271,9 +270,9 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
                   type: 'phase-expense',
                   total: e.total_amount,
                   total_vat: vatAmount,
-                  vat_pct: e.expense_type.vat_pct,
+                  vat_pct,
                   date: date_est,
-                  expense_type: e.expense_type.name,
+                  expense_type: e.expense_type ? e.expense_type.name : '-',
                   provider: e.provider && e.provider.name ? e.provider.name : '-',
                 },
               });
@@ -322,12 +321,11 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         }
         for (let i of ph.incomes || []) {
           if (!i.paid) {
-            // Calculate total with VAT if vat_pct is available
-            let totalWithVat = i.total_amount ? i.total_amount : 0;
-            if (i.vat_pct && i.total_amount) {
-              const vatAmount = (i.total_amount * i.vat_pct) / 100;
-              totalWithVat = i.total_amount + vatAmount;
-            }
+            // the line's own VAT, else its type's, else 21, as in the project
+            // totals (issues/143)
+            const vat_pct = lineVatPct(i, i.income_type);
+            const lineVat = ((i.total_amount || 0) * vat_pct) / 100;
+            const totalWithVat = (i.total_amount || 0) + lineVat;
 
             const income = {
               incomeId: i.id,
@@ -346,8 +344,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
             const date_est = i.date_estimate_document || i.date;
 
-            if (date_est && i.income_type && i.income_type.vat_pct) {
-              const vatAmount = (i.total_amount * i.income_type.vat_pct) / 100;
+            if (date_est && lineVat) {
+              const vatAmount = lineVat;
               addExpectedVat(vat_expected, vat_expected_by_quarter, {
                 kind: 'received',
                 amount: vatAmount,
@@ -360,9 +358,9 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
                   type: 'phase-income',
                   total: i.total_amount,
                   total_vat: vatAmount,
-                  vat_pct: i.income_type.vat_pct,
+                  vat_pct,
                   date: date_est,
-                  income_type: i.income_type.name,
+                  income_type: i.income_type ? i.income_type.name : '-',
                   client: i.client && i.client.name ? i.client.name : '-',
                 },
               });

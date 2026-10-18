@@ -1386,6 +1386,7 @@ const buildEstimatedForecastByYear = (
 
 module.exports = {
   buildProjectRows,
+  lineVatPct,
   aggregateRowsByYear,
   buildEstimatedForecastByYear,
   buildSingleProjectActivitiesMap,
