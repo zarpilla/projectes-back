@@ -18,6 +18,8 @@ const {
 } = require('../services/for-orders');
 const { contactSnapshot, loadContact } = require('../../order/services/contact-snapshot');
 
+const ORDER = 'api::order.order';
+
 module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
   // and flat field operators to native v5 params before core handling.
@@ -196,7 +198,8 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
       const snapshot = contactSnapshot(targetContact);
       let movedCount = 0;
       for (const order of orders) {
-        await strapi.db.query('api::order.order').update({
+        // in the order's history through the change log's subscriber (issues/119)
+        await strapi.db.query(ORDER).update({
           where: { id: order.id },
           // the moved order carries the target point's data (issues/157)
           data: { contact: targetContactId, ...snapshot },

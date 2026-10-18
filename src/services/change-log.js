@@ -2,9 +2,11 @@
 /* global strapi */
 
 /**
- * Change log for emitted and received invoices (issues/001): every create,
- * update and delete is recorded in api::document-change-log with who did it,
- * when (createdAt), and each changed field's old and new value.
+ * Change log for emitted and received invoices (issues/001) and for orders
+ * (issues/119): every create, update and delete is recorded in
+ * api::document-change-log with who did it, when (createdAt), and each changed
+ * field's old and new value. The rows outlive the record they describe (a
+ * plain `entity_id`, no relation), so a deleted order keeps its history.
  *
  * Hooked as a document-service middleware (registered in src/index.js), not a
  * db lifecycle: on update v5 rewrites the component rows (the invoice lines,
@@ -13,17 +15,35 @@
  * The middleware wraps the whole action, so it sees the row as it really was
  * and as it ended up after the lifecycles (locked fields, recomputed totals).
  *
- * Writes that bypass the document service must call logRawUpdate themselves
- * (the VAT payment's raw UPDATE in the emitted-invoice controller).
+ * Writes that bypass the document service must call logRawUpdate (or, for a
+ * bulk raw UPDATE whose changes are known, logChanges) themselves: the VAT
+ * payment in the emitted-invoice controller, invoicing orders and deleting
+ * their draft, merging contacts.
+ *
+ * Orders also change behind the document service: the order lifecycles'
+ * follow-up writes (a sibling's discounts, the collection order they create
+ * and keep up to date, the transfer route) and merging contacts go through
+ * strapi.db.query. A db lifecycle subscriber (registerOrderRowWrites) records
+ * those too. Inside an order's document action it hands its rows to the
+ * action, which drops the ones about the order being saved: those changes are
+ * already in the action's own diff.
  *
  * Logging never fails the write it describes: errors are reported and dropped.
  */
 
+const { AsyncLocalStorage } = require('async_hooks');
+
 const LOG_UID = 'api::document-change-log.document-change-log';
+
+// The document action in progress: { uid, id, action, entries }.
+const actionScope = new AsyncLocalStorage();
+
+const ORDER_UID = 'api::order.order';
 
 const TRACKED = {
   'api::emitted-invoice.emitted-invoice': 'emitted-invoice',
   'api::received-invoice.received-invoice': 'received-invoice',
+  [ORDER_UID]: 'order',
 };
 
 // Bookkeeping, not content: changing them is not something a person did.
@@ -45,6 +65,16 @@ const IGNORED_FIELDS = new Set([
   'updatable_admin',
 ]);
 
+// Per type. An order's incidences are linked by the controller after the
+// order's own save, outside the action this middleware wraps, so the diff
+// would catch some links and miss others (issues/119).
+const IGNORED_BY_TYPE = {
+  [ORDER_UID]: new Set(['incidences']),
+};
+
+const isIgnored = (uid, field) =>
+  IGNORED_FIELDS.has(field) || Boolean(IGNORED_BY_TYPE[uid] && IGNORED_BY_TYPE[uid].has(field));
+
 // Strapi-managed keys of a component row: they change when the row is
 // re-created on save without the line itself changing.
 const COMPONENT_META = new Set(['id', '__component', '__pivot', 'documentId']);
@@ -60,12 +90,25 @@ function isNested(attr) {
   return attr && (attr.type === 'relation' || attr.type === 'component' || attr.type === 'media');
 }
 
+const LABEL_FIELDS = ['code', 'name', 'username', 'email'];
+
+// A related row is only kept as { id, label }: read just those columns (an
+// order has some twenty relations, and is snapshotted twice per save).
+function relationPopulate(attr) {
+  if (attr.type !== 'relation' || !attr.target) return true;
+  const target = strapi.contentTypes && strapi.contentTypes[attr.target];
+  if (!target || !target.attributes) return true;
+  return { select: ['id', ...LABEL_FIELDS.filter((f) => target.attributes[f])] };
+}
+
 // Populate every relation, component and media of the type, one level deep
 // (ignored ones too: `user_last` is the fallback author in currentUser).
 function populateFor(uid) {
   const populate = {};
   for (const [name, attr] of Object.entries(attributesOf(uid))) {
-    if (isNested(attr)) populate[name] = true;
+    if (isNested(attr) && !(IGNORED_BY_TYPE[uid] && IGNORED_BY_TYPE[uid].has(name))) {
+      populate[name] = relationPopulate(attr);
+    }
   }
   return populate;
 }
@@ -130,14 +173,14 @@ function sameValue(a, b) {
 }
 
 /**
- * Field-by-field differences between two rows of `uid`.
+ * Field-by-field differences between two rows of `uid` (only `fields`, when given).
  * @returns {{ field: string, from: any, to: any }[]}
  */
-function diff(uid, before, after) {
+function diff(uid, before, after, fields = null) {
   const changes = [];
   const attributes = attributesOf(uid);
   for (const [field, attr] of Object.entries(attributes)) {
-    if (IGNORED_FIELDS.has(field)) continue;
+    if (isIgnored(uid, field) || (fields && !fields.includes(field))) continue;
     const from = normalizeValue(attr, before ? before[field] : null);
     const to = normalizeValue(attr, after ? after[field] : null);
     if (!sameValue(from, to)) changes.push({ field, from, to });
@@ -150,7 +193,7 @@ function summarize(uid, row) {
   if (!row) return null;
   const out = {};
   for (const [field, attr] of Object.entries(attributesOf(uid))) {
-    if (IGNORED_FIELDS.has(field)) continue;
+    if (isIgnored(uid, field)) continue;
     const value = normalizeValue(attr, row[field]);
     if (!isEmpty(value)) out[field] = value;
   }
@@ -186,7 +229,7 @@ async function record(uid, { action, row, changes = null, snapshot: snap = null 
 
 function report(error, uid, action) {
   const message = `[change-log] could not log ${action} on ${uid}: ${error && error.message}`;
-  if (strapi.log) strapi.log.error(message);
+  if (strapi.log && typeof strapi.log.error === 'function') strapi.log.error(message);
   else console.error(message);
 }
 
@@ -217,7 +260,8 @@ async function changeLogMiddleware(context, next) {
     }
   }
 
-  const result = await next();
+  const scope = { uid, id: before ? before.id : null, action, entries: [] };
+  const result = await actionScope.run(scope, () => next());
 
   try {
     if (action === 'create') {
@@ -236,7 +280,99 @@ async function changeLogMiddleware(context, next) {
     report(error, uid, action);
   }
 
+  // what the follow-up writes changed on other rows
+  const mainId = action === 'create' ? result && result.id : before && before.id;
+  for (const entry of scope.entries) {
+    if (entry.row.id === mainId) continue;
+    try {
+      await record(uid, entry);
+    } catch (error) {
+      report(error, uid, entry.action);
+    }
+  }
+
   return result;
+}
+
+// --- writes behind the document service (orders) ---------------------------
+
+const ROW_WRITES = [ORDER_UID];
+
+/** The tracked attributes a db.query write sets. */
+function fieldsWritten(uid, data) {
+  const attributes = attributesOf(uid);
+  return Object.keys(data || {}).filter((f) => attributes[f] && !isIgnored(uid, f));
+}
+
+async function rowWith(uid, where, fields) {
+  const all = populateFor(uid);
+  const populate = {};
+  for (const f of fields) if (all[f]) populate[f] = all[f];
+  return strapi.db.query(uid).findOne({ where, populate });
+}
+
+// Inside a document action of the same type the row waits for the action
+// (which knows which row it saved); anywhere else it is written now.
+async function emit(uid, entry) {
+  const scope = actionScope.getStore();
+  if (scope && scope.uid === uid) scope.entries.push(entry);
+  else await record(uid, entry);
+}
+
+const isMainRow = (scope, uid, id) => Boolean(scope && scope.uid === uid && scope.id != null && scope.id === id);
+
+async function beforeRowUpdate(event) {
+  const uid = event.model && event.model.uid;
+  try {
+    const { where, data } = event.params || {};
+    if (!where || isMainRow(actionScope.getStore(), uid, where.id)) return;
+    const fields = fieldsWritten(uid, data);
+    if (fields.length === 0) return;
+    const before = await rowWith(uid, where, fields);
+    if (before) event.state.changeLog = { before, fields };
+  } catch (error) {
+    report(error, uid, 'update');
+  }
+}
+
+async function afterRowUpdate(event) {
+  const uid = event.model && event.model.uid;
+  const pending = event.state && event.state.changeLog;
+  if (!pending) return;
+  try {
+    const { before, fields } = pending;
+    const after = await rowWith(uid, { id: before.id }, fields);
+    const changes = diff(uid, before, after, fields);
+    if (changes.length > 0) await emit(uid, { action: 'update', row: after || before, changes });
+  } catch (error) {
+    report(error, uid, 'update');
+  }
+}
+
+async function afterRowCreate(event) {
+  const uid = event.model && event.model.uid;
+  try {
+    const id = event.result && event.result.id;
+    if (!id) return;
+    // the action's own row: it records it itself (the lifecycles flag theirs)
+    const scope = actionScope.getStore();
+    const data = (event.params && event.params.data) || {};
+    if (scope && scope.uid === uid && scope.action === 'create' && !data._internal) return;
+    const created = await snapshot(uid, { id });
+    if (created) await emit(uid, { action: 'create', row: created, snapshot: summarize(uid, created) });
+  } catch (error) {
+    report(error, uid, 'create');
+  }
+}
+
+/** Records the orders' db.query writes (issues/119). Called from bootstrap. */
+function registerOrderRowWrites() {
+  strapi.db.lifecycles.subscribe({
+    models: ROW_WRITES,
+    beforeUpdate: beforeRowUpdate,
+    afterUpdate: afterRowUpdate,
+    afterCreate: afterRowCreate,
+  });
 }
 
 /**
@@ -254,6 +390,39 @@ async function logRawUpdate(uid, before) {
   }
 }
 
+/**
+ * For bulk raw UPDATEs whose changes are known without reading the rows back
+ * (invoicing orders, deleting their draft). `entries`: [{ row: { id, code? },
+ * changes: [{ field, from, to }] }]; changes that change nothing are dropped.
+ */
+async function logChanges(uid, entries) {
+  if (!isTracked(uid) || !Array.isArray(entries)) return;
+  const attributes = attributesOf(uid);
+  for (const { row, changes } of entries) {
+    try {
+      const real = (changes || [])
+        .map(({ field, from, to }) => ({
+          field,
+          from: normalizeValue(attributes[field], from),
+          to: normalizeValue(attributes[field], to),
+        }))
+        .filter(({ from, to }) => !sameValue(from, to));
+      if (row && real.length > 0) await record(uid, { action: 'update', row, changes: real });
+    } catch (error) {
+      report(error, uid, 'update');
+    }
+  }
+}
+
+/** The change log of one record, newest first (rows of a deleted one too). */
+async function historyOf(uid, id) {
+  if (!isTracked(uid)) return [];
+  return strapi.db.query(LOG_UID).findMany({
+    where: { entity: TRACKED[uid], entity_id: id },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  });
+}
+
 module.exports = {
   LOG_UID,
   TRACKED,
@@ -263,4 +432,10 @@ module.exports = {
   summarize,
   changeLogMiddleware,
   logRawUpdate,
+  logChanges,
+  historyOf,
+  registerOrderRowWrites,
+  beforeRowUpdate,
+  afterRowUpdate,
+  afterRowCreate,
 };

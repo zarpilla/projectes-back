@@ -54,5 +54,11 @@ module.exports = {
       path: '/orders/pdf',
       handler: 'order.pdfmultiple',
     },
+    // issues/119: the order's change history
+    {
+      method: 'GET',
+      path: '/orders/:id/history',
+      handler: 'order.history',
+    },
   ],
 };

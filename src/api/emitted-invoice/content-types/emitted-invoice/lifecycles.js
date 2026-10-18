@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const { scheduleFromEntityProjects } = require('../../../project/services/totalsRefreshScheduler');
 const { rawExecute } = require('../../../../services/raw-sql');
+const { logChanges } = require('../../../../services/change-log');
 const { getMe } = require('../../../../services/me-settings');
 const { relationId } = require('../../../../services/relation-input');
 const { computeLineTotals } = require('../../../../services/document-lifecycle');
@@ -254,6 +255,18 @@ module.exports = {
         strapi,
         `DELETE FROM orders_emitted_invoice_lnk WHERE order_id IN (${placeholders})`,
         orderIds,
+      );
+      // the raw UPDATE skips the change log's middleware (issues/119)
+      await logChanges(
+        'api::order.order',
+        orders.map((o) => ({
+          row: { id: o.id },
+          changes: [
+            { field: 'status', from: o.status, to: 'delivered' },
+            { field: 'emitted_invoice', from: invoice, to: null },
+            { field: 'emitted_invoice_datetime', from: o.emitted_invoice_datetime, to: null },
+          ],
+        })),
       );
       // A logistics draft («Facturar», orders/invoice) came with an income
       // line on the project's last phase: undo it with the draft, or the

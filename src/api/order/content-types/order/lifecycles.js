@@ -1096,37 +1096,10 @@ const updateMultideliveryDiscountForOrders = async (orders, me, ownerFactor = 1)
   }
 };
 
-// --- ORDER TRACKING LOGIC ---
-const createOrderTracking = async (orderId, status, user) => {
-  try {
-    const trackingData = {
-      order_id: orderId,
-      order_status: status,
-    };
-
-    // Determine if it's a user or admin user based on user object
-    if (user) {
-      // Check if it's an admin user by looking for roles array with content
-      if (user.roles && Array.isArray(user.roles) && user.roles.length > 0) {
-        // Admin user (has roles array with content)
-        trackingData.admin_user = user.id;
-      } else {
-        // Regular user (users-permissions)
-        trackingData.users_permissions_user = user.id;
-      }
-    }
-
-    // Same v3 signature. This one sits inside a try/catch that only logs, so
-    // order tracking had been failing silently since the cutover rather than
-    // surfacing.
-    await strapi.db
-      .query('api::orders-tracking.orders-tracking')
-      .create({ data: trackingData });
-  } catch (error) {
-    // Log error but don't fail the order operation
-    console.error('Error creating order tracking:', error);
-  }
-};
+// --- ORDER HISTORY ---
+// Who changed what on an order, and when, is recorded around the document
+// action by services/change-log.js (issues/119), not here: these hooks also
+// run for the lifecycles' own follow-up writes.
 
 // --- INCIDENCES LOGIC ---
 // Lives in a service: the order controller has to call it too, because v5
@@ -1469,17 +1442,6 @@ module.exports = {
       await processIncidences(result.id, data._incidencesToProcess, data._tracking_user);
     }
 
-    // Get user from data or try to get from created_by field
-    let trackingUser = data._tracking_user;
-
-    if (!trackingUser && result.created_by) {
-      // Get the admin user who created the order
-      trackingUser = await strapi.db.query('admin::user').findOne({ where: { id: result.created_by } }); // eslint-disable-line no-useless-assignment
-    }
-
-    // Create tracking entry for order creation
-    // await createOrderTracking(result.id, result.status, trackingUser);
-
     // Process multidelivery discount for other orders after the current order is created
     const previousOrder = await findWithDiscountRelations(result.id);
 
@@ -1563,19 +1525,6 @@ module.exports = {
     }
 
     if (currentOrder) {
-      // Get user from data or try to get from updated_by field
-      let trackingUser = data._tracking_user;
-
-      if (!trackingUser && currentOrder.updated_by) {
-        // Get the admin user who made the update
-        trackingUser = await strapi.db // eslint-disable-line no-useless-assignment
-          .query('admin::user')
-          .findOne({ where: { id: currentOrder.updated_by } });
-      }
-
-      // Create tracking entry for every update
-      // await createOrderTracking(currentOrder.id, currentOrder.status, trackingUser);
-
       // Ensure transfer route is calculated for orders that need transfer
       // This handles cases where orders were updated to need transfer but don't have the route yet
       if (

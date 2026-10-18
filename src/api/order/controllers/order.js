@@ -35,6 +35,7 @@ const { numericId } = require('../../../middlewares/v3-compat');
 const { processIncidences } = require('../services/order-incidences');
 const { depositRefusal } = require('../services/deposit-guard');
 const { addContactSnapshot } = require('../services/contact-snapshot');
+const changeLog = require('../../../services/change-log');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 // collection_point and route_rate: the quick edit picks the rate with them; an
@@ -561,6 +562,26 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   },
 
   /**
+   * GET /api/orders/:id/history — who changed what on the order, newest first
+   * (issues/119). Read from the change log, so it answers for a deleted order
+   * too.
+   */
+  async history(ctx) {
+    const id = Number(ctx.params.id);
+    if (!Number.isInteger(id) || id <= 0) return ctx.badRequest('Invalid order id');
+    const rows = await changeLog.historyOf('api::order.order', id);
+    return rows.map(({ id: rowId, action, changes, snapshot, user_id, username, createdAt }) => ({
+      id: rowId,
+      action,
+      changes,
+      snapshot,
+      user_id,
+      username,
+      createdAt,
+    }));
+  },
+
+  /**
    * Override core create: enforce next-day cutoff + set tracking user.
    */
   async create(ctx) {
@@ -785,6 +806,19 @@ async function invoiceRun(ctx) {
         .map(() => '(?, ?)')
         .join(', ')}`,
       ids.flatMap((id) => [id, invoice.id]),
+    );
+    // the raw UPDATE skips the change log's middleware (issues/119)
+    const invoicedAt = new Date();
+    await changeLog.logChanges(
+      'api::order.order',
+      contactOrders.map((o) => ({
+        row: { id: o.id },
+        changes: [
+          { field: 'status', from: o.status, to: 'invoiced' },
+          { field: 'emitted_invoice', from: o.emitted_invoice, to: invoice },
+          { field: 'emitted_invoice_datetime', from: o.emitted_invoice_datetime, to: invoicedAt },
+        ],
+      })),
     );
   }
 

@@ -5,7 +5,7 @@
     "singularName": "document-change-log",
     "pluralName": "document-change-logs",
     "displayName": "Document Change Log",
-    "description": "Who changed what on an emitted/received invoice, and when (issues/001). Written by services/change-log.js only."
+    "description": "Who changed what on an emitted/received invoice (issues/001) or an order (issues/119), and when. Written by services/change-log.js only."
   },
   "options": {
     "draftAndPublish": false

@@ -131,6 +131,9 @@ allow(
   LOGISTICS,
 );
 allow(api('order'), ['infoAll', 'invoice'], ORDERS_ADMIN);
+// The order form's «Historial» (issues/119): the logistics staff, not members
+// (it names who made each change).
+allow(api('order'), ['history'], STAFF);
 allow(api('orders-import'), ['create'], LOGISTICS);
 allow('plugin::upload.content-api', ['upload'], LOGISTICS);
 allow(api('incidence'), [...READ, 'update', 'delete'], LOGISTICS);
