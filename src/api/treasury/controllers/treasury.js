@@ -57,6 +57,7 @@ const getValidationKey = (entityType, entityId, subType = null) => {
 
 // running balances per account and in total
 const { walkBalances } = require('../services/balances');
+const { treasuryDisplayDate } = require('../services/display-date');
 
 module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -1084,7 +1085,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     // running balance per bank account and in total (services/balances)
     const treasuryDataX = walkBalances(treasuryData).map((t) => ({
       ...t,
-      datex: moment(t.datef, 'YYYYMMDD').format('DD-MM-YYYY'),
+      datex: treasuryDisplayDate(t.datef),
     }));
 
     vat.deductible_vat_pct = (vat.deductible_vat_pct_sum / vat.deductible_vat_pct_n) * 100;
