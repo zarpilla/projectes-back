@@ -34,6 +34,7 @@ const { getMe } = require('../../../services/me-settings');
 const { numericId } = require('../../../middlewares/v3-compat');
 const { processIncidences } = require('../services/order-incidences');
 const { depositRefusal } = require('../services/deposit-guard');
+const { addContactSnapshot } = require('../services/contact-snapshot');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 // collection_point and route_rate: the quick edit picks the rate with them; an
@@ -595,6 +596,10 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
     const incidences = Array.isArray(payload.incidences) ? payload.incidences : null;
     if (incidences) delete payload.incidences;
+
+    // a new delivery point without its data (the quick edit): copy the
+    // point's data onto the order (issues/157)
+    await addContactSnapshot(payload, numericId(ctx));
 
     const response = await super.update(ctx);
 

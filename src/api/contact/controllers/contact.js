@@ -16,6 +16,7 @@ const {
   SOCIES_POPULATE,
   forOrdersWhere,
 } = require('../services/for-orders');
+const { contactSnapshot, loadContact } = require('../../order/services/contact-snapshot');
 
 module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -168,7 +169,8 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
 
   /**
    * POST /api/contacts/unify
-   * Merges two contacts: moves all orders from source to target.
+   * Merges two contacts: moves all orders from source to target, with the
+   * target's data (contact_*). The source is left for the caller to delete.
    */
   async unify(ctx) {
     const { sourceContactId, targetContactId } = ctx.request.body;
@@ -183,9 +185,7 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
       const sourceContact = await strapi.db
         .query('api::contact.contact')
         .findOne({ where: { id: sourceContactId } });
-      const targetContact = await strapi.db
-        .query('api::contact.contact')
-        .findOne({ where: { id: targetContactId } });
+      const targetContact = await loadContact(targetContactId);
       if (!sourceContact) return ctx.notFound('Source contact not found');
       if (!targetContact) return ctx.notFound('Target contact not found');
 
@@ -193,11 +193,13 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
         .query('api::order.order')
         .findMany({ where: { contact: sourceContactId } });
 
+      const snapshot = contactSnapshot(targetContact);
       let movedCount = 0;
       for (const order of orders) {
         await strapi.db.query('api::order.order').update({
           where: { id: order.id },
-          data: { contact: targetContactId },
+          // the moved order carries the target point's data (issues/157)
+          data: { contact: targetContactId, ...snapshot },
         });
         movedCount++;
       }
