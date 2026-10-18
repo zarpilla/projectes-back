@@ -19,6 +19,7 @@ const { refreshAllLineWarnings } = require('./services/refresh-line-warnings');
 const { mergeDuplicateCities } = require('./services/merge-duplicate-cities');
 const { refreshPlannedHoursTotals } = require('./services/refresh-planned-hours-totals');
 const { recountMotherFlags } = require('./services/recount-mother-flags');
+const { lineVatOverType } = require('./services/line-vat-over-type');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -112,6 +113,8 @@ module.exports = {
       ['refreshPlannedHoursTotals', refreshPlannedHoursTotals, { runOnce: true }],
       // issues/135: a project whose children are all trashed was still a mother.
       ['recountMotherFlags', recountMotherFlags, { runOnce: true }],
+      // issues/143: the totals take an expense line's own VAT before its type's.
+      ['lineVatOverType', lineVatOverType, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

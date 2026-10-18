@@ -122,13 +122,34 @@ const getRealYear = (item) => {
 };
 
 /**
- * VAT % of a budgeted expense line: its expense type's, or 21 when the line
- * has no type or the type has no VAT set. A type at 0 % is 0, not "unset"
- * (issues/033).
+ * VAT % of a budget line: its own "IVA" (`vat_pct`, what the project form
+ * shows), else its type's, else 21. A 0 % is 0, not "unset" (issues/033).
+ * The line's own VAT wins since issues/143: the totals used the type's even
+ * when the line had another one.
  */
-const expenseVatPct = (line) => {
-  const vat_pct = line.expense_type ? line.expense_type.vat_pct : null;
-  return vat_pct === null || vat_pct === undefined || vat_pct === '' ? 21 : vat_pct;
+const isSet = (v) => v !== null && v !== undefined && v !== '';
+const lineVatPct = (line, type) => {
+  if (isSet(line.vat_pct)) return Number(line.vat_pct);
+  if (type && isSet(type.vat_pct)) return Number(type.vat_pct);
+  return 21;
+};
+const expenseVatPct = (line) => lineVatPct(line, line.expense_type);
+
+/**
+ * Export-only fields of a budget line's rows in the economic detail
+ * (issues/142, issues/143): its forecast dates ("Previsió fac." and
+ * "Previsió pag." in the form) and the whole VAT of the row's amount. The
+ * `*_vat` columns are not that: they hold only the non-deductible VAT, a
+ * cost, which is 0 when VAT is 100 % deductible.
+ */
+const lineExportFields = (line, type, amount) => {
+  const vat_pct = lineVatPct(line, type);
+  return {
+    forecast_invoice_date: line.date_estimate_document || null,
+    forecast_payment_date: line.date || null,
+    vat_pct,
+    vat: (amount * vat_pct) / 100.0 || 0,
+  };
 };
 
 /**
@@ -501,6 +522,7 @@ const pushEstimatedIncomeRows = (out, p, projectInfo) => {
         income_orig: 0,
         income_esti: sph.quantity * sph.amount,
         income_real: 0,
+        ...lineExportFields(sph, sph.income_type, sph.quantity * sph.amount),
         year: rowYear(estimate_date),
         month: rowMonth(estimate_date),
         row_type: sph.income_type && sph.income_type.name ? sph.income_type.name : '',
@@ -519,6 +541,7 @@ const pushEstimatedIncomeRows = (out, p, projectInfo) => {
           income_orig: 0,
           income_esti: 0,
           income_real: sph.quantity * sph.amount,
+          ...lineExportFields(sph, sph.income_type, sph.quantity * sph.amount),
           year: rowYear(real_date),
           month: rowMonth(real_date),
           row_type: sph.income_type && sph.income_type.name ? sph.income_type.name : '',
@@ -554,6 +577,7 @@ const pushEstimatedExpenseRows = (out, p, projectInfo, getDeductibleRatio) => {
         expense_esti_vat: (-1 * estimatedDeductibleRatio * sph.quantity * sph.amount * vat_pct) / 100.0,
         expense_real: 0,
         expense_real_vat: 0,
+        ...lineExportFields(sph, sph.expense_type, -1 * sph.quantity * sph.amount),
         date: estimate_date,
         year: rowYear(estimate_date),
         month: rowMonth(estimate_date),
@@ -582,6 +606,7 @@ const pushEstimatedExpenseRows = (out, p, projectInfo, getDeductibleRatio) => {
           expense_esti_vat: 0,
           expense_real: -1 * sph.quantity * sph.amount,
           expense_real_vat: -1 * expense_vat * realDeductibleRatio,
+          ...lineExportFields(sph, sph.expense_type, -1 * sph.quantity * sph.amount),
           date: real_date,
           year: rowYear(real_date),
           month: rowMonth(real_date),
@@ -612,6 +637,7 @@ const pushOriginalIncomeAndExpenseRows = (out, p, projectInfo, getDeductibleRati
         income_orig: sph.quantity * sph.amount,
         income_esti: 0,
         income_real: 0,
+        ...lineExportFields(sph, sph.income_type, sph.quantity * sph.amount),
         year: rowYear(date),
         month: rowMonth(date),
         row_type: sph.income_type && sph.income_type.name ? sph.income_type.name : '',
@@ -639,6 +665,7 @@ const pushOriginalIncomeAndExpenseRows = (out, p, projectInfo, getDeductibleRati
         expense_esti: 0,
         expense_esti_vat: 0,
         expense_real: 0,
+        ...lineExportFields(sph, sph.expense_type, -1 * Math.abs(sph.quantity * sph.amount)),
         date,
         year: rowYear(date),
         month: rowMonth(date),
