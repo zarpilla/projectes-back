@@ -8,8 +8,9 @@ const { createCoreRouter } = require('@strapi/strapi').factories;
 
 module.exports = createCoreRouter('api::route-rate.route-rate', {
   config: {
-    create: { policies: ['global::isAdmin'] },
-    update: { policies: ['global::isAdmin'] },
-    delete: { policies: ['global::isAdmin'] },
+    // admins and the logistics office (issues/159)
+    create: { policies: ['global::isAdminOrOffice'] },
+    update: { policies: ['global::isAdminOrOffice'] },
+    delete: { policies: ['global::isAdminOrOffice'] },
   },
 });

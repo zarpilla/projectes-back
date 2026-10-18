@@ -33,6 +33,9 @@ const allowedMediaTypes = [
   'text/plain',
   'text/csv',
   ...allowedCertificateTypes,
+  // the Google service-account key (me.google_credentials, issues/159); .json
+  // uploads are never served (middlewares/block-key-material.js)
+  'application/json',
 ];
 
 const deniedExecutableTypes = [

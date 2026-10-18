@@ -10,6 +10,8 @@
  * A town in use can't be deleted (issues/159, «Taules auxiliars › Poblacions»):
  * routes reach it through city-routes, pickup points point to it, and contacts
  * (delivery points) keep it as text, matched by name when an order is routed.
+ * So renaming a town renames it on those contacts too (issues/159); orders
+ * keep the town they were made with (their contact snapshot).
  */
 const { errors: { ApplicationError } } = require('@strapi/utils');
 
@@ -27,6 +29,26 @@ async function checkName(event) {
   if (taken) {
     throw new ApplicationError(`La població «${data.name}» ja existeix`);
   }
+}
+
+// beforeUpdate: remember the old name, when it changes, for afterUpdate
+async function rememberOldName(event) {
+  const { data, where } = event.params;
+  if (!data || data.name == null || !where || !where.id) return;
+  const before = await strapi.db.query(UID).findOne({ where: { id: where.id }, select: ['id', 'name'] });
+  if (before && normalize(before.name).toLowerCase() !== String(data.name).toLowerCase()) {
+    event.state = { ...(event.state || {}), oldName: normalize(before.name) };
+  }
+}
+
+async function renameOnContacts(event) {
+  const oldName = event.state && event.state.oldName;
+  const name = event.result && event.result.name;
+  if (!oldName || !name) return;
+  const { count } = await strapi.db
+    .query('api::contact.contact')
+    .updateMany({ where: { city: { $eqi: oldName } }, data: { city: name } });
+  if (count) strapi.log.info(`[city] «${oldName}» → «${name}»: ${count} contacts renamed`);
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -56,7 +78,11 @@ async function guardDelete(event) {
 
 module.exports = {
   beforeCreate: checkName,
-  beforeUpdate: checkName,
+  async beforeUpdate(event) {
+    await checkName(event);
+    await rememberOldName(event);
+  },
+  afterUpdate: renameOnContacts,
   beforeDelete: guardDelete,
   beforeDeleteMany: guardDelete,
 };

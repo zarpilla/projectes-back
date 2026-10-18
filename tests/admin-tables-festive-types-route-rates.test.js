@@ -16,13 +16,14 @@ const path = require('path');
 describe('admin metadata of the new tables', () => {
   beforeEach(() => {
     jest.resetModules();
-    global.strapi = { dirs: { app: { root: path.join(__dirname, '..') } } };
+    // an admin: the office gets only the logistics tables (issues/159)
+    global.strapi = { dirs: { app: { root: path.join(__dirname, '..') } }, db: { query: () => ({ findOne: async () => ({ permissions: [{ permission: 'admin' }] }) }) } };
   });
   afterEach(() => { delete global.strapi; });
 
   const load = async () => {
     const controller = require('../src/api/entity-metadata/controllers/entity-metadata');
-    const body = await controller.adminEntities({});
+    const body = await controller.adminEntities({ state: { user: { id: 1 } } });
     const byName = Object.fromEntries(body.entities.map((e) => [e.name, e]));
     return { body, byName };
   };
@@ -96,7 +97,9 @@ describe('admin-only writes', () => {
       let config;
       jest.doMock('@strapi/strapi', () => ({ factories: { createCoreRouter: (uid, opts) => { config = opts && opts.config; return {}; } } }));
       require(`../src/api/${name}/routes/${name}`);
-      for (const action of ['create', 'update', 'delete']) expect(config[action].policies).toEqual(['global::isAdmin']);
+      // route rates: the logistics office writes them too (issues/159)
+      const policy = name === 'route-rate' ? 'global::isAdminOrOffice' : 'global::isAdmin';
+      for (const action of ['create', 'update', 'delete']) expect(config[action].policies).toEqual([policy]);
       expect(config.find).toBeUndefined();
     });
   }

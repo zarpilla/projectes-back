@@ -14,6 +14,11 @@
 
 const fs = require('fs');
 const path = require('path');
+const { isAppAdmin } = require('../../../services/app-permissions');
+
+// What the logistics office (orders_admin without admin) opens in Taules
+// auxiliars: the Logística group (issues/159)
+const OFFICE_ENTITIES = ['pickup', 'delivery-type', 'city', 'route-rate'];
 
 // Catalan field labels (preserved verbatim from v3).
 const FIELD_TRANSLATIONS = {
@@ -111,7 +116,6 @@ const FIELD_TRANSLATIONS = {
   // logistics, invoicing and hours tables (issues/159)
   alias: 'Àlies',
   message: 'Missatge',
-  allowed_users: 'Usuàries',
   refrigerated: 'Refrigerat',
   base: 'Base',
   value: 'Valor',
@@ -150,7 +154,6 @@ const FIELD_HELP = {
     alias: 'Nom curt que surt a les llistes i als albarans.',
     pickup: "Marcat: la comanda es recull a la finca de la sòcia, i la població és la del seu punt d'entrega.",
     message: 'Text que es mostra en triar aquest punt en una comanda.',
-    allowed_users: 'Les usuàries que el poden fer servir.',
   },
   'delivery-type': {
     refrigerated: 'Marcat: les comandes amb aquest tipus van refrigerades.',
@@ -172,18 +175,20 @@ const FIELD_HELP = {
 // and the lifecycle keeps new ones so (issues/139).
 const HIDDEN_FIELDS = {
   'route-rate': ['less15', 'less30', 'additional30', 'ratev2'],
+  // nothing reads it, and as a one-to-many ticking a user on one point took her
+  // off another (issues/159)
+  pickup: ['allowed_users'],
 };
 
 // To-many relations the admin form edits (the others are edited from the other side).
 const EDITABLE_COLLECTIONS = {
   'route-rate': ['routes'],
-  pickup: ['allowed_users'],
 };
 
 // Order of the fields on the admin screens (the ones not listed go after them).
 // Route rates: the tiers by weight, as the price is worked out.
 const FIELD_ORDER = {
-  pickup: ['name', 'alias', 'city', 'pickup', 'message', 'allowed_users'],
+  pickup: ['name', 'alias', 'city', 'pickup', 'message'],
   'activity-type': ['name', 'global', 'project'],
   'route-rate': ['name', 'routes', 'pickup', 'delivery_type', 'less10', 'more10', 'from10to20',
     'from20to30', 'from30to40', 'from40to50', 'from50to60', 'additional60', 'pickup_point'],
@@ -277,8 +282,11 @@ module.exports = {
       // eslint-disable-next-line no-undef
       const srcApiDir = path.join(strapi.dirs.app.root, 'src', 'api');
       const entitiesMetadata = [];
+      const user = ctx.state && ctx.state.user;
+      const admin = !!user && (await isAppAdmin(user.id));
 
       for (const [singularFolder, apiPath] of Object.entries(ADMIN_ENTITIES)) {
+        if (!admin && !OFFICE_ENTITIES.includes(singularFolder)) continue;
         try {
           const schemaPath = path.join(
             srcApiDir,
