@@ -108,6 +108,27 @@ const FIELD_TRANSLATIONS = {
   from50to60: 'A 60 kg',
   additional60: 'Cada kg de més de 60',
   pickup_point: 'Per línia de punt de recollida',
+  // logistics, invoicing and hours tables (issues/159)
+  alias: 'Àlies',
+  message: 'Missatge',
+  allowed_users: 'Usuàries',
+  refrigerated: 'Refrigerat',
+  base: 'Base',
+  value: 'Valor',
+  global: 'Global',
+  project: 'Projecte',
+};
+
+// Labels of one table that differ from FIELD_TRANSLATIONS.
+const ENTITY_FIELD_TRANSLATIONS = {
+  pickup: { pickup: 'Recollida a la finca', city: 'Població' },
+  'vat-type': { value: '% IVA' },
+  product: { base: 'Preu base', vat: '% IVA' },
+};
+
+// Catalan names of enumeration values (the form and the list show these).
+const ENUM_LABELS = {
+  'document-type': { type: { income: 'Ingrés', expense: 'Despesa' } },
 };
 
 // Help under a field of the admin form.
@@ -125,6 +146,25 @@ const FIELD_HELP = {
     additional60: 'Per sobre de 60 kg: el preu de 60 kg més aquest import per cada kg de més.',
     pickup_point: 'Se suma per cada línia que va a un punt de recollida.',
   },
+  pickup: {
+    alias: 'Nom curt que surt a les llistes i als albarans.',
+    pickup: "Marcat: la comanda es recull a la finca de la sòcia, i la població és la del seu punt d'entrega.",
+    message: 'Text que es mostra en triar aquest punt en una comanda.',
+    allowed_users: 'Les usuàries que el poden fer servir.',
+  },
+  'delivery-type': {
+    refrigerated: 'Marcat: les comandes amb aquest tipus van refrigerades.',
+  },
+  city: {
+    name: "No es pot esborrar una població que tenen rutes, punts de recollida o contactes.",
+  },
+  'activity-type': {
+    global: "Marcat: s'afegeix de sortida a cada projecte nou.",
+    project: "El projecte on es va crear (camp antic). Els projectes que el fan servir s'hi afegeixen des del projecte.",
+  },
+  'document-type': {
+    type: "Si és un tipus de factura d'ingrés o de despesa.",
+  },
 };
 
 // Fields left out of the admin screens. Route rates: the tiers of the old rate
@@ -137,11 +177,14 @@ const HIDDEN_FIELDS = {
 // To-many relations the admin form edits (the others are edited from the other side).
 const EDITABLE_COLLECTIONS = {
   'route-rate': ['routes'],
+  pickup: ['allowed_users'],
 };
 
 // Order of the fields on the admin screens (the ones not listed go after them).
 // Route rates: the tiers by weight, as the price is worked out.
 const FIELD_ORDER = {
+  pickup: ['name', 'alias', 'city', 'pickup', 'message', 'allowed_users'],
+  'activity-type': ['name', 'global', 'project'],
   'route-rate': ['name', 'routes', 'pickup', 'delivery_type', 'less10', 'more10', 'from10to20',
     'from20to30', 'from30to40', 'from40to50', 'from50to60', 'additional60', 'pickup_point'],
 };
@@ -177,6 +220,14 @@ const ADMIN_ENTITIES = {
   year: 'years',
   'festive-type': 'festive-types',
   'route-rate': 'route-rates',
+  // issues/159: tables that needed the Strapi admin
+  pickup: 'pickups',
+  'delivery-type': 'delivery-types',
+  city: 'cities',
+  product: 'products',
+  'document-type': 'document-types',
+  'vat-type': 'vat-types',
+  'activity-type': 'activity-types',
 };
 
 // Catalan display names (singular/plural), preserved verbatim from v3.
@@ -205,6 +256,13 @@ const DISPLAY_NAMES = {
   year: { displayName: 'Anys', displayNameSingular: 'Any' },
   'festive-type': { displayName: 'Tipus de festiu', displayNameSingular: 'Tipus de festiu' },
   'route-rate': { displayName: 'Tarifes de ruta', displayNameSingular: 'Tarifa de ruta' },
+  pickup: { displayName: 'Punts de recollida', displayNameSingular: 'Punt de recollida' },
+  'delivery-type': { displayName: 'Tipus de lliurament', displayNameSingular: 'Tipus de lliurament' },
+  city: { displayName: 'Poblacions', displayNameSingular: 'Població' },
+  product: { displayName: 'Productes', displayNameSingular: 'Producte' },
+  'document-type': { displayName: 'Tipus de document', displayNameSingular: 'Tipus de document' },
+  'vat-type': { displayName: "Tipus d'IVA", displayNameSingular: "Tipus d'IVA" },
+  'activity-type': { displayName: "Tipus d'activitat", displayNameSingular: "Tipus d'activitat" },
 };
 
 module.exports = {
@@ -261,13 +319,15 @@ module.exports = {
               required: attr.required || false,
               unique: attr.unique || false,
               default: attr.default,
-              label: FIELD_TRANSLATIONS[attrName] || null,
+              label: (ENTITY_FIELD_TRANSLATIONS[singularFolder] || {})[attrName] || FIELD_TRANSLATIONS[attrName] || null,
             };
             const help = (FIELD_HELP[singularFolder] || {})[attrName];
             if (help) entry.help = help;
             if ((EDITABLE_COLLECTIONS[singularFolder] || []).includes(attrName)) entry.editable = true;
             if (attr.type === 'enumeration' && attr.enum) {
               entry.enum = attr.enum;
+              const enumLabels = ((ENUM_LABELS[singularFolder] || {})[attrName]);
+              if (enumLabels) entry.enumLabels = enumLabels;
             }
             if (attr.type === 'relation') {
               // v5 relation shape: { type:'relation', relation, target }
@@ -289,9 +349,9 @@ module.exports = {
       const extendedEntityToApiPath = {
         ...ADMIN_ENTITIES,
         route: 'routes',
-        'delivery-type': 'delivery-types',
-        pickup: 'pickups',
         user: 'users',
+        // the slim list: a project picker needs only the id and the name
+        project: 'projects/basic',
       };
 
       return { entities: entitiesMetadata, entityToApiPath: extendedEntityToApiPath };
