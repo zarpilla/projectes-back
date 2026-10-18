@@ -191,6 +191,13 @@ describe('order.invoice re-invoice guard', () => {
     });
   });
 
+  it('creates the income line as pending, not paid (issues/153)', async () => {
+    // the draft isn't even issued yet: the income is paid when the invoice is
+    await ctrl.invoice(buildCtx({ orders: [1, 2], project: 30 }));
+
+    expect(state.phaseIncomes[0].paid).toBe(false);
+  });
+
   it('takes the income amount from the invoice base, discounts added not compounded', async () => {
     state.orders = [order(1, { price: 10, multidelivery_discount: 20, contact_pickup_discount: 70 })];
     await ctrl.invoice(buildCtx({ orders: [1], project: 30 }));

@@ -811,7 +811,7 @@ async function invoiceRun(ctx) {
           date: new Date(),
           income_type: 1,
           invoice: invoice.id,
-          paid: true,
+          paid: false, // pending until the invoice is paid (issues/153)
           date_estimate_document: new Date(),
           vat_pct: 21,
           project_phase: phase.id,
