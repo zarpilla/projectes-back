@@ -195,7 +195,8 @@ async function importSeedPermissions() {
     ],
     quote: ['create', 'find', 'findOne', 'update', 'delete'],
     contacts: ['create', 'find', 'findOne', 'update', 'delete', 'basic', 'withorders', 'orders', 'unify', 'forOrders'],
-    'festive-type': ['find'],
+    // Taules auxiliars (issues/140): the writes are admin-only by the router's isAdmin policy
+    'festive-type': ['find', 'findOne', 'create', 'update', 'delete'],
     festive: ['create', 'find', 'findOne', 'update', 'delete'],
     'daily-dedication': ['create', 'find', 'findOne', 'update', 'delete'],
     'document-type': ['find', 'findOne'],
@@ -228,8 +229,10 @@ async function importSeedPermissions() {
     'orders-imports': ['create', 'find', 'findOne', 'update'],
     'delivery-type': ['find'],
     pickups: ['find'],
-    route: ['find'],
-    'route-rate': ['find'],
+    // «Rutes i punts › Rutes» (issues/141): orders_admin writes (app-access-rules); never deleted
+    route: ['find', 'findOne', 'create', 'update'],
+    // Taules auxiliars › Tarifes de ruta (issues/139): writes admin-only (isAdmin policy)
+    'route-rate': ['find', 'findOne', 'create', 'update', 'delete'],
     city: ['find', 'findOne', 'create'],
     'city-route': ['find', 'findOne', 'create', 'delete', 'basic'],
     'form-submission': ['create'],

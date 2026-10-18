@@ -139,6 +139,8 @@ allow(api('contact'), ['delete', 'orders', 'unify'], STAFF);
 allow(api('city'), ['create'], STAFF);
 allow(api('city-route'), WRITE, STAFF);
 allow(api('route-festive'), WRITE, STAFF);
+// «Rutes i punts › Rutes» (issues/141): the office creates and disables routes
+allow(api('route'), ['create', 'update'], ORDERS_ADMIN);
 // «Facturar comandes»: the project's last invoices; the contact form's DIR3 search
 allow(api('emitted-invoice'), ['find'], ORDERS_ADMIN);
 allow(api('me'), ['dir3SearchNif', 'dir3SearchName'], ORDERS_ADMIN);

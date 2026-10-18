@@ -94,6 +94,64 @@ const FIELD_TRANSLATIONS = {
   vat_pct: '% IVA',
   trashed: 'Esborrat',
   max: 'Màxim de dies',
+  // festive types and route rates (issues/140, issues/139)
+  personal: 'Personal',
+  delivery_type: "Tipus d'entrega",
+  pickup: 'Recollida',
+  routes: 'Rutes',
+  less10: 'Menys de 10 kg',
+  more10: 'A 10 kg',
+  from10to20: 'A 20 kg',
+  from20to30: 'A 30 kg',
+  from30to40: 'A 40 kg',
+  from40to50: 'A 50 kg',
+  from50to60: 'A 60 kg',
+  additional60: 'Cada kg de més de 60',
+  pickup_point: 'Per línia de punt de recollida',
+};
+
+// Help under a field of the admin form.
+const FIELD_HELP = {
+  'festive-type': {
+    personal: "Marcat: cada persona en té els seus dies (vacances, lliure elecció). Sense marcar: festius per a tothom (estatals, autonòmics).",
+    max: "Dies a l'any que en té cada persona. Es pot canviar per a una persona a «Festius d'usuari».",
+  },
+  'route-rate': {
+    routes: 'Les rutes on s\'aplica. Sense cap ruta, s\'aplica a totes.',
+    pickup: 'Només per a aquesta recollida. Buit: qualsevol.',
+    delivery_type: "Només per a aquest tipus d'entrega. Buit: qualsevol.",
+    less10: 'Preu fix per a les comandes de menys de 10 kg.',
+    more10: 'Preu d\'una comanda de 10 kg. Entre dos trams, el preu es calcula proporcionalment.',
+    additional60: 'Per sobre de 60 kg: el preu de 60 kg més aquest import per cada kg de més.',
+    pickup_point: 'Se suma per cada línia que va a un punt de recollida.',
+  },
+};
+
+// Fields left out of the admin screens. Route rates: the tiers of the old rate
+// (less15/less30/additional30) are no longer used; every rate is a «ratev2» one
+// and the lifecycle keeps new ones so (issues/139).
+const HIDDEN_FIELDS = {
+  'route-rate': ['less15', 'less30', 'additional30', 'ratev2'],
+};
+
+// To-many relations the admin form edits (the others are edited from the other side).
+const EDITABLE_COLLECTIONS = {
+  'route-rate': ['routes'],
+};
+
+// Order of the fields on the admin screens (the ones not listed go after them).
+// Route rates: the tiers by weight, as the price is worked out.
+const FIELD_ORDER = {
+  'route-rate': ['name', 'routes', 'pickup', 'delivery_type', 'less10', 'more10', 'from10to20',
+    'from20to30', 'from30to40', 'from40to50', 'from50to60', 'additional60', 'pickup_point'],
+};
+
+const orderedAttributes = (singularFolder, attributes) => {
+  const order = FIELD_ORDER[singularFolder];
+  const entries = Object.entries(attributes || {});
+  if (!order) return entries;
+  const rank = (name) => (order.includes(name) ? order.indexOf(name) : order.length);
+  return entries.sort((a, b) => rank(a[0]) - rank(b[0]));
 };
 
 // Admin-manageable entities: v5 singular folder → v5 API plural path.
@@ -117,6 +175,8 @@ const ADMIN_ENTITIES = {
   'task-state': 'task-states',
   'user-festive': 'user-festives',
   year: 'years',
+  'festive-type': 'festive-types',
+  'route-rate': 'route-rates',
 };
 
 // Catalan display names (singular/plural), preserved verbatim from v3.
@@ -143,6 +203,8 @@ const DISPLAY_NAMES = {
   'task-state': { displayName: 'Estats de tasca', displayNameSingular: 'Estat de tasca' },
   'user-festive': { displayName: "Festius d'usuari", displayNameSingular: "Festiu d'usuari" },
   year: { displayName: 'Anys', displayNameSingular: 'Any' },
+  'festive-type': { displayName: 'Tipus de festiu', displayNameSingular: 'Tipus de festiu' },
+  'route-rate': { displayName: 'Tarifes de ruta', displayNameSingular: 'Tarifa de ruta' },
 };
 
 module.exports = {
@@ -186,9 +248,12 @@ module.exports = {
             attributes: {},
           };
 
-          for (const [attrName, attr] of Object.entries(schema.attributes || {})) {
+          for (const [attrName, attr] of orderedAttributes(singularFolder, schema.attributes)) {
             // Skip internal timestamp/audit fields.
             if (['created_at', 'updated_at', 'published_at', 'created_by', 'updated_by'].includes(attrName)) {
+              continue;
+            }
+            if ((HIDDEN_FIELDS[singularFolder] || []).includes(attrName)) {
               continue;
             }
             const entry = {
@@ -198,6 +263,9 @@ module.exports = {
               default: attr.default,
               label: FIELD_TRANSLATIONS[attrName] || null,
             };
+            const help = (FIELD_HELP[singularFolder] || {})[attrName];
+            if (help) entry.help = help;
+            if ((EDITABLE_COLLECTIONS[singularFolder] || []).includes(attrName)) entry.editable = true;
             if (attr.type === 'enumeration' && attr.enum) {
               entry.enum = attr.enum;
             }
@@ -220,7 +288,9 @@ module.exports = {
 
       const extendedEntityToApiPath = {
         ...ADMIN_ENTITIES,
-        'festive-type': 'festive-types',
+        route: 'routes',
+        'delivery-type': 'delivery-types',
+        pickup: 'pickups',
         user: 'users',
       };
 
