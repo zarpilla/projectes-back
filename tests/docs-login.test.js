@@ -54,8 +54,10 @@ describe('me.docsLogin', () => {
       documents: () => ({ findFirst: async () => ({ name: 'Coop A, SCCL' }) }),
       db: { query: () => ({ findOne: async () => ({ id: 3, permissions }) }) },
     };
-    delete process.env.TICKETS_TENANT;
-    delete process.env.DOCS_URL;
+    // Blank, not deleted: requiring the controller loads @strapi/core, which runs
+    // dotenv, and dotenv refills deleted variables from a local .env.
+    process.env.TICKETS_TENANT = '';
+    process.env.DOCS_URL = '';
     process.env.DOCS_SSO_KEY = SECRET;
     ctrl = require(CONTROLLER)({ strapi: global.strapi });
   });
