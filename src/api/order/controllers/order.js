@@ -131,7 +131,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * Aggregated order info (counts, prices, routes) filtered by year/month.
    */
   async infoAll(ctx) {
-    const { year, month, ...query } = ctx.query;
+    const { year, month, _group, ...query } = ctx.query;
     const range = statsDateRange(year, month);
     if (range) {
       query.estimated_delivery_date_gte = range.from;
@@ -139,6 +139,29 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     }
 
     const opts = adaptQuery(query);
+    // the period of an order, and whether it is in the asked year / month
+    const dateOf = (o) => o.estimated_delivery_date || o.delivery_date || o.route_date;
+    const inPeriod = (date) =>
+      (!year || moment(date).format('YYYY') === String(year)) &&
+      (!month || parseInt(moment(date).format('MM')) === parseInt(month));
+
+    // _group=route: only the number of orders per route (the incidences report's
+    // rate per 100 orders), without loading every order with its relations
+    if (_group === 'route') {
+      const light = await strapi.db.query('api::order.order').findMany({
+        where: opts.filters || {},
+        select: ['id', 'status', 'estimated_delivery_date', 'delivery_date', 'route_date'],
+        populate: { route: { select: ['id', 'short_name', 'name'] } },
+      });
+      const counts = new Map();
+      for (const o of light) {
+        if (o.status === 'cancelled' || !inPeriod(dateOf(o))) continue;
+        const route = o.route ? o.route.short_name || o.route.name : '-';
+        counts.set(route, (counts.get(route) || 0) + 1);
+      }
+      return [...counts.entries()].map(([route, count]) => ({ route, count }));
+    }
+
     const orders = await strapi.db.query('api::order.order').findMany({
       where: opts.filters || {},
       populate: {
@@ -157,7 +180,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     const ordersInfo = orders
       .filter((o) => o.status !== 'cancelled')
       .map((o) => {
-        const date = o.estimated_delivery_date || o.delivery_date || o.route_date;
+        const date = dateOf(o);
         return {
           id: o.id,
           count: 1,
@@ -188,10 +211,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
         };
       });
 
-    let filtered = ordersInfo;
-    if (year) filtered = filtered.filter((o) => o.year === String(year));
-    if (month) filtered = filtered.filter((o) => parseInt(o.month) === parseInt(month));
-    return filtered;
+    return ordersInfo.filter((o) => inPeriod(o.date));
   },
 
   /**

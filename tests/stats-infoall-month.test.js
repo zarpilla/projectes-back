@@ -59,6 +59,29 @@ describe('GET /api/orders/infoall', () => {
   });
 });
 
+describe('GET /api/orders/infoall?_group=route', () => {
+  const rows = [
+    { id: 1, status: 'pending', estimated_delivery_date: '2026-10-03', route: { id: 4, short_name: 'DT - MARESME' } },
+    { id: 2, status: 'invoiced', estimated_delivery_date: '2026-10-20', route: { id: 4, short_name: 'DT - MARESME' } },
+    { id: 3, status: 'cancelled', estimated_delivery_date: '2026-10-21', route: { id: 4, short_name: 'DT - MARESME' } },
+    { id: 4, status: 'pending', estimated_delivery_date: '2026-10-22', route: { id: 5, name: 'Girona' } },
+    { id: 5, status: 'pending', estimated_delivery_date: '2026-10-22' },
+    { id: 6, status: 'pending', estimated_delivery_date: '2025-10-22', route: { id: 5, name: 'Girona' } },
+  ];
+
+  it('counts the orders of the period per route, without the cancelled ones', async () => {
+    const { ctrl, calls } = load('order', rows);
+    const result = await ctrl.infoAll({ query: { _limit: '-1', year: '2026', month: '10', _group: 'route' } });
+    expect(calls[0].select).toBeDefined();
+    expect(JSON.stringify(calls[0].where)).not.toContain('_group');
+    expect(result).toEqual([
+      { route: 'DT - MARESME', count: 2 },
+      { route: 'Girona', count: 1 },
+      { route: '-', count: 1 },
+    ]);
+  });
+});
+
 describe('GET /api/incidences/infoall', () => {
   const rows = [
     { id: 1, state: 'open', createdAt: '2025-10-03T10:00:00.000Z' },
