@@ -23,6 +23,7 @@ const { lineVatOverType } = require('./services/line-vat-over-type');
 const { backfillTransferDestinations } = require('./services/backfill-transfer-destinations');
 const { repairCollectionOrderRates } = require('./services/repair-collection-order-rates');
 const { refreshUnifiedOrderSnapshots } = require('./services/refresh-unified-order-snapshots');
+const { frontUrlsWithoutHash } = require('./services/front-urls-without-hash');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -124,6 +125,8 @@ module.exports = {
       ['repairCollectionOrderRates', repairCollectionOrderRates, { runOnce: true }],
       // issues/157: orders moved by Unificar (or the quick edit) kept the old point's address.
       ['refreshUnifiedOrderSnapshots', refreshUnifiedOrderSnapshots, { runOnce: true }],
+      // issues/158: the front's URLs lost the "#/"; so do the links the API sends.
+      ['frontUrlsWithoutHash', frontUrlsWithoutHash, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

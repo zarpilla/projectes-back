@@ -34,7 +34,7 @@ async function isNewDatabase() {
 /** The front is served under /stats/ of the same host (see ensure-reset-password-url). */
 function frontUrl() {
   const serverUrl = String(strapi.config.get('server.url') || '').replace(/\/+$/, '');
-  return /^https?:\/\//.test(serverUrl) ? `${serverUrl}/stats/#/` : null;
+  return /^https?:\/\//.test(serverUrl) ? `${serverUrl}/stats/` : null;
 }
 
 async function seedFirstUser() {
