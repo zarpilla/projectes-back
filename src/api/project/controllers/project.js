@@ -229,7 +229,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     adaptCtxQuery(ctx);
     const response = await super.find(ctx);
     const rows = response?.data;
-    if (Array.isArray(rows)) {
+    if (Array.isArray(rows) && !ctx.state.ownTotals) {
       for (const entry of rows) {
         const attrs = entry?.attributes || entry;
         if (attrs && attrs.is_mother) {
@@ -254,6 +254,10 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     if (ctx.query.populate === undefined) {
       ctx.query = { ...ctx.query, populate: firstLevelPopulateWithout(DEFAULT_POPULATE_SKIPS) };
     }
+    // Each project with its own totals, like projects/basic: the list comes with
+    // the children too, and the Panell de projectes, which sums every row,
+    // counted them twice through their mother's aggregated totals (issues/169).
+    ctx.state = { ...ctx.state, ownTotals: true };
     const response = await strapi.controller('api::project.project').find(ctx);
     const rows = (response && response.data) || [];
     if (rows.length === 0) return response;
