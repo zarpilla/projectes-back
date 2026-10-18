@@ -16,7 +16,7 @@ const ME = 100;
 const OTHER = 200;
 const MY_CONTACT = 7; // the contact linked to the member's user
 
-function makeStrapi({ permissions, orders = {}, contacts = {}, incidences = {} }) {
+function makeStrapi({ permissions, orders = {}, contacts = {}, incidences = {}, rows = {} }) {
   const query = (uid) => ({
     findOne: jest.fn(async ({ where }) => {
       if (uid === 'plugin::users-permissions.user') {
@@ -29,6 +29,7 @@ function makeStrapi({ permissions, orders = {}, contacts = {}, incidences = {} }
         'api::order.order': orders,
         'api::contact.contact': contacts,
         'api::incidence.incidence': incidences,
+        ...rows,
       }[uid];
       return (table && table[where.id]) || null;
     }),
@@ -255,13 +256,11 @@ describe('app permissions (issues/099)', () => {
 
     it.each([
       'api::activity.activity.getForCalendar',
+      // update, delete and importCalendar on her own rows: «a worker's own rows» below
       'api::activity.activity.create',
-      'api::activity.activity.update',
-      'api::activity.activity.delete',
       'api::activity.activity.move',
-      'api::activity.activity.importCalendar',
       'api::time-counter.time-counter.create',
-      'api::workday-log.workday-log.update',
+      'api::workday-log.workday-log.create',
       'api::daily-dedication.daily-dedication.find',
       'api::festive.festive.create',
       'api::project.project.findWithBasicInfo',
@@ -289,6 +288,115 @@ describe('app permissions (issues/099)', () => {
       'api::treasury.treasury.find',
     ])('is refused %s', async (handler) => {
       await expectRefused(handler);
+    });
+  });
+
+  describe("a worker's own rows (hours)", () => {
+    const ACTIVITY = 'api::activity.activity';
+    const MINE = 1;
+    const THEIRS = 2;
+    const own = {
+      [MINE]: { users_permissions_user: { id: ME } },
+      [THEIRS]: { users_permissions_user: { id: OTHER } },
+    };
+
+    beforeEach(() =>
+      setup({
+        permissions: { [ME]: ['hours'] },
+        rows: {
+          [ACTIVITY]: own,
+          'api::time-counter.time-counter': own,
+          'api::workday-log.workday-log': own,
+          'api::daily-dedication.daily-dedication': own,
+          'api::festive.festive': own,
+        },
+      }),
+    );
+
+    it.each([
+      `${ACTIVITY}.find`,
+      `${ACTIVITY}.getForCalendar`,
+      'api::time-counter.time-counter.find',
+      'api::workday-log.workday-log.find',
+      'api::daily-dedication.daily-dedication.find',
+    ])('narrows %s to her own rows, whatever the query asks', async (handler) => {
+      const ctx = await expectAllowed(handler, {
+        query: { _where: { 'users_permissions_user.id': OTHER } },
+      });
+      expect(ctx.query._where).toEqual({
+        _and: [{ 'users_permissions_user.id': ME }, { 'users_permissions_user.id': OTHER }],
+      });
+    });
+
+    it.each([
+      [ACTIVITY, 'update', 'PUT'],
+      [ACTIVITY, 'delete', 'DELETE'],
+      ['api::time-counter.time-counter', 'update', 'PUT'],
+      ['api::workday-log.workday-log', 'delete', 'DELETE'],
+      ['api::festive.festive', 'update', 'PUT'],
+      ['api::festive.festive', 'delete', 'DELETE'],
+    ])("refuses %s.%s on someone else's row, allows it on hers", async (uid, action, method) => {
+      await expectRefused(`${uid}.${action}`, { method, numericId: THEIRS, body: {} });
+      await expectAllowed(`${uid}.${action}`, { method, numericId: MINE, body: {} });
+    });
+
+    it('creates hours, counters, workday logs and holidays as herself only', async () => {
+      for (const uid of [
+        ACTIVITY,
+        'api::time-counter.time-counter',
+        'api::workday-log.workday-log',
+        'api::festive.festive',
+      ]) {
+        const ctx = await expectAllowed(`${uid}.create`, { method: 'POST', body: { data: { hours: 2 } } });
+        expect(ctx.request.body.data.users_permissions_user).toBe(ME);
+        await expectRefused(`${uid}.create`, {
+          method: 'POST',
+          body: { data: { users_permissions_user: OTHER } },
+        });
+      }
+    });
+
+    it('cannot hand her own hours to someone else', async () => {
+      await expectRefused(`${ACTIVITY}.update`, {
+        method: 'PUT',
+        numericId: MINE,
+        body: { data: { users_permissions_user: { id: OTHER } } },
+      });
+    });
+
+    it('moves and imports only her own hours', async () => {
+      const ctx = await expectAllowed(`${ACTIVITY}.move`, { method: 'POST', body: { from: 1, to: 2 } });
+      expect(ctx.request.body.user).toBe(ME);
+      await expectRefused(`${ACTIVITY}.move`, { method: 'POST', body: { user: OTHER, from: 1, to: 2 } });
+      await expectAllowed(`${ACTIVITY}.importCalendar`, { params: { id: String(ME) } });
+      await expectRefused(`${ACTIVITY}.importCalendar`, { params: { id: String(OTHER) } });
+    });
+
+    it('reads her working periods without the salary fields', async () => {
+      const period = {
+        id: 5,
+        from: '2026-01-01',
+        hours: 8,
+        hoursperday: '8,8,8,8,7',
+        costByHour: 21,
+        monthly_salary: 2100,
+        pct_irpf: 12,
+      };
+      const ctx = makeCtx({ handler: 'api::daily-dedication.daily-dedication.find' });
+      await run(ctx, { data: [{ ...period }], meta: {} });
+      expect(ctx.body.data).toEqual([{ id: 5, from: '2026-01-01', hours: 8, hoursperday: '8,8,8,8,7' }]);
+    });
+
+    it('a worker with logistics permissions too is still limited to her own hours', async () => {
+      setup({ permissions: { [ME]: ['hours', 'orders_admin'] }, rows: { [ACTIVITY]: own } });
+      await expectRefused(`${ACTIVITY}.update`, { method: 'PUT', numericId: THEIRS, body: {} });
+    });
+
+    it('projects keep the «Persona» picker: no narrowing', async () => {
+      setup({ permissions: { [ME]: ['projects'] }, rows: { [ACTIVITY]: own } });
+      const ctx = await expectAllowed(`${ACTIVITY}.getForCalendar`, { query: {} });
+      expect(ctx.query).toEqual({});
+      await expectAllowed(`${ACTIVITY}.update`, { method: 'PUT', numericId: THEIRS, body: {} });
     });
   });
 

@@ -20,6 +20,9 @@
  *    her invoices are the ones addressed to her contact. She can't give an
  *    order or a contact to someone else, and only changes contacts she can see
  *    on «Punts d'entrega».
+ * 4. A worker (`hours`, without full access) reads and changes only her own
+ *    hours, time counters, workday logs and personal holidays, and reads her
+ *    own working periods (daily dedications) without the salary fields.
  *
  * Public routes (no user) are left to the Public role.
  */
@@ -30,6 +33,11 @@ const ORDER = 'api::order.order';
 const CONTACT = 'api::contact.contact';
 const INCIDENCE = 'api::incidence.incidence';
 const USER = 'plugin::users-permissions.user';
+const ACTIVITY = 'api::activity.activity';
+const TIME_COUNTER = 'api::time-counter.time-counter';
+const WORKDAY_LOG = 'api::workday-log.workday-log';
+const DAILY_DEDICATION = 'api::daily-dedication.daily-dedication';
+const FESTIVE = 'api::festive.festive';
 
 // What a member may change on an order delivered to her contact but owned by
 // another member (PickupPoints: the boxes she picked up; incidences modal).
@@ -44,6 +52,18 @@ const ME_PRIVATE_FIELDS = [
   'bank_account_vat',
   'google_credentials',
   'face_certificate',
+];
+
+// Left out of the daily dedications for users without full access: what the
+// hours screens need is the period and its hours per day.
+const DEDICATION_SALARY_FIELDS = [
+  'costByHour',
+  'monthly_salary',
+  'scheme',
+  'quota',
+  'pct_irpf',
+  'pct_other',
+  'pct_quota',
 ];
 
 const forbidden = () => new errors.ForbiddenError('No tens permís per fer aquesta acció');
@@ -288,6 +308,108 @@ async function scopeOrdersImport(ctx, next, { userId }) {
   return next();
 }
 
+// ---------------------------------------------------------------------------
+// Own rows (hours): action -> (ctx, next, { strapi, userId }) handler, for every
+// user without full access. The rows belong to `users_permissions_user`.
+// ---------------------------------------------------------------------------
+
+const ownClause = (userId) => ({
+  v3: { 'users_permissions_user.id': userId },
+  v5: { users_permissions_user: { id: userId } },
+});
+
+async function scopeOwnList(ctx, next, { userId }) {
+  const { v3, v5 } = ownClause(userId);
+  narrowQuery(ctx, v3, v5);
+  return next();
+}
+
+/** The payload may only name her as the person (or leave it out). */
+function checkOwnPayload(ctx, userId) {
+  const payload = payloadOf(ctx);
+  if (
+    payload.users_permissions_user !== undefined &&
+    payload.users_permissions_user !== null &&
+    idOf(payload.users_permissions_user) !== userId
+  ) {
+    throw forbidden();
+  }
+  return payload;
+}
+
+const scopeOwnCreate = (ctx, next, { userId }) => {
+  checkOwnPayload(ctx, userId).users_permissions_user = userId;
+  return next();
+};
+
+const scopeOwnRow = (uid) =>
+  async function scopeOwn(ctx, next, { strapi, userId }) {
+    const where = addressedRow(ctx);
+    if (!where) throw forbidden();
+    const row = await strapi.db
+      .query(uid)
+      .findOne({ where, populate: { users_permissions_user: { select: ['id'] } } });
+    if (!row) return next();
+    if (idOf(row.users_permissions_user) !== userId) throw forbidden();
+    if (ctx.method === 'PUT') checkOwnPayload(ctx, userId);
+    return next();
+  };
+
+/** «Mou les hores» moves only her own hours. */
+async function scopeActivityMove(ctx, next, { userId }) {
+  const body = ctx.request.body || {};
+  if (body.user !== undefined && body.user !== null && idOf(body.user) !== userId) throw forbidden();
+  body.user = userId;
+  ctx.request.body = body;
+  return next();
+}
+
+async function scopeActivityImportCalendar(ctx, next, { userId }) {
+  if (Number(ctx.params && ctx.params.id) !== userId) throw forbidden();
+  return next();
+}
+
+function stripDedications(body) {
+  const data = body && typeof body === 'object' && 'data' in body ? body.data : body;
+  for (const row of Array.isArray(data) ? data : [data]) {
+    if (row && typeof row === 'object') for (const field of DEDICATION_SALARY_FIELDS) delete row[field];
+  }
+}
+
+const withoutSalary = (scope) =>
+  async function scopeDedications(ctx, next, deps) {
+    await scope(ctx, next, deps);
+    stripDedications(ctx.body);
+  };
+
+const OWN_SCOPES = {
+  [`${ACTIVITY}.find`]: scopeOwnList,
+  [`${ACTIVITY}.getForCalendar`]: scopeOwnList,
+  [`${ACTIVITY}.findOne`]: scopeOwnRow(ACTIVITY),
+  [`${ACTIVITY}.create`]: scopeOwnCreate,
+  [`${ACTIVITY}.update`]: scopeOwnRow(ACTIVITY),
+  [`${ACTIVITY}.delete`]: scopeOwnRow(ACTIVITY),
+  [`${ACTIVITY}.move`]: scopeActivityMove,
+  [`${ACTIVITY}.importCalendar`]: scopeActivityImportCalendar,
+  [`${TIME_COUNTER}.find`]: scopeOwnList,
+  [`${TIME_COUNTER}.findOne`]: scopeOwnRow(TIME_COUNTER),
+  [`${TIME_COUNTER}.create`]: scopeOwnCreate,
+  [`${TIME_COUNTER}.update`]: scopeOwnRow(TIME_COUNTER),
+  [`${TIME_COUNTER}.delete`]: scopeOwnRow(TIME_COUNTER),
+  [`${WORKDAY_LOG}.find`]: scopeOwnList,
+  [`${WORKDAY_LOG}.findOne`]: scopeOwnRow(WORKDAY_LOG),
+  [`${WORKDAY_LOG}.create`]: scopeOwnCreate,
+  [`${WORKDAY_LOG}.update`]: scopeOwnRow(WORKDAY_LOG),
+  [`${WORKDAY_LOG}.delete`]: scopeOwnRow(WORKDAY_LOG),
+  [`${DAILY_DEDICATION}.find`]: withoutSalary(scopeOwnList),
+  [`${DAILY_DEDICATION}.findOne`]: withoutSalary(scopeOwnRow(DAILY_DEDICATION)),
+  // the holidays for everyone stay readable (calendars); the festive controller
+  // already keeps their changes to admins (issues/140)
+  [`${FESTIVE}.create`]: scopeOwnCreate,
+  [`${FESTIVE}.update`]: scopeOwnRow(FESTIVE),
+  [`${FESTIVE}.delete`]: scopeOwnRow(FESTIVE),
+};
+
 const MEMBER_SCOPES = {
   [`${ORDER}.find`]: scopeOrderList,
   [`${ORDER}.findOne`]: scopeOrderRow,
@@ -329,10 +451,11 @@ module.exports = (config, { strapi }) =>
       stripMe(ctx.body);
       return;
     }
-    const scope = isOrdersMember(permissions) && MEMBER_SCOPES[action];
+    const scope = OWN_SCOPES[action] || (isOrdersMember(permissions) && MEMBER_SCOPES[action]);
     if (scope) return scope(ctx, next, { strapi, userId: user.id });
     return next();
   };
 
 module.exports.actionOf = actionOf;
 module.exports.MEMBER_SCOPES = MEMBER_SCOPES;
+module.exports.OWN_SCOPES = OWN_SCOPES;

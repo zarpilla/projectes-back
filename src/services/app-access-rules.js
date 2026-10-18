@@ -103,8 +103,9 @@ allow(api('project'), ['findWithBasicInfo'], EVERYONE);
 allow(api('contact'), ['basic'], EVERYONE);
 
 // --- hours (workers): Hores dedicades, Registre jornades, Dedicació ------------
-// The screens let a worker pick another person, so these are not limited to
-// her own rows (that would change what the screens do today).
+// Only her own rows (middleware OWN_SCOPES): the «Persona» picker of these
+// screens is of no use to a worker, by decision (issues/099). Her daily
+// dedications come without the salary fields.
 allow(api('activity'), [...READ, ...WRITE, 'getForCalendar', 'importCalendar', 'move'], HOURS);
 allow(api('time-counter'), [...READ, ...WRITE], HOURS);
 allow(api('workday-log'), [...READ, ...WRITE], HOURS);
