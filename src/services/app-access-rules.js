@@ -113,7 +113,12 @@ allow(api('daily-dedication'), READ, HOURS);
 allow(api('festive'), WRITE, HOURS);
 allow(api('task'), READ, HOURS);
 allow(api('project'), ['findWithPhasesBoth'], HOURS);
+// Saved pivot views: only the ones of her screens (middleware, issues/166).
 allow(api('pivot-table-view'), [...READ, ...WRITE], [HOURS, ORDERS_ADMIN]);
+const PIVOT_IDENTIFIERS = {
+  [HOURS]: ['dedication-pivot', 'dedication-est-pivot'],
+  [ORDERS_ADMIN]: ['orders-pivot', 'incidences-pivot'],
+};
 
 // --- logistics ----------------------------------------------------------------
 allow(
@@ -139,6 +144,10 @@ allow('plugin::upload.content-api', ['upload'], LOGISTICS);
 allow(api('incidence'), [...READ, 'update', 'delete'], LOGISTICS);
 allow(api('incidence'), ['infoAll'], ORDERS_ADMIN);
 allow(api('contact'), [...READ, 'create', 'update', 'forOrders', 'withorders'], LOGISTICS);
+// The drivers keep these (issues/163): «Punts d'entrega» lets them unify and
+// delete points, and «Poblacions i rutes» / «Rutes i dies» let them add towns,
+// link them to routes and close routes (canEdit there is orders_admin or
+// orders_delivery), even if those two are not in their menu.
 allow(api('contact'), ['delete', 'orders', 'unify'], STAFF);
 allow(api('city'), ['create'], STAFF);
 allow(api('city-route'), WRITE, STAFF);
@@ -192,11 +201,30 @@ function isOrdersMember(permissions) {
   );
 }
 
+/**
+ * A driver: `orders_delivery` without FULL_ACCESS nor the office. She makes the
+ * moves of the orders, not the orders (issues/163).
+ */
+function isDriver(permissions) {
+  return (
+    permissions.includes(ORDERS_DELIVERY) &&
+    !permissions.some((p) => FULL_ACCESS.includes(p) || p === ORDERS_ADMIN)
+  );
+}
+
+/** The pivot identifiers of the screens the permissions open (issues/166). */
+function pivotIdentifiersFor(permissions) {
+  return [...new Set(permissions.flatMap((p) => PIVOT_IDENTIFIERS[p] || []))];
+}
+
 module.exports = {
   FULL_ACCESS,
+  LOGISTICS,
   ANY,
   rules,
   allowedPermissions,
   isAllowed,
   isOrdersMember,
+  isDriver,
+  pivotIdentifiersFor,
 };

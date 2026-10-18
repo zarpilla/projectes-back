@@ -10,6 +10,7 @@ const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { statsDateRange } = require('../../../services/stats-date-range');
 const { setCurrentUserId } = require('../utils/updater');
+const { numericId } = require('../../../middlewares/v3-compat');
 
 // What the v3 default `populate=*` gives, plus the author of every reply: `*`
 // reaches the incidence_response component but not the user relation inside
@@ -23,6 +24,34 @@ const FIND_ONE_POPULATE = {
 };
 
 const STATE_LABELS = { open: 'Oberta', wip: 'En procés', closed: 'Tancada' };
+
+const idOf = (value) => (value && typeof value === 'object' ? value.id : value);
+
+/**
+ * The replies an update leaves: the stored ones as they are, plus the ones
+ * sent after them, in the name of whoever sends them and dated now
+ * (issues/164). The screen sends the replies it has with the new one at the
+ * end; the replies used to be replaced by whatever was sent, author included,
+ * so a member could rewrite the office's answers or sign a reply as someone
+ * else.
+ */
+async function appendedReplies(incidenceId, sent, user) {
+  const where = /^\d+$/.test(String(incidenceId)) ? { id: Number(incidenceId) } : { documentId: incidenceId };
+  const stored = await strapi.db
+    .query('api::incidence.incidence')
+    .findOne({ where, populate: { incidence_response: { populate: { user: true } } } });
+  const kept = ((stored && stored.incidence_response) || []).map((reply) => ({
+    id: reply.id,
+    text: reply.text,
+    user: idOf(reply.user) || null,
+    response_date: reply.response_date,
+  }));
+  const added = sent
+    .slice(kept.length)
+    .filter((reply) => reply && typeof reply.text === 'string' && reply.text.trim())
+    .map((reply) => ({ text: reply.text, user: user ? user.id : null, response_date: new Date() }));
+  return [...kept, ...added];
+}
 
 module.exports = createCoreController('api::incidence.incidence', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -50,6 +79,15 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
    * since v5 lifecycles don't receive ctx.
    */
   async update(ctx) {
+    const body = ctx.request.body || {};
+    const payload = body.data && typeof body.data === 'object' ? body.data : body;
+    if (Array.isArray(payload.incidence_response)) {
+      payload.incidence_response = await appendedReplies(
+        numericId(ctx),
+        payload.incidence_response,
+        ctx.state.user,
+      );
+    }
     if (ctx.state.user) {
       setCurrentUserId(ctx.state.user.id);
     }

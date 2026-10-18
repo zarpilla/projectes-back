@@ -16,7 +16,14 @@ const ME = 100;
 const OTHER = 200;
 const MY_CONTACT = 7; // the contact linked to the member's user
 
-function makeStrapi({ permissions, orders = {}, contacts = {}, incidences = {}, rows = {} }) {
+function makeStrapi({
+  permissions,
+  orders = {},
+  contacts = {},
+  incidences = {},
+  rows = {},
+  contentTypes = {},
+}) {
   const query = (uid) => ({
     findOne: jest.fn(async ({ where }) => {
       if (uid === 'plugin::users-permissions.user') {
@@ -39,6 +46,9 @@ function makeStrapi({ permissions, orders = {}, contacts = {}, incidences = {}, 
           (c) => c.users_permissions_user && c.users_permissions_user.id === where.users_permissions_user.id,
         );
       }
+      if (uid === 'api::order.order' && where.owner) {
+        return Object.values(orders).filter((o) => o.owner.id === where.owner.id);
+      }
       if (uid === 'api::order.order') return where.id.$in.map((id) => orders[id]).filter(Boolean);
       return [];
     }),
@@ -49,7 +59,7 @@ function makeStrapi({ permissions, orders = {}, contacts = {}, incidences = {}, 
         ).length,
     ),
   });
-  return { db: { query: jest.fn(query) } };
+  return { db: { query: jest.fn(query) }, contentTypes, components: {} };
 }
 
 function route(handler, info) {
@@ -222,21 +232,27 @@ describe('app permissions (issues/099)', () => {
         'api::contact.contact.unify',
         'api::contact.contact.orders',
         'api::contact.contact.delete',
-        'api::pivot-table-view.pivot-table-view.create',
         'api::me.me.dir3SearchNif',
       ]) {
         await expectAllowed(handler);
       }
+      await expectAllowed('api::pivot-table-view.pivot-table-view.create', {
+        method: 'POST',
+        body: { data: { identifier: 'orders-pivot' } },
+      });
       await expectRefused('api::payroll.payroll.find');
       await expectRefused('api::project.project.update');
       await expectRefused('api::emitted-invoice.emitted-invoice.update');
     });
 
     it('orders_delivery marks orders but does not invoice them', async () => {
-      setup({ permissions: { [ME]: ['orders_delivery'] } });
+      setup({
+        permissions: { [ME]: ['orders_delivery'] },
+        orders: { 1: { id: 1, status: 'processed', ...ORDER(OTHER, 8) } },
+      });
       await expectAllowed('api::order.order.update', {
         method: 'PUT',
-        body: { data: { owner: OTHER } },
+        body: { data: { status: 'delivered' } },
         numericId: 1,
       });
       await expectAllowed('api::city-route.city-route.create');
@@ -666,6 +682,385 @@ describe('app permissions (issues/099)', () => {
       await expectRefused('api::contact.contact.create', {
         method: 'POST',
         body: { data: { owner: OTHER } },
+      });
+    });
+  });
+
+  // issues/163-166 (redesign review 2026-10-18): the actions were checked, not
+  // what they wrote or returned. A member set the price of her orders and
+  // unlinked them from their invoice, a driver changed any field of any order,
+  // a member rewrote shared points and the office's incidence replies, a
+  // worker renamed the Tresoreria pivot views, and populate gave salaries.
+  describe('what members and drivers write on an order (issues/163)', () => {
+    const options = () => ({
+      permissions: { [ME]: ['orders'], [OTHER]: ['orders_delivery'], 300: ['orders', 'orders_delivery'] },
+      contacts: {
+        8: { id: 8, owner: { id: ME }, users_permissions_user: null, pickup_discount: 10 },
+      },
+      orders: {
+        1: { id: 1, status: 'pending', ...ORDER(ME, 8) },
+        5: { id: 5, status: 'processed', ...ORDER(ME, 8) },
+        13: { id: 13, status: 'invoiced', ...ORDER(ME, 8) },
+        20: { id: 20, status: 'pending', ...ORDER(300, 8) },
+      },
+    });
+    beforeEach(() => setup(options()));
+    const put = (numericId, data, userId = ME) => ({ method: 'PUT', numericId, userId, body: { data } });
+
+    it("drops the office's fields from her pending order and leaves the price to the server", async () => {
+      const ctx = await expectAllowed(
+        'api::order.order.update',
+        put(1, {
+          kilograms: 12,
+          price: 0.5,
+          multidelivery_discount: 90,
+          contact_pickup_discount: 100,
+          emitted_invoice: null,
+          transfer_start_date: '2026-10-18',
+          pickup_date: '2026-10-18',
+        }),
+      );
+      expect(ctx.request.body.data).toEqual({ kilograms: 12, price: null });
+    });
+
+    it('keeps the stored price when nothing it depends on changes', async () => {
+      const ctx = await expectAllowed('api::order.order.update', put(1, { comments: 'x', price: 0.5 }));
+      expect(ctx.request.body.data).toEqual({ comments: 'x' });
+    });
+
+    it('takes the pickup discount from the delivery point, not from her', async () => {
+      const ctx = await expectAllowed(
+        'api::order.order.update',
+        put(1, { contact: 8, contact_pickup_discount: 100 }),
+      );
+      expect(ctx.request.body.data.contact_pickup_discount).toBe(10);
+    });
+
+    it('does not let her unlink or reprice an invoiced order', async () => {
+      const ctx = await expectAllowed(
+        'api::order.order.update',
+        put(13, { price: 0.5, emitted_invoice: null, status: 'invoiced' }),
+      );
+      expect(ctx.request.body.data).toEqual({ status: 'invoiced' });
+    });
+
+    it('records her deposit in her name', async () => {
+      const ctx = await expectAllowed(
+        'api::order.order.update',
+        put(5, { deposit_date: '2026-10-18T10:00:00Z', deposit_user: OTHER }),
+      );
+      expect(ctx.request.body.data).toEqual({ deposit_date: '2026-10-18T10:00:00Z', deposit_user: ME });
+    });
+
+    it('creates her orders pending, without price or invoice', async () => {
+      const ctx = await expectAllowed('api::order.order.create', {
+        method: 'POST',
+        body: { data: { status: 'invoiced', price: 0.01, emitted_invoice: 4, kilograms: 3 } },
+      });
+      expect(ctx.request.body.data).toEqual({ status: 'pending', owner: ME, kilograms: 3, price: null });
+    });
+
+    it("cleans the CSV import's orders and new points the same way", async () => {
+      const ctx = await expectAllowed('api::order.order.createCSV', {
+        method: 'POST',
+        body: {
+          price: 0.01,
+          volume_discount: 5,
+          kilograms: 3,
+          contact: { name: 'Nou', pickup_discount: 80, partner_amount: 9 },
+        },
+      });
+      expect(ctx.request.body).toEqual({
+        kilograms: 3,
+        price: null,
+        contact: { name: 'Nou' },
+        owner: { id: ME },
+      });
+    });
+
+    it('a driver changes only the moves and the state of an order', async () => {
+      const ctx = await expectAllowed(
+        'api::order.order.update',
+        put(5, { transfer_start_date: '2026-10-18T10:00:00Z', transfer_start_user: ME }, OTHER),
+      );
+      // in her name, whoever the screen said
+      expect(ctx.request.body.data).toEqual({
+        transfer_start_date: '2026-10-18T10:00:00Z',
+        transfer_start_user: OTHER,
+      });
+      await expectAllowed(
+        'api::order.order.update',
+        put(5, { status: 'delivered', _tracking_user: { id: OTHER } }, OTHER),
+      );
+      await expectAllowed('api::order.order.update', put(5, { incidences: [{ description: 'x' }] }, OTHER));
+      await expectRefused('api::order.order.update', put(5, { price: 0.5 }, OTHER));
+      await expectRefused('api::order.order.update', put(5, { status: 'invoiced' }, OTHER));
+      await expectRefused('api::order.order.update', put(13, { status: 'delivered' }, OTHER));
+    });
+
+    it('a driver does not create orders, unless she is a member too (then as one)', async () => {
+      await expectRefused('api::order.order.create', { method: 'POST', userId: OTHER, body: { data: {} } });
+      await expectRefused('api::order.order.createCSV', { method: 'POST', userId: OTHER, body: {} });
+      const ctx = await expectAllowed('api::order.order.create', {
+        method: 'POST',
+        userId: 300,
+        body: { data: { price: 1 } },
+      });
+      expect(ctx.request.body.data).toEqual({ owner: 300, status: 'pending', price: null });
+      // her own pending order, as a member
+      const own = await expectAllowed('api::order.order.update', put(20, { units: 2, price: 1 }, 300));
+      expect(own.request.body.data).toEqual({ units: 2 });
+    });
+  });
+
+  describe('what a member writes on contacts and incidences (issues/164)', () => {
+    const options = () => ({
+      permissions: { [ME]: ['orders'] },
+      contacts: {
+        [MY_CONTACT]: { id: MY_CONTACT, users_permissions_user: { id: ME }, owner: null },
+        9: { id: 9, owner: { id: OTHER }, users_permissions_user: null, multiowner: true },
+        10: { id: 10, owner: { id: ME }, users_permissions_user: null },
+      },
+      orders: {
+        1: { id: 1, status: 'delivered', ...ORDER(ME, 10) },
+        2: { id: 2, status: 'pending', ...ORDER(OTHER, MY_CONTACT) },
+      },
+      incidences: {
+        50: { id: 50, order: { id: 1 }, state: 'open', createdAt: new Date().toISOString() },
+        52: { id: 52, order: { id: 1 }, state: 'closed', createdAt: new Date().toISOString() },
+        53: { id: 53, order: { id: 1 }, state: 'open', createdAt: '2026-01-01T00:00:00Z' },
+        54: { id: 54, order: { id: 2 }, state: 'open', createdAt: new Date().toISOString() },
+      },
+    });
+    beforeEach(() => setup(options()));
+    const put = (numericId, data) => ({ method: 'PUT', numericId, body: { data } });
+
+    it("keeps her point's address and contact fields, not the discounts nor the partner data", async () => {
+      const ctx = await expectAllowed(
+        'api::contact.contact.update',
+        put(10, {
+          address: 'C/ Nou',
+          trade_name: 'Botiga',
+          pickup_discount: 50,
+          pickup_point: true,
+          partner_amount: 99999,
+          multidelivery: true,
+          notes_delivery: 'x',
+        }),
+      );
+      expect(ctx.request.body.data).toEqual({ address: 'C/ Nou', trade_name: 'Botiga' });
+    });
+
+    it('changes only the address of a shared point', async () => {
+      const ctx = await expectAllowed(
+        'api::contact.contact.update',
+        put(9, { address: 'C/ Nou', name: 'Una altra', nif: 'B1' }),
+      );
+      expect(ctx.request.body.data).toEqual({ address: 'C/ Nou' });
+    });
+
+    it("creates points without the office's fields", async () => {
+      const ctx = await expectAllowed('api::contact.contact.create', {
+        method: 'POST',
+        body: { data: { name: 'X', contact_types: [4], multiowner: true, pickup_discount: 50 } },
+      });
+      expect(ctx.request.body.data).toEqual({ name: 'X', contact_types: [4], owner: ME });
+    });
+
+    it('deletes an incidence of her order only while it is open and less than a day old', async () => {
+      await expectAllowed('api::incidence.incidence.delete', { method: 'DELETE', numericId: 50 });
+      await expectRefused('api::incidence.incidence.delete', { method: 'DELETE', numericId: 52 });
+      await expectRefused('api::incidence.incidence.delete', { method: 'DELETE', numericId: 53 });
+      // an order delivered to her pickup point, not hers
+      await expectRefused('api::incidence.incidence.delete', { method: 'DELETE', numericId: 54 });
+    });
+  });
+
+  describe('populate and broad reads (issues/165)', () => {
+    const USER = 'plugin::users-permissions.user';
+    const contentTypes = {
+      [USER]: {
+        attributes: {
+          daily_dedications: { type: 'relation', target: 'api::daily-dedication.daily-dedication' },
+        },
+      },
+      'api::daily-dedication.daily-dedication': { attributes: {} },
+      'api::task.task': {
+        attributes: {
+          project: { type: 'relation', target: 'api::project.project' },
+          users_permissions_users: { type: 'relation', target: USER },
+        },
+      },
+      'api::project.project': {
+        attributes: {
+          received_invoices: { type: 'relation', target: 'api::received-invoice.received-invoice' },
+        },
+      },
+      'api::contact.contact': { attributes: {} },
+    };
+    const someone = () => ({
+      id: 3,
+      username: 'anna',
+      fullname: 'Anna',
+      email: 'anna@example.org',
+      ical: 'https://calendar.google.com/secret',
+      identity_number: '1',
+      naf: '2',
+      monthly_salary: 2000,
+      daily_dedications: [{ id: 1, monthly_salary: 2000 }],
+      permissions: [{ permission: 'hours' }],
+    });
+
+    it('a worker gets the people without salary, identity nor calendar', async () => {
+      setup({ permissions: { [ME]: ['hours'] }, contentTypes });
+      const ctx = makeCtx({ handler: 'user.find', info: { pluginName: 'users-permissions' } });
+      await run(ctx, [someone()]);
+      expect(ctx.body).toEqual([
+        {
+          id: 3,
+          username: 'anna',
+          fullname: 'Anna',
+          email: 'anna@example.org',
+          permissions: [{ permission: 'hours' }],
+        },
+      ]);
+    });
+
+    it('her own row keeps her calendar and identity (Hores dedicades, Registre jornades), not the salary', async () => {
+      setup({ permissions: { [ME]: ['hours'] }, contentTypes });
+      const ctx = makeCtx({ handler: 'user.find', info: { pluginName: 'users-permissions' } });
+      await run(ctx, [{ ...someone(), id: ME }]);
+      expect(ctx.body[0]).toMatchObject({ ical: 'https://calendar.google.com/secret', identity_number: '1', naf: '2' });
+      expect(ctx.body[0].monthly_salary).toBeUndefined();
+      expect(ctx.body[0].daily_dedications).toEqual([{ id: 1 }]);
+    });
+
+    it("a member gets only the people's names", async () => {
+      setup({ permissions: { [ME]: ['orders'] }, contentTypes });
+      const ctx = makeCtx({ handler: 'user.findOne', info: { pluginName: 'users-permissions' } });
+      await run(ctx, someone());
+      expect(ctx.body).toEqual({ id: 3, username: 'anna', fullname: 'Anna' });
+    });
+
+    it("a populated task brings neither the project's finances nor salaries", async () => {
+      setup({ permissions: { [ME]: ['hours'] }, contentTypes });
+      const ctx = makeCtx({ handler: 'api::task.task.find' });
+      await run(ctx, {
+        data: [
+          {
+            id: 1,
+            name: 'Tasca',
+            project: {
+              id: 2,
+              name: 'P',
+              balance: 5,
+              total_real_incomes: 9,
+              total_real_hours: 30,
+              received_invoices: [{ id: 4 }],
+            },
+            users_permissions_users: [someone()],
+          },
+        ],
+        meta: {},
+      });
+      expect(ctx.body.data[0].project).toEqual({ id: 2, name: 'P', total_real_hours: 30 });
+      expect(ctx.body.data[0].users_permissions_users[0].daily_dedications).toBeUndefined();
+      expect(ctx.body.data[0].users_permissions_users[0].monthly_salary).toBeUndefined();
+    });
+
+    it("leaves the full-access users' responses alone", async () => {
+      setup({ permissions: { [ME]: ['projects'] }, contentTypes });
+      const ctx = makeCtx({ handler: 'user.find', info: { pluginName: 'users-permissions' } });
+      await run(ctx, [someone()]);
+      expect(ctx.body[0].monthly_salary).toBe(2000);
+    });
+
+    it("narrows a member's contacts to the ones of «Punts d'entrega»", async () => {
+      setup({
+        permissions: { [ME]: ['orders'] },
+        contacts: {
+          [MY_CONTACT]: { id: MY_CONTACT, users_permissions_user: { id: ME } },
+          12: { id: 12, owner: { id: OTHER }, users_permissions_user: null },
+        },
+        orders: { 1: { id: 1, ...ORDER(ME, 8) } },
+        contentTypes,
+      });
+      const ctx = await expectAllowed('api::contact.contact.basic', { query: { _limit: '-1' } });
+      const { adaptQuery } = require('../src/services/query-adapter');
+      expect(adaptQuery(ctx.query).filters).toEqual({
+        $and: [
+          {
+            $or: [
+              { owner: { id: ME } },
+              { users_permissions_user: { id: ME } },
+              { multiowner: true },
+              { multidelivery: true },
+              { id: { $in: [8] } },
+            ],
+          },
+        ],
+      });
+      // another member's point (GET /contacts/:id answered any contact)
+      await expectRefused('api::contact.contact.findOne', { numericId: 12 });
+      await expectAllowed('api::contact.contact.findOne', { numericId: MY_CONTACT });
+    });
+
+    it('drops the office data of the contacts a member reads', async () => {
+      setup({ permissions: { [ME]: ['orders'] }, contentTypes });
+      const ctx = makeCtx({ handler: 'api::contact.contact.basic' });
+      await run(ctx, [{ id: 8, name: 'Botiga', partner_amount: 300, notes: 'n' }]);
+      expect(ctx.body).toEqual([{ id: 8, name: 'Botiga', notes: 'n' }]);
+    });
+
+    it('a worker gets only the names of the contacts', async () => {
+      setup({ permissions: { [ME]: ['hours'] }, contentTypes });
+      const ctx = makeCtx({ handler: 'api::contact.contact.basic' });
+      await run(ctx, [
+        { id: 8, name: 'Botiga', trade_name: 'B', nif: 'B1', email: 'a@b.c', partner_amount: 3 },
+      ]);
+      expect(ctx.body).toEqual([{ id: 8, name: 'Botiga', trade_name: 'B' }]);
+    });
+  });
+
+  describe('saved pivot views (issues/166)', () => {
+    const PIVOT = 'api::pivot-table-view.pivot-table-view';
+    const options = () => ({
+      permissions: { [ME]: ['hours'] },
+      rows: {
+        [PIVOT]: {
+          4: { id: 4, identifier: 'dedication-est-pivot' },
+          5: { id: 5, identifier: 'tresoreria-pivot' },
+        },
+      },
+    });
+    beforeEach(() => setup(options()));
+
+    it('lists only the views of her screens', async () => {
+      const ctx = await expectAllowed(`${PIVOT}.find`, { query: { identifier: 'tresoreria-pivot' } });
+      expect(ctx.query._where._and[0]).toEqual({
+        identifier_in: ['dedication-pivot', 'dedication-est-pivot'],
+      });
+    });
+
+    it('changes and deletes only those', async () => {
+      await expectAllowed(`${PIVOT}.update`, { method: 'PUT', numericId: 4, body: { data: { name: 'x' } } });
+      await expectRefused(`${PIVOT}.update`, { method: 'PUT', numericId: 5, body: { data: { name: 'x' } } });
+      await expectRefused(`${PIVOT}.delete`, { method: 'DELETE', numericId: 5 });
+      await expectRefused(`${PIVOT}.update`, {
+        method: 'PUT',
+        numericId: 4,
+        body: { data: { identifier: 'tresoreria-pivot' } },
+      });
+    });
+
+    it('creates views only for her screens', async () => {
+      await expectAllowed(`${PIVOT}.create`, {
+        method: 'POST',
+        body: { data: { identifier: 'dedication-est-pivot' } },
+      });
+      await expectRefused(`${PIVOT}.create`, {
+        method: 'POST',
+        body: { data: { identifier: 'tresoreria-pivot' } },
       });
     });
   });
