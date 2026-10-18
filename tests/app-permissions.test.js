@@ -412,10 +412,14 @@ describe('app permissions (issues/099)', () => {
         12: { id: 12, owner: { id: OTHER }, users_permissions_user: null },
       },
       orders: {
-        1: { id: 1, ...ORDER(ME, 8) },
-        2: { id: 2, ...ORDER(OTHER, 8) },
-        3: { id: 3, ...ORDER(OTHER, MY_CONTACT) },
-        4: { id: 4, ...ORDER(ME, 11) },
+        1: { id: 1, status: 'pending', ...ORDER(ME, 8) },
+        2: { id: 2, status: 'pending', ...ORDER(OTHER, 8) },
+        3: { id: 3, status: 'pending', ...ORDER(OTHER, MY_CONTACT) },
+        4: { id: 4, status: 'pending', ...ORDER(ME, 11) },
+        5: { id: 5, status: 'processed', ...ORDER(ME, 8) },
+        6: { id: 6, status: 'delivered', ...ORDER(ME, 8) },
+        13: { id: 13, status: 'invoiced', ...ORDER(ME, 8) },
+        14: { id: 14, status: 'cancelled', ...ORDER(ME, 8) },
       },
       incidences: { 50: { id: 50, order: { id: 1 } }, 51: { id: 51, order: { id: 2 } } },
     });
@@ -446,8 +450,29 @@ describe('app permissions (issues/099)', () => {
 
     it('matches no row when she has no contact, instead of dropping the filter', async () => {
       setup({ ...options(), contacts: {} });
-      const ctx = await expectAllowed('api::emitted-invoice.emitted-invoice.findBasic');
+      const ctx = await expectAllowed('api::received-income.received-income.findBasic');
       expect(ctx.query._where).toEqual({ _and: [{ 'contact.id_in': [-1] }] });
+    });
+
+    // issues/155 (2026-10-18): «Facturar» creates the drafts, and the member saw
+    // them («Esborrany») in her «Factures» right away, before the office
+    // checked and issued them.
+    it('leaves the draft invoices out of her «Factures» (issues/155)', async () => {
+      const ctx = await expectAllowed('api::emitted-invoice.emitted-invoice.findBasic', {
+        query: { _where: { 'emitted_gte': '2026-01-01' } },
+      });
+      const { adaptQuery } = require('../src/services/query-adapter');
+      expect(adaptQuery(ctx.query).filters).toEqual({
+        $and: [
+          {
+            $and: [
+              { contact: { id: { $in: [MY_CONTACT] } } },
+              { $or: [{ state: { $ne: 'draft' } }, { state: { $null: true } }] },
+            ],
+          },
+          { emitted: { $gte: '2026-01-01' } },
+        ],
+      });
     });
 
     it("refuses reading or changing another member's order", async () => {
@@ -470,6 +495,44 @@ describe('app permissions (issues/099)', () => {
         method: 'PUT',
         numericId: 1,
         body: { data: { owner: { id: OTHER } } },
+      });
+    });
+
+    // issues/144 (2026-10-18): the Comandes selection bar offered «Pendent» to
+    // members and the API didn't look at the order's status, so a member could
+    // bulk-reset processed, delivered or invoiced orders to Pendent. She may
+    // only cancel her own pending orders (what the order form lets her do).
+    describe('state changes (issues/144)', () => {
+      const put = (numericId, data) => ({ method: 'PUT', numericId, body: { data } });
+
+      it('cancels her own pending order', async () => {
+        await expectAllowed('api::order.order.update', put(1, { status: 'cancelled' }));
+      });
+
+      it('saves her pending order with its status unchanged', async () => {
+        await expectAllowed('api::order.order.update', put(1, { status: 'pending', units: 3 }));
+      });
+
+      it.each([
+        [5, 'pending'],
+        [6, 'pending'],
+        [13, 'pending'],
+        [14, 'pending'],
+        [5, 'cancelled'],
+        [13, 'delivered'],
+      ])('refuses moving order %s to %s', async (id, status) => {
+        await expectRefused('api::order.order.update', put(id, { status }));
+      });
+
+      it.each([['processed'], ['delivered'], ['invoiced']])(
+        'refuses setting her pending order to %s',
+        async (status) => {
+          await expectRefused('api::order.order.update', put(1, { status }));
+        },
+      );
+
+      it('still adds incidences to a processed order of hers', async () => {
+        await expectAllowed('api::order.order.update', put(5, { incidences: [1] }));
       });
     });
 

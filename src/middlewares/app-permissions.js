@@ -16,7 +16,8 @@
  *    entity's certificates.
  * 3. A member (`orders` only) is limited to her own orders: the ones she owns,
  *    plus the ones delivered to her own contact (her pickup point), on which
- *    she can only mark what was picked up. Incidences follow their order, and
+ *    she can only mark what was picked up. The only state change she makes is
+ *    cancelling a pending order of hers. Incidences follow their order, and
  *    her invoices are the ones addressed to her contact. She can't give an
  *    order or a contact to someone else, and only changes contacts she can see
  *    on «Punts d'entrega».
@@ -149,6 +150,17 @@ async function loadOrder(strapi, where) {
     .findOne({ where, populate: { owner: { select: ['id'] }, contact: { select: ['id'] } } });
 }
 
+/**
+ * A member changes the state of her own orders only to cancel a pending one
+ * (the order form's «Anul·la la comanda»); sending the status unchanged is
+ * fine (the form saves it). Processed, delivered, invoiced or cancelled orders
+ * are the office's: no going back to Pendent (issues/144).
+ */
+function memberMayChangeStatus(current, requested) {
+  if (requested === undefined || requested === null || requested === current) return true;
+  return current === 'pending' && requested === 'cancelled';
+}
+
 // ---------------------------------------------------------------------------
 // Member scopes: action -> (ctx, next, { strapi, userId }) handler
 // ---------------------------------------------------------------------------
@@ -170,8 +182,10 @@ async function scopeOrderRow(ctx, next, { strapi, userId }) {
     const payload = payloadOf(ctx);
     if (access === 'pickup') {
       if (Object.keys(payload).some((key) => !PICKUP_POINT_FIELDS.has(key))) throw forbidden();
-    } else if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId) {
-      throw forbidden();
+    } else {
+      if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
+        throw forbidden();
+      if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
     }
   }
   return next();
@@ -253,6 +267,27 @@ async function scopeIncidenceRow(ctx, next, { strapi, userId }) {
 async function scopeInvoiceList(ctx, next, { strapi, userId }) {
   const contactIds = idList(await memberContactIds(strapi, userId));
   narrowQuery(ctx, { 'contact.id_in': contactIds }, { contact: { id: { $in: contactIds } } });
+  return next();
+}
+
+/**
+ * Her emitted invoices, without the drafts: «Facturar» creates them and the
+ * office checks and issues them before she sees them (issues/155).
+ */
+async function scopeEmittedInvoiceList(ctx, next, { strapi, userId }) {
+  const contactIds = idList(await memberContactIds(strapi, userId));
+  // v3 spelling, read by the query adapter like the request's own `_where`
+  const notDraft = { _or: [{ 'state_ne': 'draft' }, { 'state_null': true }] };
+  narrowQuery(
+    ctx,
+    { _and: [{ 'contact.id_in': contactIds }, notDraft] },
+    {
+      $and: [
+        { contact: { id: { $in: contactIds } } },
+        { $or: [{ state: { $ne: 'draft' } }, { state: { $null: true } }] },
+      ],
+    },
+  );
   return next();
 }
 
@@ -422,7 +457,7 @@ const MEMBER_SCOPES = {
   [`${INCIDENCE}.findOne`]: scopeIncidenceRow,
   [`${INCIDENCE}.update`]: scopeIncidenceRow,
   [`${INCIDENCE}.delete`]: scopeIncidenceRow,
-  'api::emitted-invoice.emitted-invoice.findBasic': scopeInvoiceList,
+  'api::emitted-invoice.emitted-invoice.findBasic': scopeEmittedInvoiceList,
   'api::received-income.received-income.findBasic': scopeInvoiceList,
   [`${CONTACT}.create`]: scopeContactCreate,
   [`${CONTACT}.update`]: scopeContactUpdate,

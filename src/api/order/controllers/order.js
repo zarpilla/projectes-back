@@ -15,7 +15,7 @@ const fs = require('fs');
 const { resolvePdfLogo } = require('../../../services/pdf-logo');
 const crypto = require('crypto');
 const moment = require('moment');
-const { orderLineConcept } = require('../services/invoice-line-concept');
+const { orderLineConcept, invoiceConcept } = require('../services/invoice-line-concept');
 const sharp = require('sharp');
 const QRCode = require('qrcode');
 const { PDFDocument } = require('pdf-lib');
@@ -28,6 +28,7 @@ const { rawExecute } = require('../../../services/raw-sql');
 const { getMe } = require('../../../services/me-settings');
 const { numericId } = require('../../../middlewares/v3-compat');
 const { processIncidences } = require('../services/order-incidences');
+const { depositRefusal } = require('../services/deposit-guard');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 const TABLE_POPULATE = ['route', 'owner', 'contact', 'pickup', 'delivery_type', 'contact_legal_form'];
@@ -578,6 +579,10 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
     const body = ctx.request.body || {};
     const payload = body.data && typeof body.data === 'object' ? body.data : body;
+    // a delivered, invoiced or cancelled order can't be deposited (issues/149)
+    const refusal = await depositRefusal(numericId(ctx), payload);
+    if (refusal) return ctx.badRequest(refusal);
+
     const incidences = Array.isArray(payload.incidences) ? payload.incidences : null;
     if (incidences) delete payload.incidences;
 
@@ -713,10 +718,7 @@ async function invoiceRun(ctx) {
     uniqueOwners.map(async (owner) => {
       const contact = contactsByOwnerId[owner];
       const contactOrders = invoiceable.filter((o) => o.owner?.id === owner);
-      const firstDate = contactOrders[0]?.route_date || new Date();
-      const monthName = moment(firstDate).locale('ca').format('MMMM');
-      const yr = moment(firstDate).format('YYYY');
-      const documentConcept = `Serveis logístics ${monthName} ${yr}`;
+      const documentConcept = invoiceConcept(contactOrders);
 
       const invoice = await strapi.service('api::emitted-invoice.emitted-invoice').create({
         data: {
