@@ -117,8 +117,8 @@ const sendEmail = async (data, config, me) => {
 
   if (taskEmailAllowed(data.email, { me })) {
     const subject = hasFinalWarnings
-      ? '[ESSSTRAPIS] Resum de tasques - ÚLTIM AVÍS'
-      : '[ESSSTRAPIS] Resum de tasques';
+      ? '[ESSTRAPIS] Resum de tasques - ÚLTIM AVÍS'
+      : '[ESSTRAPIS] Resum de tasques';
 
     await strapi.plugin('email').service('email').send({
       to: data.email,

@@ -20,7 +20,7 @@ module.exports = {
     me.contact_form_email.split(',').forEach((email) => to.push(email));
     const from =
       strapi.config.get('plugin.email.config.settings.defaultFrom', '') || process.env.EMAIL_FROM || '';
-    const subject = '[ESSSTRAPIS] Contacte a través del formulari';
+    const subject = '[ESSTRAPIS] Contacte a través del formulari';
     const userData = await strapi.db
       .query('plugin::users-permissions.user')
       .findOne({ where: { id: relationId(data.user) } });

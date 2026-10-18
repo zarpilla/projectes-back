@@ -89,7 +89,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null) {
   if (action === 'created') actionLabel = 'creada';
   else if (fullIncidence.state === 'closed') actionLabel = 'tancada';
 
-  const subject = `[${me.name || 'ESSSTRAPIS'}] Incidència ${actionLabel} - Comanda #${order.id}`;
+  const subject = `[${me.name || 'ESSTRAPIS'}] Incidència ${actionLabel} - Comanda #${order.id}`;
 
   const stateLabels = { open: 'Oberta', wip: 'En Procés', closed: 'Tancada' };
 
@@ -123,7 +123,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null) {
     ${responsesHtml}
     <br>--<br>
     Missatge automàtic. Gràcies per la vostra atenció.<br>
-    ${me.name || 'ESSSTRAPIS'}<br>
+    ${me.name || 'ESSTRAPIS'}<br>
     --<br>`;
 
   await strapi.plugin('email').service('email').send({ to: recipients, from, subject, html });

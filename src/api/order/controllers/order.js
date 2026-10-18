@@ -447,6 +447,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
             detalls: [],
             legal,
             details: { parts },
+            // «Peu de les comandes» (Configuració general), under the issuer line
+            footer: me.order_footer,
           },
         },
       });

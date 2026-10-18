@@ -625,6 +625,32 @@ module.exports = class MicroinvoiceOrder {
       marginTop: _fontMargin,
       fontSize: 'small',
     });
+
+    this.generateOrderFooter();
+  }
+
+  /**
+   * «Peu de les comandes» (me.order_footer) under the issuer line. Bounded to
+   * the room left on the label and cut with an ellipsis: text that ran past the
+   * bottom would make PDFKit add pages (one page per box).
+   */
+  generateOrderFooter() {
+    const footer = (this.options.data.invoice.footer || '').toString().trim();
+    if (!footer) return;
+    const { marginLeft, marginRight } = this.options.style.document;
+    const top = this.storage.cursor.y + 2;
+    const height = this.document.page.height - top - 6;
+    if (height < this.options.style.text.smallSize) return;
+    this.document
+      .font(this.getFontOrFallback('normal', footer))
+      .fillColor(this.options.style.text.secondaryColor)
+      .fontSize(this.options.style.text.smallSize)
+      .text(this.valueOrTransliterate(footer), marginLeft, top, {
+        width: this.document.page.width - marginLeft - marginRight,
+        height,
+        ellipsis: true,
+      });
+    this.storage.cursor.y = this.document.y;
   }
 
   /**
