@@ -453,6 +453,8 @@ const MEMBER_SCOPES = {
   [`${ORDER}.createCSV`]: scopeOrderCsv,
   [`${ORDER}.pdfmultiple`]: scopeOrderPdf,
   [`${ORDER}.table`]: scopeOrderTable,
+  // the figures over the member's own orders, like the list (issues/177)
+  [`${ORDER}.totals`]: scopeOrderList,
   [`${INCIDENCE}.find`]: scopeIncidenceList,
   [`${INCIDENCE}.findOne`]: scopeIncidenceRow,
   [`${INCIDENCE}.update`]: scopeIncidenceRow,

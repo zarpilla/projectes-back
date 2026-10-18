@@ -24,6 +24,12 @@ module.exports = {
       path: '/orders/table',
       handler: 'order.table',
     },
+    // issues/177: the figures above the orders list, over every matching order
+    {
+      method: 'GET',
+      path: '/orders/totals',
+      handler: 'order.totals',
+    },
     {
       method: 'GET',
       path: '/orders/infoall',

@@ -123,6 +123,7 @@ allow(
     'create',
     'update',
     'table',
+    'totals',
     'checkMultidelivery',
     'collectionPointRoutes',
     'createCSV',

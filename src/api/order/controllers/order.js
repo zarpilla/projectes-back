@@ -36,6 +36,7 @@ const { processIncidences } = require('../services/order-incidences');
 const { depositRefusal } = require('../services/deposit-guard');
 const { addContactSnapshot } = require('../services/contact-snapshot');
 const changeLog = require('../../../services/change-log');
+const { orderTotals, TOTALS_SELECT } = require('../services/order-totals');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 // collection_point and route_rate: the quick edit picks the rate with them; an
@@ -139,6 +140,20 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     // `finalPrice`. v3 got it from an afterFind hook that ran on every query;
     // without this the column showed "?" on every row.
     return applyFinalPriceToAll(entities);
+  },
+
+  /**
+   * GET /api/orders/totals — the figures above the orders list over every
+   * order matching the same filters as /orders/table, not one page (issues/177).
+   */
+  async totals(ctx) {
+    const opts = adaptQuery(ctx.query);
+    const rows = await strapi.db.query('api::order.order').findMany({
+      where: opts.filters || {},
+      select: TOTALS_SELECT,
+      populate: { pickup: { select: ['id', 'pickup'] } },
+    });
+    return orderTotals(rows);
   },
 
   /**
