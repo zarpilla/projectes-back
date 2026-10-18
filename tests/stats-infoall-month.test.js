@@ -79,4 +79,11 @@ describe('GET /api/incidences/infoall', () => {
     expect(whereDates(calls[0].where)).toContain('2026-10-01');
     expect(whereDates(calls[0].where)).toContain('2026-10-31');
   });
+
+  it('gives the member and route ids, not the populated relations', async () => {
+    const order = { id: 9, owner: { id: 58, fullname: 'Muda' }, route: { id: 4, short_name: 'DT - MARESME' } };
+    const { ctrl } = load('incidence', [{ id: 5, state: 'closed', createdAt: '2026-10-12T10:00:00.000Z', order }]);
+    const [row] = await ctrl.infoAll({ query: { _limit: '-1' } });
+    expect(row).toMatchObject({ owner: '58', owner_name: 'Muda', route: '4', route_name: 'DT - MARESME' });
+  });
 });

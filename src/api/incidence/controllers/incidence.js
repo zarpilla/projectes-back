@@ -75,11 +75,12 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
       return {
         id: incidence.id,
         count: 1,
-        owner: incidence.order?.owner ? `${incidence.order.owner}` : 'Sense sòcia',
+        // the ids, as v3 gave them (the populated relation printed «[object Object]» in the Excel export)
+        owner: incidence.order?.owner ? `${incidence.order.owner.id}` : 'Sense sòcia',
         owner_name: incidence.order?.owner?.fullname || incidence.order?.owner?.username || 'Sense sòcia',
         created_user: incidence.created_user?.fullname || incidence.created_user?.username || 'Desconegut',
         created_user_id: incidence.created_user?.id || null,
-        route: incidence.order?.route ? `${incidence.order.route}` : 'Sense ruta',
+        route: incidence.order?.route ? `${incidence.order.route.id}` : 'Sense ruta',
         route_name: incidence.order?.route?.short_name || incidence.order?.route?.name || 'Sense ruta',
         state: incidence.state === 'open' ? 'Oberta' : 'Tancada',
         state_raw: incidence.state,
