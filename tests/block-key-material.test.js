@@ -24,7 +24,8 @@ function run(path) {
   return { result: handler(ctx, next), ctx, next, strapi };
 }
 
-const BLOCKED = ['p12', 'pfx', 'pem', 'key', 'jks', 'p8', 'p7b', 'p7s', 'asc', 'gpg', 'der', 'crt', 'cer'];
+// json: the Google service-account credentials (issues/159)
+const BLOCKED = ['p12', 'pfx', 'pem', 'key', 'jks', 'p8', 'p7b', 'p7s', 'asc', 'gpg', 'der', 'crt', 'cer', 'json'];
 const SERVED = ['pdf', 'png', 'jpg', 'csv', 'docx', 'xlsx', 'txt', 'svg'];
 
 describe('block-key-material', () => {

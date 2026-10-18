@@ -12,7 +12,8 @@ const { decryptSecret } = require('../../../services/secret-crypto');
 const axios = require('axios');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
-const { getMe } = require('../../../services/me-settings');
+const { getMe, tokenFlags } = require('../../../services/me-settings');
+const { isAppAdmin } = require('../../../services/app-permissions');
 const { ticketsConfig, buildTicketsLoginUrl } = require('../../../services/tickets-sso');
 const { docsConfig, buildDocsLoginUrl } = require('../../../services/docs-sso');
 
@@ -22,7 +23,18 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
   // v5-native queries pass through untouched.
   async find(ctx) {
     adaptCtxQuery(ctx);
-    return super.find(ctx);
+    const response = await super.find(ctx);
+    // only Configuració general (admins) needs to know which tokens are set
+    const data = response && response.data;
+    // key material stays out of the API, for admins too: certificates are
+    // managed through /api/certificates, read from disk only (issues/159)
+    if (data && typeof data === 'object') {
+      for (const field of ['face_certificate', 'google_credentials']) delete (data.attributes || data)[field];
+    }
+    if (data && typeof data === 'object' && ctx.state?.user && (await isAppAdmin(ctx.state.user.id))) {
+      Object.assign(data.attributes || data, await tokenFlags());
+    }
+    return response;
   },
 
   /**

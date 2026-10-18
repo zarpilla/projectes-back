@@ -10,7 +10,7 @@
  * update override). NOTE: v5 lifecycle modules may only export hook functions.
  */
 const updater = require('../../utils/updater');
-const { getMe } = require('../../../../services/me-settings');
+const { getMe, getFrontUrl } = require('../../../../services/me-settings');
 
 const INCIDENCE = 'api::incidence.incidence';
 // The logistics office: who answers incidences and is e-mailed about replies.
@@ -138,8 +138,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null, replyCoun
     return;
   }
 
-  const config = await strapi.documents('api::config.config').findFirst();
-  const frontUrl = config && config.front_url ? config.front_url : '';
+  const frontUrl = await getFrontUrl();
 
   const order = fullIncidence.order;
   const orderOwner = order.owner;

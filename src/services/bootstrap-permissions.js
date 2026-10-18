@@ -145,7 +145,9 @@ async function importSeedPermissions() {
       'totalByDay',
       'getForCalendar',
     ],
-    'activity-type': ['create', 'find', 'getBasic'],
+    // issues/159: the auxiliary tables edited from Administració (writes guarded
+    // by isAdmin on the route or by services/app-access-rules.js)
+    'activity-type': ['create', 'find', 'findOne', 'update', 'delete', 'getBasic'],
     'emitted-invoice': [
       'create',
       'find',
@@ -199,7 +201,7 @@ async function importSeedPermissions() {
     'festive-type': ['find', 'findOne', 'create', 'update', 'delete'],
     festive: ['create', 'find', 'findOne', 'update', 'delete'],
     'daily-dedication': ['create', 'find', 'findOne', 'update', 'delete'],
-    'document-type': ['find', 'findOne'],
+    'document-type': ['find', 'findOne', 'create', 'update', 'delete'],
     regions: ['find', 'findOne'],
     task: ['create', 'find', 'findOne', 'update', 'delete', 'hours'],
     'task-comment': ['create', 'find', 'findOne', 'update', 'delete'],
@@ -210,7 +212,7 @@ async function importSeedPermissions() {
     'kanban-view': ['create', 'find', 'findOne', 'update', 'delete'],
     justifications: ['create', 'find', 'findOne', 'update', 'delete'],
     'workday-log': ['create', 'find', 'findOne', 'update', 'delete'],
-    product: ['find', 'findOne'],
+    product: ['find', 'findOne', 'create', 'update', 'delete'],
     'user-festive': ['find', 'create', 'findOne', 'update', 'delete'],
     orders: [
       'create',
@@ -227,29 +229,33 @@ async function importSeedPermissions() {
       'table',
     ],
     'orders-imports': ['create', 'find', 'findOne', 'update'],
-    'delivery-type': ['find'],
-    pickups: ['find'],
+    'delivery-type': ['find', 'findOne', 'create', 'update', 'delete'],
+    pickups: ['find', 'findOne', 'create', 'update', 'delete'],
     // «Rutes i punts › Rutes» (issues/141): orders_admin writes (app-access-rules); never deleted
     route: ['find', 'findOne', 'create', 'update'],
     // Taules auxiliars › Tarifes de ruta (issues/139): writes admin-only (isAdmin policy)
     'route-rate': ['find', 'findOne', 'create', 'update', 'delete'],
-    city: ['find', 'findOne', 'create'],
+    city: ['find', 'findOne', 'create', 'update', 'delete'],
     'city-route': ['find', 'findOne', 'create', 'delete', 'basic'],
-    'form-submission': ['create'],
+    'form-submission': ['create', 'find', 'findOne'],
     'route-festive': ['find', 'findOne', 'create', 'delete'],
     'project-phases': ['find', 'findOne', 'create', 'update', 'delete'],
     'project-original-phases': ['find', 'findOne', 'create', 'update', 'delete', 'findWithHours'],
     'estimated-hours': ['find', 'findOne', 'create', 'update', 'delete'],
     'phase-income': ['find', 'findAssigned'],
     'phase-expense': ['find', 'findAssigned'],
-    verifactu: ['find'], // single-type: no findOne route in v5
+    // single-type: no findOne route in v5. `update` is admin only (isAdmin on
+    // the route); without it «Verifactu» in the app could not save (ticket 159).
+    verifactu: ['find', 'update'],
     'verifactu-declaration': ['find', 'findOne', 'create'],
     'verifactu-chain': ['find', 'findOne', 'create', 'update', 'delete'],
     'face-queue': ['find', 'findOne', 'create', 'update', 'delete', 'checkStatus', 'verifySetup'],
     'pivot-table-view': ['find', 'findOne', 'create', 'update', 'delete'],
     'bank-accounts': ['find', 'findOne', 'create', 'update', 'delete'],
     incidences: ['create', 'find', 'findOne', 'update', 'delete', 'infoAll'],
-    'vat-type': ['find'],
+    'vat-type': ['find', 'findOne', 'create', 'update', 'delete'],
+    // «Logos» (Administració): the supporters shown on the login page and the menu
+    logos: ['find', 'findOne', 'create', 'update', 'delete'],
     'contact-type': ['create', 'find', 'findOne', 'update', 'delete'],
     'dedication-type': ['create', 'find', 'findOne', 'update', 'delete'],
     'expense-type': ['create', 'find', 'findOne', 'update', 'delete'],
@@ -266,6 +272,8 @@ async function importSeedPermissions() {
     strategy: ['create', 'find', 'findOne', 'update', 'delete'],
     year: ['create', 'find', 'findOne', 'update', 'delete'],
     'entity-metadata': ['adminEntities'],
+    // AEAT and FACe certificates, admin only (isAdmin on the routes, ticket 159)
+    certificate: ['status', 'replace', 'remove'],
     me: ['find', 'update', 'dir3SearchNif', 'dir3SearchName', 'ticketsLogin', 'docsLogin'],
     // users-permissions plugin actions for authenticated users
     // (merged into the SAME call because updateRole REPLACES the role's set)

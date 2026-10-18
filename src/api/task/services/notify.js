@@ -12,7 +12,7 @@
  * Configuració general and TASK_EMAIL_TO. Nobody is told about their own actions.
  */
 const { taskEmailAllowed } = require('./email-gate');
-const { getMe } = require('../../../services/me-settings');
+const { getMe, frontUrlOf } = require('../../../services/me-settings');
 
 const UID = 'api::task-notification.task-notification';
 const MAX_ATTEMPTS = 3;
@@ -162,7 +162,7 @@ async function processQueue(now = new Date()) {
   let sent = 0;
   const me = await getMe();
   const config = await strapi.documents('api::config.config').findFirst();
-  const frontUrl = (config && config.front_url) || '';
+  const frontUrl = frontUrlOf(me, config);
   const from = strapi.config.get('plugin.email.config.settings.defaultFrom', '') || process.env.EMAIL_FROM || '';
   for (const { recipient, notices } of groups) {
     if (!taskEmailAllowed(recipient.email, { me })) continue;

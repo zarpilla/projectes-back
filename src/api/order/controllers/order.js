@@ -30,7 +30,7 @@ const {
 const { adaptQuery, adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { statsDateRange } = require('../../../services/stats-date-range');
 const { rawExecute } = require('../../../services/raw-sql');
-const { getMe } = require('../../../services/me-settings');
+const { getMe, frontUrlOf } = require('../../../services/me-settings');
 const { numericId } = require('../../../middlewares/v3-compat');
 const { processIncidences } = require('../services/order-incidences');
 const { depositRefusal } = require('../services/deposit-guard');
@@ -337,7 +337,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     });
 
     const me = await getMe();
-    const config = await strapi.documents('api::config.config').findFirst();
+    const frontUrl = frontUrlOf(me, await strapi.documents('api::config.config').findFirst());
 
     const qrWidth = 96;
     const logoWidth = 100;
@@ -346,7 +346,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
     const urls = [];
     for (const order of ordersEntities) {
-      const qrCodeImage = await QRCode.toDataURL(`${config.front_url}order/view/${order.id}`);
+      const qrCodeImage = await QRCode.toDataURL(`${frontUrl}order/view/${order.id}`);
       const contacts = await strapi.db.query('api::contact.contact').findMany({
         where: { users_permissions_user: order.owner?.id },
       });

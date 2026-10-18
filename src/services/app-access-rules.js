@@ -142,6 +142,12 @@ allow(api('city-route'), WRITE, STAFF);
 allow(api('route-festive'), WRITE, STAFF);
 // «Rutes i punts › Rutes» (issues/141): the office creates and disables routes
 allow(api('route'), ['create', 'update'], ORDERS_ADMIN);
+// «Taules auxiliars › Logística» (issues/159): the office keeps the pickup
+// points, the delivery types and the towns (a town in use can't be deleted:
+// api/city lifecycles)
+allow(api('pickup'), WRITE, ORDERS_ADMIN);
+allow(api('delivery-type'), WRITE, ORDERS_ADMIN);
+allow(api('city'), ['update', 'delete'], ORDERS_ADMIN);
 // «Facturar comandes»: the project's last invoices; the contact form's DIR3 search
 allow(api('emitted-invoice'), ['find'], ORDERS_ADMIN);
 allow(api('me'), ['dir3SearchNif', 'dir3SearchName'], ORDERS_ADMIN);
