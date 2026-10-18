@@ -25,6 +25,7 @@ const { repairCollectionOrderRates } = require('./services/repair-collection-ord
 const { refreshUnifiedOrderSnapshots } = require('./services/refresh-unified-order-snapshots');
 const { frontUrlsWithoutHash } = require('./services/front-urls-without-hash');
 const { clearQuotePreviewLinks } = require('./services/clear-quote-preview-links');
+const { padFourDigitPostcodes } = require('./services/pad-four-digit-postcodes');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
@@ -137,6 +138,8 @@ module.exports = {
       ['frontUrlsWithoutHash', frontUrlsWithoutHash, { runOnce: true }],
       // issues/160: quotes kept a link to the front's removed quote preview as their PDF.
       ['clearQuotePreviewLinks', clearQuotePreviewLinks, { runOnce: true }],
+      // issues/179: contacts loaded from a spreadsheet lost the leading zero of their postcode.
+      ['padFourDigitPostcodes', padFourDigitPostcodes, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
