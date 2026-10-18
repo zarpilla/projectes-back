@@ -64,7 +64,11 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
   const activities = await strapi.db.query('api::activity.activity').findMany({
     where: {
       date: { $gte: `${targetYear}-01-01`, $lte: `${targetYear}-12-31` },
-      ...(stateFilteredProjectIds ? { project: { $in: stateFilteredProjectIds } } : {}),
+      // the hours without a project (iCal imports not assigned yet) are worked
+      // hours too, whatever the state filter (issues/174)
+      ...(stateFilteredProjectIds
+        ? { $or: [{ project: { $in: stateFilteredProjectIds } }, { project: { id: { $null: true } } }] }
+        : {}),
     },
     populate: {
       project: { populate: { project_type: true, project_likelihood: true } },

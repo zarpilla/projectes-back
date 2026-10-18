@@ -74,24 +74,21 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
 
   /**
    * GET /api/activities/total-by-day
-   * Groups activities by date, summing hours (only for activities tied to a project).
+   * Groups activities by date, summing their hours. The ones without a project
+   * (iCal imports not assigned yet) count too: they are worked hours, and
+   * Saldo d'hores and Bestretes came out lower than Hores dedicades (issues/174).
    */
   async totalByDay(ctx) {
     const opts = adaptQuery(ctx.query);
     const activities = await strapi.db.query('api::activity.activity').findMany({
       where: opts.filters || {},
-      populate: { project: { select: ['id'] } },
+      select: ['hours', 'date'],
       limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
     });
 
-    const byDay = activities.map((a) => ({
-      hours: a.project && a.project.id ? a.hours : 0,
-      date: a.date,
-    }));
-
-    return _(byDay)
+    return _(activities)
       .groupBy('date')
       .map((rows, date) => ({ date, hours: _.sumBy(rows, 'hours') }))
       .value();
