@@ -24,6 +24,7 @@ const { backfillTransferDestinations } = require('./services/backfill-transfer-d
 const { repairCollectionOrderRates } = require('./services/repair-collection-order-rates');
 const { refreshUnifiedOrderSnapshots } = require('./services/refresh-unified-order-snapshots');
 const { frontUrlsWithoutHash } = require('./services/front-urls-without-hash');
+const { clearQuotePreviewLinks } = require('./services/clear-quote-preview-links');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -127,6 +128,8 @@ module.exports = {
       ['refreshUnifiedOrderSnapshots', refreshUnifiedOrderSnapshots, { runOnce: true }],
       // issues/158: the front's URLs lost the "#/"; so do the links the API sends.
       ['frontUrlsWithoutHash', frontUrlsWithoutHash, { runOnce: true }],
+      // issues/160: quotes kept a link to the front's removed quote preview as their PDF.
+      ['clearQuotePreviewLinks', clearQuotePreviewLinks, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
