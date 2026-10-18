@@ -58,6 +58,8 @@ const getYearsInfo = async () => {
  * Pay VAT on a set of documents. Uses parameter-bound rawExecute (R11 fix —
  * the v3 string-interpolation SQL injection is gone).
  */
+const VAT_FIELDS = ['vat_paid_date', 'deductible_vat_pct'];
+
 const payEntity = async (documents, entitySlug, vatPaidDate, deductibleVatPct, years) => {
   const table = ENTITY_TABLE[entitySlug];
   if (!table) throw new Error(`Unknown entity: ${entitySlug}`);
@@ -69,17 +71,18 @@ const payEntity = async (documents, entitySlug, vatPaidDate, deductibleVatPct, y
       ? years.find((y) => String(y.year) === String(emittedYear))?.deductible_vat_pct || deductibleVatPct
       : 100;
 
-    // The raw UPDATE skips the document service, so the change log is fed here.
+    // The raw UPDATE skips the document service, so the change log is fed
+    // here, reading only the two fields it writes (not the lines, issues/161).
     const uid = ENTITY_UID[entitySlug];
     const before = changeLog.isTracked(uid)
-      ? await changeLog.snapshot(uid, { id: doc.id }).catch(() => null)
+      ? await changeLog.rowWith(uid, { id: doc.id }, VAT_FIELDS).catch(() => null)
       : null;
     await rawExecute(strapi, `UPDATE ${table} SET vat_paid_date = ?, deductible_vat_pct = ? WHERE id = ?`, [
       vatPaidDate,
       deductibleVatPctYear,
       doc.id,
     ]);
-    await changeLog.logRawUpdate(uid, before);
+    await changeLog.logRawUpdate(uid, before, VAT_FIELDS);
     totalVat += (doc.total_vat * deductibleVatPctYear) / 100.0;
   }
   return totalVat;

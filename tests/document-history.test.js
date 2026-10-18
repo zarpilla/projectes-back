@@ -147,6 +147,21 @@ describe('line changes, line by line (issues/161)', () => {
   });
 });
 
+describe('VAT payment (raw UPDATE) reads only what it writes (issues/161)', () => {
+  it('reads and compares just the VAT fields, not the lines', async () => {
+    const before = { id: 7, code: 'F-0007', vat_paid_date: null, total: '1.00' };
+    const after = { id: 7, code: 'F-0007', vat_paid_date: '2026-10-18T00:00:00.000Z', total: '2.00' };
+    const { logs, findOne } = mockStrapi({ rows: [after] });
+    global.strapi.contentTypes[EMITTED].attributes = { ...ATTRIBUTES, vat_paid_date: { type: 'datetime' } };
+
+    await changeLog.logRawUpdate(EMITTED, before, ['vat_paid_date', 'deductible_vat_pct']);
+
+    expect(findOne).toHaveBeenCalledWith({ where: { id: 7 }, populate: {} });
+    // total moved too, but the VAT payment did not write it
+    expect(logs[0].changes).toEqual([{ field: 'vat_paid_date', from: null, to: '2026-10-18T00:00:00.000Z' }]);
+  });
+});
+
 describe('tracked documents and authors (issues/161)', () => {
   it.each([
     ['api::received-income.received-income', 'received-income'],

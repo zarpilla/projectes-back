@@ -461,12 +461,14 @@ function registerOrderRowWrites() {
 /**
  * For writes made outside the document service (raw SQL). Call with the row
  * snapshot taken before the write; the change is diffed against the row now.
+ * `fields`: the only ones the write touches (read just those, e.g. with
+ * rowWith: the VAT payment of a quarter must not read every line, issues/161).
  */
-async function logRawUpdate(uid, before) {
+async function logRawUpdate(uid, before, fields = null) {
   if (!isTracked(uid) || !before) return;
   try {
-    const after = await snapshot(uid, { id: before.id });
-    const changes = diff(uid, before, after);
+    const after = fields ? await rowWith(uid, { id: before.id }, fields) : await snapshot(uid, { id: before.id });
+    const changes = diff(uid, before, after, fields);
     if (changes.length > 0) await record(uid, { action: 'update', row: after || before, changes });
   } catch (error) {
     report(error, uid, 'update');
@@ -669,6 +671,7 @@ module.exports = {
   TRACKED,
   isTracked,
   snapshot,
+  rowWith,
   diff,
   summarize,
   changeLogMiddleware,
