@@ -14,7 +14,7 @@
  */
 
 const STORE = { type: 'plugin', name: 'users-permissions' };
-const FRONT_RESET_PATH = '/stats/#/reset-password';
+const FRONT_RESET_PATH = '/stats/reset-password';
 
 function resetPasswordUrl() {
   if (process.env.RESET_PASSWORD_URL) return process.env.RESET_PASSWORD_URL;
