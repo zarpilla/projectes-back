@@ -35,7 +35,11 @@ const { numericId } = require('../../../middlewares/v3-compat');
 const { processIncidences } = require('../services/order-incidences');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
-const TABLE_POPULATE = ['route', 'owner', 'contact', 'pickup', 'delivery_type', 'contact_legal_form'];
+// collection_point and route_rate: the quick edit picks the rate with them; an
+// order picked up at a farm through a collection point looked like a farm
+// pickup without one and got no rate (issues/151)
+const TABLE_POPULATE = ['route', 'owner', 'contact', 'pickup', 'delivery_type', 'contact_legal_form', 'route_rate'];
+const TABLE_POPULATE_SELECT = { collection_point: { select: ['id'] } };
 
 /**
  * Enforce the next-day cutoff: orders targeting tomorrow's delivery cannot be
@@ -117,10 +121,13 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     const opts = adaptQuery(ctx.query);
     const entities = await strapi.db.query('api::order.order').findMany({
       where: opts.filters || {},
-      populate: TABLE_POPULATE.reduce((acc, p) => {
-        acc[p] = true;
-        return acc;
-      }, {}),
+      populate: TABLE_POPULATE.reduce(
+        (acc, p) => {
+          acc[p] = true;
+          return acc;
+        },
+        { ...TABLE_POPULATE_SELECT },
+      ),
       limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,

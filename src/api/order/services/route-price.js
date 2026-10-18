@@ -115,4 +115,70 @@ const fillMissingPrice = async (data, previousOrder = null) => {
   data.price = Math.round(calculatePriceFromRouteRate(routeRate, kilograms, pickupLines) * 100) / 100;
 };
 
-module.exports = { calculatePriceFromRouteRate, fillMissingPrice };
+const idOf = (value) => (value && typeof value === 'object' ? value.id : value);
+
+// A warehouse is a pickup point with `pickup` false (the member brings the
+// boxes); `pickup` true is a farm pickup. Without the flag, the id the code
+// was written for: 1, Magatzem Girona (issues/151).
+const isWarehousePickup = (pickup) =>
+  pickup && typeof pickup === 'object' && typeof pickup.pickup === 'boolean'
+    ? !pickup.pickup
+    : idOf(pickup) === 1;
+
+/**
+ * The rate of a collection order: the rates of its route (or of every route),
+ * of a warehouse or of no pickup, and of its delivery type (or of any). Several
+ * matches resolve deterministically: route-specific first, then the one of
+ * the delivery type, then the lowest id (issues/151).
+ */
+const pickCollectionOrderRouteRate = (rates, { routeId, deliveryTypeId = null } = {}) => {
+  const routesOf = (r) => (Array.isArray(r.routes) ? r.routes : []);
+  const candidates = (rates || []).filter((r) => {
+    if (!r) return false;
+    const routes = routesOf(r);
+    if (routes.length && !routes.some((rt) => idOf(rt) === routeId)) return false;
+    if (r.pickup && !isWarehousePickup(r.pickup)) return false;
+    if (deliveryTypeId && r.delivery_type && idOf(r.delivery_type) !== deliveryTypeId) return false;
+    return true;
+  });
+  const rank = (r) => [
+    routesOf(r).length ? 0 : 1,
+    deliveryTypeId && r.delivery_type ? 0 : 1,
+    Number(r.id) || 0,
+  ];
+  candidates.sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+    return 0;
+  });
+  return candidates[0] || null;
+};
+
+/**
+ * Reads the rates with the relations the selection compares: without the
+ * populate `routes` and `pickup` were absent, every rate looked like one for
+ * every route and the first row of the table won (issues/151).
+ */
+const findCollectionOrderRouteRate = async (collectionOrder) => {
+  if (!collectionOrder || !collectionOrder.route) return null;
+  const rates = await strapi.db.query('api::route-rate.route-rate').findMany({
+    populate: {
+      routes: { select: ['id'] },
+      pickup: { select: ['id', 'pickup'] },
+      delivery_type: { select: ['id'] },
+    },
+  });
+  return pickCollectionOrderRouteRate(rates, {
+    routeId: idOf(collectionOrder.route),
+    deliveryTypeId: idOf(collectionOrder.delivery_type) || null,
+  });
+};
+
+module.exports = {
+  calculatePriceFromRouteRate,
+  fillMissingPrice,
+  isWarehousePickup,
+  pickCollectionOrderRouteRate,
+  findCollectionOrderRouteRate,
+};
