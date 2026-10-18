@@ -11,7 +11,11 @@
 const _ = require('lodash');
 const moment = require('moment');
 const { relationId } = require('../../../../services/relation-input');
-const { calculatePriceFromRouteRate, fillMissingPrice } = require('../../services/route-price');
+const {
+  calculatePriceFromRouteRate,
+  fillMissingPrice,
+  findCollectionOrderRouteRate,
+} = require('../../services/route-price');
 const { getMe } = require('../../../../services/me-settings');
 
 /**
@@ -1034,7 +1038,7 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   // contact, route and delivery_type all have to be populated: `contact` is
   // dereferenced below to refresh the pickup discount (unpopulated it read as
   // undefined and the discount was rewritten to 0), and
-  // calculateCollectionOrderRouteRate returns early on `!collectionOrder.route`
+  // findCollectionOrderRouteRate returns early on `!collectionOrder.route`
   // — which is why these collection orders ended up with price NULL.
   const collectionOrder = await strapi.db.query('api::order.order').findOne({
     where: { id: collectionOrderId },
@@ -1115,7 +1119,7 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   // const concatenatedComments = commentsArray.join('\n');
 
   // Calculate route rate excluding "Pickup" rates
-  const routeRate = await calculateCollectionOrderRouteRate(collectionOrder, totalKilograms);
+  const routeRate = await findCollectionOrderRouteRate(collectionOrder);
 
   // Update collection order with aggregates
   const updateData = {
@@ -1139,57 +1143,6 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
 /**
  * Calculate route rate for collection order (excluding "Pickup" rates)
  */
-const calculateCollectionOrderRouteRate = async (collectionOrder, kilograms) => {
-  if (!collectionOrder.route) {
-    return null;
-  }
-
-  const routeId =
-    typeof collectionOrder.route === 'object' ? collectionOrder.route.id : collectionOrder.route;
-  const deliveryTypeId = collectionOrder.delivery_type
-    ? typeof collectionOrder.delivery_type === 'object'
-      ? collectionOrder.delivery_type.id
-      : collectionOrder.delivery_type
-    : null;
-
-  // Get all route rates
-  let routeRates = await strapi.db.query('api::route-rate.route-rate').findMany({ where: {} });
-
-  // Filter by route (rates that apply to this route or all routes)
-  routeRates = routeRates.filter((r) => {
-    if (!r.routes || r.routes.length === 0) return true;
-    return r.routes.some((rt) => {
-      const rtId = typeof rt === 'object' ? rt.id : rt;
-      return rtId === routeId;
-    });
-  });
-
-  // Exclude rates with pickup (we want rates without pickup or with pickup ID 1 "No Pickup")
-  routeRates = routeRates.filter((r) => {
-    if (!r.pickup) return true; // No pickup specified = applies to all
-    const pickupId = typeof r.pickup === 'object' ? r.pickup.id : r.pickup;
-    return pickupId === 1; // Only accept "No Pickup" rates
-  });
-
-  // Filter by delivery type
-  if (deliveryTypeId) {
-    routeRates = routeRates.filter((r) => {
-      if (!r.delivery_type) return true;
-      const dtId = typeof r.delivery_type === 'object' ? r.delivery_type.id : r.delivery_type;
-      return dtId === deliveryTypeId;
-    });
-  }
-
-  // Prefer rates specific to the route over general rates
-  let specificRates = routeRates.filter((r) => r.routes && r.routes.length > 0);
-  if (specificRates.length > 0) {
-    return specificRates[0];
-  }
-
-  // Return first available rate
-  return routeRates.length > 0 ? routeRates[0] : null;
-};
-
 const updateMultideliveryDiscountForOrders = async (orders, me, ownerFactor = 1) => {
   const discountToApply = ownerFactor * (me.orders_options?.multidelivery_discount || 0);
 

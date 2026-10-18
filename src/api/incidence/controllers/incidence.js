@@ -11,6 +11,19 @@ const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { statsDateRange } = require('../../../services/stats-date-range');
 const { setCurrentUserId } = require('../utils/updater');
 
+// What the v3 default `populate=*` gives, plus the author of every reply: `*`
+// reaches the incidence_response component but not the user relation inside
+// it, so the replies showed «Usuari desconegut» (issues/154).
+const USER_FIELDS = { fields: ['id', 'username', 'fullname'] };
+const FIND_ONE_POPULATE = {
+  created_user: USER_FIELDS,
+  closed_user: USER_FIELDS,
+  order: true,
+  incidence_response: { populate: { user: USER_FIELDS } },
+};
+
+const STATE_LABELS = { open: 'Oberta', wip: 'En procés', closed: 'Tancada' };
+
 module.exports = createCoreController('api::incidence.incidence', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
   // and flat field operators to native v5 params before core handling.
@@ -18,6 +31,17 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
   async find(ctx) {
     adaptCtxQuery(ctx);
     return super.find(ctx);
+  },
+
+  /**
+   * GET /api/incidences/:id — with the author of each reply (issues/154). A
+   * populate the caller asked for is kept.
+   */
+  async findOne(ctx) {
+    if (ctx.state && ctx.state.v3DefaultPopulate) {
+      ctx.query = { ...ctx.query, populate: FIND_ONE_POPULATE };
+    }
+    return super.findOne(ctx);
   },
 
   /**
@@ -82,7 +106,8 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
         created_user_id: incidence.created_user?.id || null,
         route: incidence.order?.route ? `${incidence.order.route.id}` : 'Sense ruta',
         route_name: incidence.order?.route?.short_name || incidence.order?.route?.name || 'Sense ruta',
-        state: incidence.state === 'open' ? 'Oberta' : 'Tancada',
+        // «En procés» was labelled «Tancada» (issues/154)
+        state: STATE_LABELS[incidence.state] || 'Oberta',
         state_raw: incidence.state,
         created_at: createdAt ? createdAt.format('YYYY-MM-DD') : null,
         closed_date: incidence.closed_date ? moment(incidence.closed_date).format('YYYY-MM-DD') : null,

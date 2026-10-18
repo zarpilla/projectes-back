@@ -21,6 +21,7 @@ const { refreshPlannedHoursTotals } = require('./services/refresh-planned-hours-
 const { recountMotherFlags } = require('./services/recount-mother-flags');
 const { lineVatOverType } = require('./services/line-vat-over-type');
 const { backfillTransferDestinations } = require('./services/backfill-transfer-destinations');
+const { repairCollectionOrderRates } = require('./services/repair-collection-order-rates');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware } = require('./services/change-log');
@@ -118,6 +119,8 @@ module.exports = {
       ['lineVatOverType', lineVatOverType, { runOnce: true }],
       // issues/156: transfers saved on v5 without their route's destination.
       ['backfillTransferDestinations', backfillTransferDestinations, { runOnce: true }],
+      // issues/151: open collection orders got the first route rate, whatever their route.
+      ['repairCollectionOrderRates', repairCollectionOrderRates, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

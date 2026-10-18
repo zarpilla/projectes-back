@@ -21,7 +21,12 @@ const QRCode = require('qrcode');
 const { PDFDocument } = require('pdf-lib');
 const MicroInvoiceOrder = require('../../../../utils/microinvoice-order');
 const { createCoreController } = require('@strapi/strapi').factories;
-const { applyFinalPrice, applyFinalPriceToAll } = require('../services/final-price');
+const {
+  applyFinalPrice,
+  applyFinalPriceToAll,
+  orderDiscountedPrice,
+  orderInvoiceLine,
+} = require('../services/final-price');
 const { adaptQuery, adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { statsDateRange } = require('../../../services/stats-date-range');
 const { rawExecute } = require('../../../services/raw-sql');
@@ -31,7 +36,11 @@ const { processIncidences } = require('../services/order-incidences');
 const { depositRefusal } = require('../services/deposit-guard');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
-const TABLE_POPULATE = ['route', 'owner', 'contact', 'pickup', 'delivery_type', 'contact_legal_form'];
+// collection_point and route_rate: the quick edit picks the rate with them; an
+// order picked up at a farm through a collection point looked like a farm
+// pickup without one and got no rate (issues/151)
+const TABLE_POPULATE = ['route', 'owner', 'contact', 'pickup', 'delivery_type', 'contact_legal_form', 'route_rate'];
+const TABLE_POPULATE_SELECT = { collection_point: { select: ['id'] } };
 
 /**
  * Enforce the next-day cutoff: orders targeting tomorrow's delivery cannot be
@@ -113,10 +122,13 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     const opts = adaptQuery(ctx.query);
     const entities = await strapi.db.query('api::order.order').findMany({
       where: opts.filters || {},
-      populate: TABLE_POPULATE.reduce((acc, p) => {
-        acc[p] = true;
-        return acc;
-      }, {}),
+      populate: TABLE_POPULATE.reduce(
+        (acc, p) => {
+          acc[p] = true;
+          return acc;
+        },
+        { ...TABLE_POPULATE_SELECT },
+      ),
       limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
@@ -196,10 +208,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
           refrigerated: o.refrigerated,
           fragile: o.fragile,
           route_rate: o.route_rate ? o.route_rate.name : '-',
-          price:
-            ((o.price || 0) - (o.volume_discount || 0)) *
-            (1 - (o.multidelivery_discount || 0) / 100) *
-            (1 - (o.contact_pickup_discount || 0) / 100),
+          // the invoice's amount (issues/145)
+          price: orderDiscountedPrice(o),
           pickup: o.pickup ? o.pickup.name : '-',
           delivery_type: o.delivery_type ? o.delivery_type.name : '-',
           status: o.status,
@@ -730,12 +740,12 @@ async function invoiceRun(ctx) {
           document_concept: documentConcept,
           lines: contactOrders.map((o) => ({
             concept: orderLineConcept(o),
-            base: o.price - (o.volume_discount || 0),
+            // base and discount from the shared formula (issues/145)
+            ...orderInvoiceLine(o),
             quantity: 1,
             price: o.price,
             vat: 21,
             irpf: 0,
-            discount: (o.multidelivery_discount || 0) + (o.contact_pickup_discount || 0),
           })),
           projects: [project],
           publishedAt: new Date(),

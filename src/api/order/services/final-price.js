@@ -1,24 +1,47 @@
 'use strict';
 
 /**
- * finalPrice: base price with the multidelivery and pickup discounts (percent)
- * and the volume discount (fixed). Ported verbatim from the v3 afterFind hook.
+ * The discounted price of a logistics order, the one formula shared by the
+ * orders list (`finalPrice`), the stats (`infoAll`) and the invoice lines
+ * (issues/057, 145). The front's copy is `invoicedPrice` in
+ * projectes-front `src/domain/logisticsInvoicing.js`.
  *
- * v3 ran that hook on EVERY query, so finalPrice was on an order however it was
- * fetched. v5 has no afterFind, and the port applied it only in find/findOne --
- * so /api/orders/table, which is what the orders list actually calls, returned
- * rows without it and the Preu column rendered "?" on every row.
+ *   (price − volume discount €) × (1 − (multidelivery % + pickup %) / 100)
  *
- * Kept here so the arithmetic is testable and every handler that returns order
- * rows can share one implementation.
+ * It is what the invoice has always charged: the line's base is the price
+ * less the volume discount and its discount is the sum of both percentages,
+ * which the document lifecycle (computeLineTotals) applies and rounds to
+ * cents. The list compounded the percentages before subtracting the volume
+ * discount and the stats compounded them after it, so the same order showed
+ * three amounts. Already issued invoices are not touched.
+ *
+ * finalPrice is not stored: v3 computed it in an afterFind hook on every query;
+ * v5 has none, so every handler that returns order rows applies it here.
  */
+
+const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
+
+/** The invoice line of an order: base (price − volume discount) and discount %. */
+function orderInvoiceLine(order) {
+  const o = order || {};
+  return {
+    base: (Number(o.price) || 0) - (Number(o.volume_discount) || 0),
+    discount: (Number(o.multidelivery_discount) || 0) + (Number(o.contact_pickup_discount) || 0),
+  };
+}
+
+/** The amount the invoice line of the order comes to, rounded to cents as the invoice does. */
+function orderDiscountedPrice(order) {
+  const { base, discount } = orderInvoiceLine(order);
+  // same operations as computeLineTotals (quantity 1), so the cents agree
+  let amount = base * 1;
+  if (discount) amount = amount * (1 - discount / 100.0);
+  return round2(amount);
+}
+
 function applyFinalPrice(order) {
   if (!order) return order;
-  let price = order.price || 0;
-  price = price * (1 - (order.multidelivery_discount || 0) / 100);
-  price = price * (1 - (order.contact_pickup_discount || 0) / 100);
-  price = price - (order.volume_discount || 0);
-  order.finalPrice = price;
+  order.finalPrice = orderDiscountedPrice(order);
   return order;
 }
 
@@ -29,4 +52,4 @@ function applyFinalPriceToAll(orders) {
   return orders;
 }
 
-module.exports = { applyFinalPrice, applyFinalPriceToAll };
+module.exports = { applyFinalPrice, applyFinalPriceToAll, orderDiscountedPrice, orderInvoiceLine };
