@@ -229,6 +229,7 @@ async function importSeedPermissions() {
       'checkMultidelivery',
       'collectionPointRoutes',
       'table',
+      'totals',
       'history',
     ],
     'orders-imports': ['create', 'find', 'findOne', 'update'],
