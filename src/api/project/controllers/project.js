@@ -213,6 +213,49 @@ const PHASE_ENTITY_UIDS = {
   'project-original-phases': 'api::project-original-phase.project-original-phase',
 };
 
+// What the economic detail reads of each project: everything buildProjectRows
+// (projectFinancials.js) turns into rows, the same as the form's RESUM FINANCER.
+const ECONOMIC_DETAIL_POPULATE = {
+  project_state: true,
+  activities: true,
+  project_scope: true,
+  project_likelihood: true,
+  project_type: true,
+  leader: true,
+  // the yearly adjustments of the form's PERIODIFICACIÓ card (issues/171)
+  periodification: true,
+  project_phases: {
+    populate: {
+      incomes: {
+        populate: {
+          estimated_hours: { populate: { users_permissions_user: true } },
+          income_type: true,
+          invoice: true,
+          income: true,
+        },
+      },
+      expenses: {
+        populate: { expense_type: true, invoice: true, expense: true },
+      },
+    },
+  },
+  project_original_phases: {
+    populate: {
+      incomes: {
+        populate: {
+          estimated_hours: { populate: { users_permissions_user: true } },
+          income_type: true,
+          invoice: true,
+          income: true,
+        },
+      },
+      expenses: {
+        populate: { expense_type: true, invoice: true, expense: true },
+      },
+    },
+  },
+};
+
 module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   /**
    * find override — ports the v3 afterFind hook (removed in v5): aggregates
@@ -769,7 +812,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           .query('api::project.project')
           .findMany(
             toDbArgs(
-              adaptQuery({ ...projectQuery, _q: ctx.query._q }, { searchFields: ['name'] })
+              adaptQuery({ ...projectQuery, _q: ctx.query._q }, { searchFields: ['name'] }),
+              ECONOMIC_DETAIL_POPULATE,
             )
           )
       );
@@ -783,44 +827,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       promises.push(
         strapi.db
           .query('api::project.project')
-          .findMany(toDbArgs(adaptQuery(projectQuery), {
-            project_state: true,
-            activities: true,
-            project_scope: true,
-            project_likelihood: true,
-            project_type: true,
-            leader: true,
-            project_phases: {
-              populate: {
-                incomes: {
-                  populate: {
-                    estimated_hours: { populate: { users_permissions_user: true } },
-                    income_type: true,
-                    invoice: true,
-                    income: true,
-                  },
-                },
-                expenses: {
-                  populate: { expense_type: true, invoice: true, expense: true },
-                },
-              },
-            },
-            project_original_phases: {
-              populate: {
-                incomes: {
-                  populate: {
-                    estimated_hours: { populate: { users_permissions_user: true } },
-                    income_type: true,
-                    invoice: true,
-                    income: true,
-                  },
-                },
-                expenses: {
-                  populate: { expense_type: true, invoice: true, expense: true },
-                },
-              },
-            },
-          })),
+          .findMany(toDbArgs(adaptQuery(projectQuery), ECONOMIC_DETAIL_POPULATE)),
       );
     }
 
