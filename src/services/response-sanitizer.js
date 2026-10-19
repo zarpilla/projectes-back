@@ -103,6 +103,9 @@ const PROJECT_FINANCES = [
   'received_grants',
   'quotes',
   'treasury_annotations',
+  // the project's files (contracts, budgets…): the media entries carry their
+  // URL, and /uploads is public (issues/220)
+  'documents',
 ];
 
 // What a project reached through another type (a route's, a task's, an
@@ -131,6 +134,9 @@ function rulesFor({ member = false, selfId = null, permissions = [] } = {}) {
     [USER]: { pick: (row) => (selfId !== null && row.id === selfId ? { drop: SALARY } : others) },
     'api::daily-dedication.daily-dedication': { drop: DEDICATION_SALARY_FIELDS },
     'api::activity.activity': { drop: ['cost_by_hour', 'invoice_hours_price'] },
+    // the comments of a task: only the full-access users read them
+    // (`/task-comments` is theirs), `populate[task_comments]` gave them to a worker (issues/220)
+    'api::task.task': { drop: ['task_comments'] },
     [PROJECT]: {
       pick: (row, nested) => ({ drop: nested ? [...PROJECT_FINANCES, ...NESTED_PROJECT_DATA] : PROJECT_FINANCES }),
     },
