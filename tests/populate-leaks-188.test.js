@@ -100,10 +100,26 @@ describe('populates into what the role cannot read (issues/188)', () => {
     expect(ctx.body.data[0].project.mother.activities).toBeUndefined();
   });
 
-  it('keeps the activities of the project read itself (Informes › Dedicació, phases-both)', async () => {
-    const ctx = await call(['hours'], 'api::project.project.findWithPhasesBoth', { answer: [project()] });
-    expect(ctx.body[0].activities).toHaveLength(1);
+  // the user's decision (2026-10-19): Informes › Dedicació shows a worker only her own hours
+  it('gives a worker only her own activities of the projects read themselves (phases-both)', async () => {
+    const answer = [
+      {
+        ...project(),
+        activities: [
+          { id: 9, hours: 4, users_permissions_user: 3 },
+          { id: 10, hours: 2, users_permissions_user: ME },
+        ],
+      },
+    ];
+    const ctx = await call(['hours', 'orders_delivery'], 'api::project.project.findWithPhasesBoth', { answer });
+    expect(ctx.body[0].activities).toEqual([{ id: 10, hours: 2, users_permissions_user: ME }]);
     expect(ctx.body[0].project_phases).toHaveLength(1);
+  });
+
+  it('leaves them all to the full-access users', async () => {
+    const answer = [{ ...project(), activities: [{ id: 9, users_permissions_user: 3 }] }];
+    const ctx = await call(['projects'], 'api::project.project.findWithPhasesBoth', { answer });
+    expect(ctx.body[0].activities).toHaveLength(1);
   });
 
   it("a driver gets an incidence's order without its invoice; the office keeps it", async () => {

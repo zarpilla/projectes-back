@@ -889,7 +889,24 @@ async function scopeActivityImportCalendar(ctx, next, { userId }) {
   return next();
 }
 
+/**
+ * Informes › Dedicació (`projects/phases-both?activities=true`) gave a worker
+ * everyone's logged hours (date, hours, description, person) while her own
+ * hours screens show only hers (issues/099). The user's decision (2026-10-19,
+ * issues/188): there too, only her own activities.
+ */
+async function scopeOwnActivitiesOfProjects(ctx, next, { userId }) {
+  await next();
+  const projects = Array.isArray(ctx.body) ? ctx.body : [];
+  for (const project of projects) {
+    if (project && Array.isArray(project.activities)) {
+      project.activities = project.activities.filter((a) => idOf(a && a.users_permissions_user) === userId);
+    }
+  }
+}
+
 const OWN_SCOPES = {
+  'api::project.project.findWithPhasesBoth': scopeOwnActivitiesOfProjects,
   [`${ACTIVITY}.find`]: scopeOwnList,
   [`${ACTIVITY}.getForCalendar`]: scopeOwnList,
   [`${ACTIVITY}.findOne`]: scopeOwnRow(ACTIVITY),
