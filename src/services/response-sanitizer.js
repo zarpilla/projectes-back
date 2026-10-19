@@ -15,7 +15,7 @@
  * alone.
  *
  * A rule is `{ drop: [...] }` (fields removed), `{ keep: [...] }` (only
- * those kept) or `{ pick: (row) => rule }` (the rule of that row: the user's
+ * those kept) or `{ pick: (row, nested) => rule }` (the rule of that row: the user's
  * own row keeps her calendar and identity, which «Hores dedicades» and
  * «Registre jornades» read from the people list). `nestedOnly` rules leave the root of the response alone: a
  * member's «Factures» reads her own income lines (phase-income.findAssigned)
@@ -24,6 +24,8 @@
  */
 
 const USER = 'plugin::users-permissions.user';
+// who reads emitted invoices (app-access-rules: the office, and a member her own)
+const INVOICE_READERS = ['projects', 'admin', 'orders_admin', 'orders'];
 const PROJECT = 'api::project.project';
 
 // the salary and the identity of a person
@@ -103,6 +105,19 @@ const PROJECT_FINANCES = [
   'treasury_annotations',
 ];
 
+// What a project reached through another type (a route's, a task's, an
+// activity type's project) leaves out: everyone's hours, the budget lines with
+// their incomes (concepts naming members) and the grant data. The project
+// screens that need them read the project itself (issues/188).
+const NESTED_PROJECT_DATA = [
+  'activities',
+  'project_phases',
+  'project_original_phases',
+  'periodification',
+  'grantable_years',
+  'grantable_contacts',
+];
+
 // The amounts of a budget line and of its planned hours (the hours stay)
 const LINE_AMOUNTS = ['amount', 'total_amount', 'bank_account', 'invoice', 'income', 'vat_pct'];
 
@@ -110,13 +125,15 @@ const LINE_AMOUNTS = ['amount', 'total_amount', 'bank_account', 'invoice', 'inco
  * The rules for a user without full access: `member` for `orders` only,
  * `selfId` the user's own id.
  */
-function rulesFor({ member = false, selfId = null } = {}) {
+function rulesFor({ member = false, selfId = null, permissions = [] } = {}) {
   const others = member ? { keep: ['id', 'documentId', 'username', 'fullname'] } : { drop: USER_PRIVATE };
   const rules = {
     [USER]: { pick: (row) => (selfId !== null && row.id === selfId ? { drop: SALARY } : others) },
     'api::daily-dedication.daily-dedication': { drop: DEDICATION_SALARY_FIELDS },
     'api::activity.activity': { drop: ['cost_by_hour', 'invoice_hours_price'] },
-    [PROJECT]: { drop: PROJECT_FINANCES },
+    [PROJECT]: {
+      pick: (row, nested) => ({ drop: nested ? [...PROJECT_FINANCES, ...NESTED_PROJECT_DATA] : PROJECT_FINANCES }),
+    },
     'api::phase-income.phase-income': { drop: LINE_AMOUNTS, nestedOnly: true },
     'api::phase-expense.phase-expense': { drop: LINE_AMOUNTS, nestedOnly: true },
     'api::estimated-hour.estimated-hour': { drop: LINE_AMOUNTS, nestedOnly: true },
@@ -126,6 +143,12 @@ function rulesFor({ member = false, selfId = null } = {}) {
     'expense.expense': { drop: LINE_AMOUNTS, nestedOnly: true },
     'hours.hours': { drop: LINE_AMOUNTS, nestedOnly: true },
   };
+  // an order's invoice, for whoever can't read the invoices (drivers, workers):
+  // `incidences?populate[order][populate][emitted_invoice]` gave a driver the
+  // whole invoice (issues/188)
+  if (!permissions.some((p) => INVOICE_READERS.includes(p))) {
+    rules['api::order.order'] = { drop: ['emitted_invoice'] };
+  }
   if (member) {
     // the office's data on a contact
     rules['api::contact.contact'] = {
@@ -141,9 +164,9 @@ function modelOf(strapi, uid) {
   );
 }
 
-function applyRule(row, rule) {
+function applyRule(row, rule, nested) {
   if (rule.pick) {
-    applyRule(row, rule.pick(row));
+    applyRule(row, rule.pick(row, nested), nested);
   } else if (rule.keep) {
     for (const key of Object.keys(row)) if (!rule.keep.includes(key)) delete row[key];
   } else {
@@ -168,7 +191,7 @@ function walk(strapi, uid, value, rules, nested) {
   }
   const row = value.attributes && typeof value.attributes === 'object' ? value.attributes : value;
   const rule = rules[uid];
-  if (rule && (nested || !rule.nestedOnly)) applyRule(row, rule);
+  if (rule && (nested || !rule.nestedOnly)) applyRule(row, rule, nested);
 
   const model = modelOf(strapi, uid);
   if (!model || !model.attributes) return;

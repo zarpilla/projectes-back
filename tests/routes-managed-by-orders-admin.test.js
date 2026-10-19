@@ -50,11 +50,17 @@ describe('who may write routes', () => {
     expect(await call(middleware, 'api::route.route.findOne', 'GET')).toHaveBeenCalled();
   });
 
-  it.each([['orders'], ['orders_delivery'], ['hours']])('%s only reads them', async (permission) => {
+  it.each([['orders'], ['orders_delivery']])('%s only reads them', async (permission) => {
     const middleware = setup([permission]);
     expect(await call(middleware, 'api::route.route.find', 'GET')).toHaveBeenCalled();
     await expect(call(middleware, 'api::route.route.create')).rejects.toMatchObject({ name: 'ForbiddenError' });
     await expect(call(middleware, 'api::route.route.update', 'PUT')).rejects.toMatchObject({ name: 'ForbiddenError' });
+  });
+
+  // issues/188: no hours screen reads the routes (nor their volume discount price)
+  it('hours does not even read them', async () => {
+    const middleware = setup(['hours']);
+    await expect(call(middleware, 'api::route.route.find', 'GET')).rejects.toMatchObject({ name: 'ForbiddenError' });
   });
 });
 
