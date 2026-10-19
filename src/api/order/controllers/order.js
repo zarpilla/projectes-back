@@ -37,6 +37,7 @@ const { depositRefusal } = require('../services/deposit-guard');
 const { addContactSnapshot } = require('../services/contact-snapshot');
 const changeLog = require('../../../services/change-log');
 const { orderTotals, TOTALS_SELECT } = require('../services/order-totals');
+const { currentOrderVolumeDiscount } = require('../services/volume-discount');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 // collection_point and route_rate: the quick edit picks the rate with them; an
@@ -532,10 +533,12 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
   /**
    * POST /api/orders/check-multidelivery
-   * Returns the multidelivery discount if other orders exist for the same contact+date.
+   * Returns the multidelivery discount if other orders exist for the same contact+date,
+   * and, given the route, the volume discount the lifecycle will store (the form
+   * previews it, issues/227); absent when the lifecycle keeps the stored one.
    */
   async checkMultidelivery(ctx) {
-    const { id, date, contactId, ownerId } = ctx.request.body;
+    const { id, date, contactId, ownerId, routeId, status } = ctx.request.body;
     const owner = await strapi.db.query('plugin::users-permissions.user').findOne({ where: { id: ownerId } });
     const ownerFactor = owner?.multidelivery_discount === false ? 0 : 1;
     const me = await getMe();
@@ -551,9 +554,17 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       ? ordersOfDateAndContact.filter((o) => String(o.id) !== String(id) && o.status !== 'cancelled')
       : ordersOfDateAndContact;
 
+    const volumeDiscount = await currentOrderVolumeDiscount(id, {
+      route: routeId,
+      owner: ownerId,
+      estimated_delivery_date: date,
+      status: status || 'pending',
+    });
+
     return {
       multidelivery_discount:
         others.length > 0 ? ownerFactor * (me.orders_options?.multidelivery_discount || 0) : 0,
+      ...(volumeDiscount === undefined ? {} : { volume_discount: volumeDiscount }),
     };
   },
 

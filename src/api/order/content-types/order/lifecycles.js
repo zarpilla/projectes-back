@@ -17,6 +17,7 @@ const {
   findCollectionOrderRouteRate,
 } = require('../../services/route-price');
 const { loadRouteClosures, nextRouteDay, routeRunsOn } = require('../../services/route-days');
+const { checkVolumeDiscount, currentOrderVolumeDiscount } = require('../../services/volume-discount');
 const { getMe } = require('../../../../services/me-settings');
 
 /**
@@ -57,40 +58,7 @@ const normalizeOrderDate = (value) => {
 };
 
 // --- VOLUME DISCOUNT LOGIC ---
-const checkVolumeDiscount = async (id, date, routeId, ownerId, currentStatus) => {
-  // Find all orders for the same route, date, and owner (excluding cancelled and this order)
-  const ordersOfDateRouteOwner = await strapi.db.query('api::order.order').findMany({
-    where: { estimated_delivery_date: moment(date).format('YYYY-MM-DD'), route: routeId, owner: ownerId },
-  });
-
-  const others = ordersOfDateRouteOwner.filter(
-    (o) => o.id.toString() !== id.toString() && o.status !== 'cancelled',
-  );
-
-  // Get the route entity for discount config
-  let route = null;
-  if (routeId) {
-    route = await strapi.db.query('api::route.route').findOne({ where: { id: routeId } });
-  }
-
-  let discount = 0;
-  let eligible = false;
-  if (route && route.volume_discount_number_of_orders > 0 && route.volume_discount_price > 0) {
-    // Count current + others (if not cancelled)
-    const count =
-      (currentStatus !== 'cancelled' ? 1 : 0) + others.filter((o) => o.status !== 'cancelled').length;
-    if (count >= route.volume_discount_number_of_orders) {
-      discount = route.volume_discount_price;
-      eligible = true;
-    }
-  }
-  return {
-    others,
-    eligible,
-    discount,
-  };
-};
-
+// checkVolumeDiscount: services/volume-discount.js (the order form previews it, issues/227)
 const updateVolumeDiscountForOrders = async (orders, discount) => {
   for await (const order of orders) {
     if (order.volume_discount !== discount) {
@@ -103,28 +71,8 @@ const updateVolumeDiscountForOrders = async (orders, discount) => {
 
 const processVolumeDiscountForCurrentOrder = async (orderId, data) => {
   if (data._internal) return;
-
-  // Skip if order is invoiced or delivered
-  if (data.status === 'invoiced' || data.status === 'delivered') {
-    return;
-  }
-
-  // Only if route, owner, and date are present
-  if (!data.route || !data.owner || !data.estimated_delivery_date) return;
-  const routeId = relationId(data.route);
-  const ownerId = relationId(data.owner);
-  const { eligible, discount } = await checkVolumeDiscount(
-    orderId,
-    data.estimated_delivery_date,
-    routeId,
-    ownerId,
-    data.status,
-  );
-  if (eligible) {
-    data.volume_discount = discount;
-  } else {
-    data.volume_discount = 0;
-  }
+  const discount = await currentOrderVolumeDiscount(orderId, data);
+  if (discount !== undefined) data.volume_discount = discount;
 };
 
 const processVolumeDiscountForOtherOrders = async (orderId, currentData, previousOrder = null) => {
@@ -460,9 +408,11 @@ const checkTransferNeededForCollectionOrder = async (pickupId, routeId, orderDat
 
 /**
  * Calculate transfer route and date for orders that need a transfer
- * Finds an active transfer route that operates on or before the estimated delivery date
+ * Finds an active transfer route that operates on or before the estimated delivery date,
+ * and not before `notBefore` (the farm pickup of the order, collection_pickup_date): the
+ * transfer of order 24946 was planned the day before its boxes were picked up (issues/227).
  */
-const calculateTransferRoute = async (estimatedDeliveryDate) => {
+const calculateTransferRoute = async (estimatedDeliveryDate, notBefore = null) => {
   if (!estimatedDeliveryDate) {
     return { transfer_route: null, transfer_route_date: null };
   }
@@ -486,8 +436,10 @@ const calculateTransferRoute = async (estimatedDeliveryDate) => {
     deliveryDay,
   );
   const currentDate = deliveryDay.clone();
+  const earliest = notBefore ? moment(notBefore).format('YYYY-MM-DD') : null;
 
   for (let iterations = 0; iterations < maxIterations; iterations++) {
+    if (earliest && currentDate.format('YYYY-MM-DD') < earliest) break;
     const isSameDay = currentDate.isSame(deliveryDay, 'day');
 
     for (const route of transferRoutes) {
@@ -534,7 +486,10 @@ const calculateOrderTransferData = async (orderData) => {
   // If the order needs a transfer
   if (transferInfo.transfer) {
     // Calculate transfer route
-    const transferRouteInfo = await calculateTransferRoute(estimatedDeliveryDate);
+    const transferRouteInfo = await calculateTransferRoute(
+      estimatedDeliveryDate,
+      orderData.collection_pickup_date,
+    );
 
     return {
       transfer: true,
@@ -1390,7 +1345,10 @@ module.exports = {
     // Skip if user has manually set the transfer route (manual_transfer_route flag)
     if (!data.is_collection_order && !previousOrder.is_collection_order) {
       const relevantFieldsChanged =
-        data.pickup !== undefined || data.route !== undefined || data.estimated_delivery_date !== undefined;
+        data.pickup !== undefined ||
+        data.route !== undefined ||
+        data.estimated_delivery_date !== undefined ||
+        data.collection_pickup_date !== undefined;
 
       const isManuallySet =
         data.manual_transfer_route === true || previousOrder.manual_transfer_route === true;
@@ -1466,7 +1424,10 @@ module.exports = {
       !previousOrder.is_collection_order &&
       (!previousOrder.transfer_route || !previousOrder.transfer_route_date)
     ) {
-      const transferRouteInfo = await calculateTransferRoute(previousOrder.estimated_delivery_date);
+      const transferRouteInfo = await calculateTransferRoute(
+        previousOrder.estimated_delivery_date,
+        previousOrder.collection_pickup_date,
+      );
       if (transferRouteInfo.transfer_route || transferRouteInfo.transfer_route_date) {
         await strapi.db.query('api::order.order').update({
           where: { id: result.id },
@@ -1545,7 +1506,10 @@ module.exports = {
         !currentOrder.is_collection_order &&
         (!currentOrder.transfer_route || !currentOrder.transfer_route_date)
       ) {
-        const transferRouteInfo = await calculateTransferRoute(currentOrder.estimated_delivery_date);
+        const transferRouteInfo = await calculateTransferRoute(
+          currentOrder.estimated_delivery_date,
+          currentOrder.collection_pickup_date,
+        );
 
         if (transferRouteInfo.transfer_route || transferRouteInfo.transfer_route_date) {
           await strapi.db.query('api::order.order').update({

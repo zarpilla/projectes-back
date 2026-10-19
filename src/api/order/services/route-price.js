@@ -76,7 +76,9 @@ const hasUsablePrice = (value) =>
  *
  * Leaves alone: internal writes, collection orders (their price is the
  * aggregate updateCollectionOrderAggregates computes), closed orders, and any
- * order whose price — sent now or already stored — is a real number.
+ * order whose price — sent now or already stored — is a real number. An
+ * update that changes the kilos without sending a price is repriced: the
+ * stored price was the one of the old kilos (issues/227).
  */
 const fillMissingPrice = async (data, previousOrder = null) => {
   if (data._internal) return;
@@ -85,10 +87,16 @@ const fillMissingPrice = async (data, previousOrder = null) => {
   const status = data.status || prev.status;
   if (status === 'invoiced' || status === 'cancelled') return;
 
-  const price = 'price' in data ? data.price : prev.price;
-  if (hasUsablePrice(price)) return;
-
   const kilograms = Number(data.kilograms !== undefined ? data.kilograms : prev.kilograms);
+  const kilogramsChanged =
+    Boolean(prev.id) &&
+    !('price' in data) &&
+    data.kilograms !== undefined &&
+    kilograms !== Number(prev.kilograms);
+
+  const price = 'price' in data ? data.price : prev.price;
+  if (hasUsablePrice(price) && !kilogramsChanged) return;
+
   if (!Number.isFinite(kilograms) || kilograms <= 0) return;
 
   // An unpopulated relation is absent from the stored row, so read the rate
@@ -232,9 +240,7 @@ const findOrderRouteRate = async (order, owner, s = strapi) => {
   const pickup =
     pickupId === undefined
       ? null
-      : await s.db
-          .query('api::pickup.pickup')
-          .findOne({ where: { id: pickupId }, select: ['id', 'pickup'] });
+      : await s.db.query('api::pickup.pickup').findOne({ where: { id: pickupId }, select: ['id', 'pickup'] });
   let farmOrderPending = false;
   if (pickup && !isWarehousePickup(pickup) && !relationId(order.collection_point)) {
     const where = {
