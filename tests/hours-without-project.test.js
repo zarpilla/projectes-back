@@ -48,6 +48,14 @@ describe('hours without a project', () => {
     ]);
   });
 
+  // issues/185: with `select: ['hours', 'date']` and a person filter Strapi
+  // adds DISTINCT, so two 2 h entries of one day came back as one row (2 h).
+  it('total-by-day selects the id, so equal entries of a day are not merged', async () => {
+    const controller = require('../src/api/activity/controllers/activity')({ strapi: global.strapi });
+    await controller.totalByDay({ query: { filters: { users_permissions_user: { id: 8 } } } });
+    expect(activityArgs[0].select).toContain('id');
+  });
+
   it('% Dedicació real: a state filter keeps the activities without a project', async () => {
     const { buildRealDedicationGantt } = require('../src/api/project/services/realDedicationGantt');
     await buildRealDedicationGantt({ projectStateIds: ['1'], year: 2026 });

@@ -77,12 +77,14 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
    * Groups activities by date, summing their hours. The ones without a project
    * (iCal imports not assigned yet) count too: they are worked hours, and
    * Saldo d'hores and Bestretes came out lower than Hores dedicades (issues/174).
+   * `id` stays in the select: with a relational filter (the person) Strapi
+   * adds DISTINCT, and two equal entries of one day would count once (issues/185).
    */
   async totalByDay(ctx) {
     const opts = adaptQuery(ctx.query);
     const activities = await strapi.db.query('api::activity.activity').findMany({
       where: opts.filters || {},
-      select: ['hours', 'date'],
+      select: ['id', 'hours', 'date'],
       limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
