@@ -10,14 +10,16 @@ const { buildSingleProjectActivitiesMap } = require('./projectFinancials');
  * The activities come populated under their project, so they carry no
  * `project` of their own; they were filtered on `a.project` and every one was
  * dropped, so «Hores exec» was always 0 € (issues/060). Each project's
- * activities are grouped under that project's id.
+ * activities are grouped under that project's id. Undated ones go to the
+ * undated (9999) bucket, as in the project form; they were left out, so the
+ * report had fewer hours than the form (issues/205).
  */
 function activitiesByProjectMonth(projects) {
   const byProject = new Map();
   (projects || []).forEach((p) => {
-    const dated = (p.activities || []).filter((a) => a.date);
-    if (dated.length) {
-      byProject.set(p.id, buildSingleProjectActivitiesMap(p.id, dated).get(p.id));
+    const activities = p.activities || [];
+    if (activities.length) {
+      byProject.set(p.id, buildSingleProjectActivitiesMap(p.id, activities).get(p.id));
     }
   });
   return byProject;
