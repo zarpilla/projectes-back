@@ -494,13 +494,13 @@ async function memberOwnOrderUpdate(strapi, order, payload, userId, permissions 
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
     throw forbidden();
   if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
-  // the collection order of her farm-pickup orders is the server's: she
-  // changed its route (and so its rate and price) or cancelled it (issues/217)
-  if (order.is_collection_order && ![undefined, null, order.status].includes(payload.status)) {
-    throw forbidden();
-  }
   // once the office has the order, the form is read-only for her
-  if (order.status !== 'pending' || order.is_collection_order) pick(payload, [...MEMBER_LATE_FIELDS]);
+  if (order.status !== 'pending') pick(payload, [...MEMBER_LATE_FIELDS]);
+  // the collection order of her farm-pickup orders, while pending, like her
+  // other orders (the user's rule, 2026-10-19, as on master, issues/217): she
+  // changes its route or cancels it; its delivery type stays (the form
+  // disables it) and its rate is the server's, not hers to send
+  if (order.is_collection_order) omit(payload, ['delivery_type', 'route_rate']);
   await memberOrderPayload(strapi, payload, userId, { creating: false, order, permissions });
 }
 

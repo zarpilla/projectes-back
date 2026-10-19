@@ -48,6 +48,17 @@ const STORED = {
     pickup: { id: 1 },
     route_rate: { id: 41 },
   },
+  24948: {
+    id: 24948,
+    status: 'processed',
+    is_collection_order: true,
+    owner: { id: ME },
+    contact: { id: 30 },
+    route: { id: 14 },
+    delivery_type: { id: NORMAL },
+    pickup: { id: 1 },
+    route_rate: { id: 41 },
+  },
   24906: {
     id: 24906,
     status: 'delivered',
@@ -280,27 +291,33 @@ describe("the office's orders get the server's route rate too (issues/186)", () 
 });
 
 // issues/217 (review 5): on the collection order of her farm-pickup order a
-// member changed the route (rate 38 → 37, 8,73 € → 7,70 €) or cancelled it.
-describe("a member's collection order is the server's (issues/217)", () => {
-  const putCollection = (data) =>
-    send('api::order.order.update', { method: 'PUT', numericId: 24947, body: { data } });
+// member changed the route or cancelled it. The user's rule (2026-10-19), as on
+// master: while it is pending she changes its route and cancels it like her
+// other orders; the delivery type stays (the form disables it) and its rate and
+// price aren't computed from what she sends; once processed, nothing.
+describe("a member's collection order, as on master (issues/217)", () => {
+  const putCollection = (data, numericId = 24947) =>
+    send('api::order.order.update', { method: 'PUT', numericId, body: { data } });
 
-  it('drops the route, delivery type, rate and pickup she sends', async () => {
+  it('takes her route change while pending, without the delivery type, rate or price', async () => {
     const body = await putCollection({
       route: 9,
       delivery_type: FRED,
       route_rate: 37,
-      pickup: 2,
+      price: 1,
       comments: 'x',
     });
-    expect(body.data).toEqual({});
+    expect(body.data).toEqual({ route: 9, comments: 'x' });
   });
 
-  it('refuses cancelling it, and keeps what she marks as picked up', async () => {
-    await expect(putCollection({ status: 'cancelled' })).rejects.toMatchObject({ name: 'ForbiddenError' });
-    expect((await putCollection({ status: 'pending', picked_up: true })).data).toEqual({
-      status: 'pending',
-      picked_up: true,
+  it('lets her cancel it while pending', async () => {
+    expect((await putCollection({ status: 'cancelled' })).data).toEqual({ status: 'cancelled' });
+  });
+
+  it('once processed, drops the route and refuses cancelling, as on her other orders', async () => {
+    expect((await putCollection({ route: 9, picked_up: true }, 24948)).data).toEqual({ picked_up: true });
+    await expect(putCollection({ status: 'cancelled' }, 24948)).rejects.toMatchObject({
+      name: 'ForbiddenError',
     });
   });
 });
