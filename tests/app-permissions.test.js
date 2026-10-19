@@ -1085,8 +1085,8 @@ describe('app permissions (issues/099)', () => {
           },
         ],
       });
-      // another member's point (GET /contacts/:id answered any contact)
-      await expectRefused('api::contact.contact.findOne', { numericId: 12 });
+      // another member's delivery point: members see every one (issues/187, DECIDED)
+      await expectAllowed('api::contact.contact.findOne', { numericId: 12 });
       await expectAllowed('api::contact.contact.findOne', { numericId: MY_CONTACT });
     });
 

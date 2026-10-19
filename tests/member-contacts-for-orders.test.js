@@ -9,9 +9,10 @@
  * 2. `GET /contacts/96` (another member's) → 403, but `POST /orders` with
  *    `contact: 96` → 201, and from then on 96 was «a contact her orders go to»:
  *    readable in full and its address editable.
- * Decision (2026-10-19): as on master, members see and use every delivery
- * point (a contact with an owner); the rest of the directory (the entity's
- * clients, other members' own contacts) stays out.
+ * DECIDED (the user, 2026-10-19, repeated; see isDeliveryPoint in
+ * app-permissions.js): as on master, members see, open and use EVERY delivery
+ * point (a contact with an owner, other members' own contacts included); they
+ * edit only theirs and the shared ones. The entity's clients stay out.
  */
 
 const ME = 100;
@@ -25,10 +26,10 @@ const CONTACTS = {
   31: { id: 31, owner: { id: OTHER }, users_permissions_user: null },
   96: { id: 96, owner: { id: OTHER }, users_permissions_user: null },
   97: { id: 97, owner: { id: OTHER }, users_permissions_user: null },
-  // the entity's client, and another member's own contact: not delivery points
+  // the entity's client, and another member's own contact without owner: not delivery points
   95: { id: 95, owner: null, users_permissions_user: null },
   94: { id: 94, owner: null, users_permissions_user: { id: OTHER } },
-  // another member's own contact, with an owner (review 5: 1774)
+  // another member's own contact, with an owner (review 5: 1774): a delivery point
   93: { id: 93, owner: { id: OTHER }, users_permissions_user: { id: OTHER } },
 };
 // orders of hers to 97 (another member's point) and to 95 (the office's client)
@@ -130,13 +131,13 @@ describe("the points of a member's order (issues/187)", () => {
     ctxFor('api::order.order.create', { method: 'POST', body: { data }, apiName: 'order' });
 
   it("refuses an order to a contact that isn't a delivery point", async () => {
-    for (const contact of [95, 94, 93, { id: 95 }]) {
+    for (const contact of [95, 94, { id: 95 }]) {
       await expect(run(create({ contact }))).rejects.toMatchObject({ name: 'ForbiddenError' });
     }
   });
 
   it("accepts any delivery point, another member's too, and her own contact", async () => {
-    for (const contact of [7, 8, 9, 96, 97]) expect(await run(create({ contact }))).toHaveBeenCalled();
+    for (const contact of [7, 8, 9, 93, 96, 97]) expect(await run(create({ contact }))).toHaveBeenCalled();
   });
 
   it('accepts her collection points only', async () => {
@@ -161,14 +162,23 @@ describe("the points of a member's order (issues/187)", () => {
 // review 5: an order to a point made it «one her orders go to», readable in
 // full and editable (contact 2242, 1774)
 describe("an order doesn't make the point hers (issues/187)", () => {
-  const row = (handler, method, body) => ctxFor(handler, { method, numericId: 97, body });
+  const row = (handler, method, body, numericId = 97) => ctxFor(handler, { method, numericId, body });
 
-  it("doesn't let her read or edit another member's point her order goes to", async () => {
-    await expect(run(row('api::contact.contact.findOne', 'GET'))).rejects.toMatchObject({
-      name: 'ForbiddenError',
-    });
+  it("doesn't let her edit another member's point her order goes to", async () => {
     const update = row('api::contact.contact.update', 'PUT', { data: { time_slot_1_end: 19.5 } });
     await expect(run(update)).rejects.toMatchObject({ name: 'ForbiddenError' });
+  });
+
+  // DECIDED: members see every delivery point, as on master
+  it('lets her open every delivery point, but not the entity\'s clients', async () => {
+    for (const id of [97, 96, 93, 8, 9]) {
+      expect(await run(row('api::contact.contact.findOne', 'GET', undefined, id))).toHaveBeenCalled();
+    }
+    for (const id of [95, 94]) {
+      await expect(run(row('api::contact.contact.findOne', 'GET', undefined, id))).rejects.toMatchObject({
+        name: 'ForbiddenError',
+      });
+    }
   });
 
   it('leaves it out of her contacts list', async () => {

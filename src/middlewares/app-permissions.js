@@ -395,26 +395,36 @@ async function officeRouteRate(strapi, ctx, action) {
 const sameRelation = (sent, current) =>
   Boolean(current) && (sent === current.id || (current.documentId && sent === current.documentId));
 
+/*
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ DECIDED — DO NOT NARROW (the user, 2026-10-19, said more than once,      │
+ * │ issues/187): members (`orders`) SEE EVERY DELIVERY POINT, as on master.  │
+ * │ A delivery point is a contact with an owner, any member's, her own       │
+ * │ contact included. She lists them (`contacts/for-orders`), opens them     │
+ * │ (`GET /contacts/:id`) and sends orders to them. What stays limited is    │
+ * │ EDITING: only hers and the shared ones (issues/164/165), and the rest of │
+ * │ the directory (the entity's clients, contacts without owner).            │
+ * │ Reviews: don't report «a member reads another member's point» as a leak. │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+const isDeliveryPoint = (contact) => Boolean(contact && contact.owner);
+
 /**
- * The delivery point of a member's order must be a delivery point (a contact
- * with an owner, any member's but not another member's own contact) or a
- * contact she sees, and the collection point one of hers (issues/187). A new
- * point (the CSV import's contact without id) is created as hers, and the
- * points her order already has stay (the form sends them back): the office may
- * have chosen them.
+ * The delivery point of a member's order must be a delivery point (see the
+ * decision above) or a contact she sees, and the collection point one of hers
+ * (issues/187). A new point (the CSV import's contact without id) is created
+ * as hers, and the points her order already has stay (the form sends them
+ * back): the office may have chosen them.
  */
 async function checkMemberOrderContacts(strapi, payload, userId, order = null) {
   const contactId = relationId(payload.contact);
   if (contactId !== undefined && !sameRelation(contactId, order && order.contact)) {
     const where = typeof contactId === 'number' ? { id: contactId } : { documentId: contactId };
-    // any delivery point (a contact with an owner) is hers to send to
-    const point = await strapi.db.query(CONTACT).findOne({
-      where,
-      select: ['id'],
-      populate: { owner: { select: ['id'] }, users_permissions_user: { select: ['id'] } },
-    });
-    const othersOwn = point && point.users_permissions_user && idOf(point.users_permissions_user) !== userId;
-    if (!point || !point.owner || othersOwn) await loadVisibleContact(strapi, where, userId);
+    // any delivery point is hers to send to, another member's own contact too
+    const point = await strapi.db
+      .query(CONTACT)
+      .findOne({ where, select: ['id'], populate: { owner: { select: ['id'] } } });
+    if (!isDeliveryPoint(point)) await loadVisibleContact(strapi, where, userId);
   }
   const pointId = relationId(payload.collection_point);
   if (pointId !== undefined && !sameRelation(pointId, order && order.collection_point)) {
@@ -718,7 +728,7 @@ async function scopeContactList(ctx, next, { userId }) {
  * `contacts/for-orders` (Comandes, the order form) gave a member the whole
  * directory, the entity's clients included (issues/187). She gets the delivery
  * points (contacts with an owner), every member's, as on master: the order form
- * lets her send an order to any point (the user's decision, 2026-10-19); and
+ * lets her send an order to any point (DECIDED, see isDeliveryPoint); and
  * of the `?socies=1` list (her collection points) only her own contact.
  */
 async function scopeContactsForOrders(ctx, next, { userId }) {
@@ -744,10 +754,14 @@ async function loadVisibleContact(strapi, where, userId) {
   return { contact, own };
 }
 
+/** She opens every delivery point (the decision above), and the contacts she sees. */
 async function scopeContactRow(ctx, next, { strapi, userId }) {
   const where = addressedRow(ctx);
   if (!where) throw forbidden();
-  await loadVisibleContact(strapi, where, userId);
+  const point = await strapi.db
+    .query(CONTACT)
+    .findOne({ where, select: ['id'], populate: { owner: { select: ['id'] } } });
+  if (!isDeliveryPoint(point)) await loadVisibleContact(strapi, where, userId);
   return next();
 }
 
