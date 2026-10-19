@@ -103,6 +103,17 @@ describe('aggregateRowsByYear (financial engine — R4 guardrail)', () => {
     approx(out[0].total_estimated_incomes, 42);
   });
 
+  test('keeps 9999 bucket with only original lines (issues/195)', () => {
+    const rows = [
+      { year: '9999', income_orig: 98750 },
+      { year: '9999', expense_orig: -2400 },
+    ];
+    const out = aggregateRowsByYear(rows);
+    expect(out.length).toBe(1);
+    approx(out[0].total_original_incomes, 98750);
+    approx(out[0].total_original_expenses, 2400);
+  });
+
   test('handles periodification-style rows (negative expense values)', () => {
     const rows = [
       { year: '2025', expense_orig: -100, expense_esti: -100, expense_real: -100 },

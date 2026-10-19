@@ -1056,24 +1056,12 @@ const aggregateRowsByYear = (rows) => {
     })
     .value();
 
-  // Drop empty undated buckets (rows with no resolvable date).
-  return grouped.filter((y) => {
-    if (y.year !== UNDATED_YEAR) return true;
-    return (
-      y.total_incomes !== 0 ||
-      y.total_expenses !== 0 ||
-      y.total_expenses_vat !== 0 ||
-      y.total_real_incomes !== 0 ||
-      y.total_real_expenses !== 0 ||
-      y.total_real_expenses_vat !== 0 ||
-      y.total_estimated_hours !== 0 ||
-      y.total_estimated_hours_price !== 0 ||
-      y.total_real_hours !== 0 ||
-      y.total_real_hours_price !== 0 ||
-      y.total_real_incomes_expenses !== 0 ||
-      y.incomes_expenses !== 0
-    );
-  });
+  // Drop empty undated buckets (rows with no resolvable date). Every total
+  // counts, the original ones too (issues/195: an undated original line was
+  // dropped from the Original totals).
+  return grouped.filter(
+    (y) => y.year !== UNDATED_YEAR || Object.entries(y).some(([k, v]) => k !== 'year' && v !== 0),
+  );
 };
 
 // ---------------------------------------------------------------------------
