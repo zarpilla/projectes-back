@@ -567,6 +567,12 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
   if (!orderData.collection_point || orderData.is_collection_order) {
     return;
   }
+  // a cancelled order leaves its collection order (updateCollectionOrderAggregates
+  // cancels it when it was the last one) and gets no new one: saving it again
+  // found its collection order cancelled and generated another (issues/217)
+  if (orderData.status === 'cancelled') {
+    return;
+  }
 
   const collectionPointId = extractId(orderData.collection_point);
   const ownerId = extractId(orderData.owner);
@@ -1018,7 +1024,14 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   });
 
   // If no related orders and status is pending, deposited, or processed, reset aggregates to 0
+  // and cancel it -- only when no order left in it is active: an invoiced one
+  // keeps it (the user's decision, 2026-10-19, issues/217)
   if (!relatedOrders || relatedOrders.length === 0) {
+    const active = await strapi.db.query('api::order.order').findMany({
+      where: { collection_order: collectionOrderId, status: { $ne: 'cancelled' } },
+      select: ['id'],
+    });
+    if (active && active.length > 0) return;
     if (collectionOrder.status === 'pending' || collectionOrder.status === 'processed') {
       // v3 used a two-argument update signature; v5 takes a single { where, data }.
       await strapi.db.query('api::order.order').update({
