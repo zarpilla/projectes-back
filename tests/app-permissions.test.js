@@ -877,6 +877,88 @@ describe('app permissions (issues/099)', () => {
     });
   });
 
+  // issues/190 (review 4, 2026-10-19): a member moved the incidence of her
+  // order onto another member's order (`{order: 24651}`) and set who opened
+  // and closed it; issues/191: a driver set any point's pickup discount (it
+  // feeds the order prices) and made points hers (`{owner: <her id>}`).
+  describe('incidence fields and drivers on delivery points (issues/190, 191)', () => {
+    const DRIVER = 300;
+    const OFFICE = 400;
+    const options = () => ({
+      permissions: { [ME]: ['orders'], [DRIVER]: ['orders_delivery', 'hours'], [OFFICE]: ['orders_admin'] },
+      contacts: {
+        [MY_CONTACT]: { id: MY_CONTACT, users_permissions_user: { id: ME }, owner: null },
+        10: { id: 10, owner: { id: ME, documentId: 'me-doc' }, users_permissions_user: null },
+        11: { id: 11, owner: null, users_permissions_user: null },
+      },
+      orders: {
+        1: { id: 1, status: 'delivered', ...ORDER(ME, 10) },
+        2: { id: 2, status: 'pending', ...ORDER(OTHER, 11) },
+      },
+      incidences: {
+        50: { id: 50, order: { id: 1 }, state: 'open' },
+        51: { id: 51, order: { id: 1 }, state: 'closed' },
+      },
+    });
+    beforeEach(() => setup(options()));
+    const put = (numericId, data, userId = ME) => ({ method: 'PUT', numericId, userId, body: { data } });
+
+    it("keeps a member's incidence on its order, with the server's opened and closed by", async () => {
+      const ctx = await expectAllowed(
+        'api::incidence.incidence.update',
+        put(50, { order: 2, created_user: OTHER, closed_user: OTHER, closed_date: '2020-01-01', description: 'x' }),
+      );
+      expect(ctx.request.body.data).toEqual({ description: 'x' });
+    });
+
+    it('records the closing in the name of whoever closes it, and clears it on reopening', async () => {
+      const closed = await expectAllowed(
+        'api::incidence.incidence.update',
+        put(50, { state: 'closed', closed_user: OTHER, closed_date: '2020-01-01' }),
+      );
+      expect(closed.request.body.data).toMatchObject({ state: 'closed', closed_user: ME });
+      expect(closed.request.body.data.closed_date).toBeInstanceOf(Date);
+      const reopened = await expectAllowed('api::incidence.incidence.update', put(51, { state: 'wip' }));
+      expect(reopened.request.body.data).toEqual({ state: 'wip', closed_date: null, closed_user: null });
+    });
+
+    it.each([[DRIVER], [OFFICE]])('limits the logistics staff (%s) to the same fields', async (userId) => {
+      const ctx = await expectAllowed(
+        'api::incidence.incidence.update',
+        put(50, { order: 2, created_user: ME, state: 'closed', incidence_response: [] }, userId),
+      );
+      expect(ctx.request.body.data).toMatchObject({ state: 'closed', incidence_response: [], closed_user: userId });
+      expect(ctx.request.body.data).not.toHaveProperty('order');
+      expect(ctx.request.body.data).not.toHaveProperty('created_user');
+    });
+
+    it("lets a driver change a point like the office, but not its discount nor its owner", async () => {
+      const ctx = await expectAllowed(
+        'api::contact.contact.update',
+        put(10, { address: 'C/ Nou', notes_delivery: 'x', pickup_point: true, pickup_discount: 70, owner: ME }, DRIVER),
+      );
+      expect(ctx.request.body.data).toEqual({ address: 'C/ Nou', notes_delivery: 'x', pickup_point: true, owner: ME });
+      await expectAllowed('api::contact.contact.update', put(10, { owner: { id: ME } }, DRIVER));
+      await expectAllowed('api::contact.contact.update', put(11, { owner: null }, DRIVER));
+      await expectRefused('api::contact.contact.update', put(10, { owner: DRIVER }, DRIVER));
+      await expectRefused('api::contact.contact.update', put(11, { owner: DRIVER }, DRIVER));
+    });
+
+    it('creates the points of a driver without pickup discount', async () => {
+      const ctx = await expectAllowed('api::contact.contact.create', {
+        method: 'POST',
+        userId: DRIVER,
+        body: { data: { name: 'Botiga', owner: ME, pickup_discount: 70 } },
+      });
+      expect(ctx.request.body.data).toEqual({ name: 'Botiga', owner: ME });
+    });
+
+    it('leaves the office the discount and the owner', async () => {
+      const ctx = await expectAllowed('api::contact.contact.update', put(10, { pickup_discount: 70, owner: OFFICE }, OFFICE));
+      expect(ctx.request.body.data).toEqual({ pickup_discount: 70, owner: OFFICE });
+    });
+  });
+
   describe('populate and broad reads (issues/165)', () => {
     const USER = 'plugin::users-permissions.user';
     const contentTypes = {
