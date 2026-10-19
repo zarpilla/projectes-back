@@ -178,6 +178,8 @@ const HIDDEN_FIELDS = {
   // nothing reads it, and as a one-to-many ticking a user on one point took her
   // off another (issues/159)
   pickup: ['allowed_users'],
+  // worked out by the lifecycle from code and name (issues/183)
+  strategy: ['code_name'],
 };
 
 // To-many relations the admin form edits (the others are edited from the other side).
