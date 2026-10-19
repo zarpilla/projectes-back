@@ -213,3 +213,32 @@ describe('a driver who is a member too (issues/187)', () => {
     expect(await run(ctx)).toHaveBeenCalled();
   });
 });
+
+// issues/218 (review 5): a new contact with `users_permissions_user: 51`
+// became member 51's own contact (her order form, `?socies=1`, invoicing).
+describe('a new contact of a member (issues/218)', () => {
+  it("doesn't link it to another user", async () => {
+    const ctx = ctxFor('api::contact.contact.create', {
+      method: 'POST',
+      body: { data: { name: 'Nou', owner: ME, users_permissions_user: OTHER } },
+    });
+    await run(ctx);
+    expect(ctx.request.body.data).toEqual({ name: 'Nou', owner: ME });
+    const csv = ctxFor('api::order.order.createCSV', {
+      method: 'POST',
+      body: { contact: { name: 'Nou punt', users_permissions_user: { id: OTHER } } },
+      apiName: 'order',
+    });
+    await run(csv);
+    expect(csv.request.body.contact).toEqual({ name: 'Nou punt' });
+  });
+
+  it('keeps it when it names her', async () => {
+    const ctx = ctxFor('api::contact.contact.create', {
+      method: 'POST',
+      body: { data: { name: 'Jo', users_permissions_user: ME } },
+    });
+    await run(ctx);
+    expect(ctx.request.body.data).toEqual({ name: 'Jo', users_permissions_user: ME, owner: ME });
+  });
+});

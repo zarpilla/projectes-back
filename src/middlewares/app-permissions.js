@@ -520,7 +520,7 @@ async function scopeOrderCsv(ctx, next, { strapi, userId, permissions }) {
   if (body.owner !== undefined && body.owner !== null && idOf(body.owner) !== userId) throw forbidden();
   // a new point (a contact without id): the office's fields of a contact stay out too
   if (body.contact && typeof body.contact === 'object' && body.contact.id === undefined) {
-    pick(body.contact, MEMBER_NEW_CONTACT_FIELDS);
+    memberNewContact(body.contact, userId);
   }
   await memberOrderPayload(strapi, body, userId, { creating: true, csv: true, permissions });
   // createCSV reads `owner.id`, and gives the same owner to a contact it creates
@@ -651,11 +651,23 @@ async function scopeEmittedInvoiceList(ctx, next, { strapi, userId }) {
   return next();
 }
 
+/**
+ * A member's new point keeps only her fields, and is linked to no user but
+ * her: linked to another member, it became that member's own contact (her
+ * order form, `?socies=1`, the invoicing contact; issues/218).
+ */
+function memberNewContact(contact, userId) {
+  pick(contact, MEMBER_NEW_CONTACT_FIELDS);
+  const user = contact.users_permissions_user;
+  if (user !== undefined && user !== null && idOf(user) !== userId) delete contact.users_permissions_user;
+  return contact;
+}
+
 async function scopeContactCreate(ctx, next, { userId }) {
   const payload = payloadOf(ctx);
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
     throw forbidden();
-  pick(payload, MEMBER_NEW_CONTACT_FIELDS);
+  memberNewContact(payload, userId);
   payload.owner = userId;
   return next();
 }
