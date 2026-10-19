@@ -368,7 +368,13 @@ async function officeRouteRate(strapi, ctx, action) {
     if (!stored) return;
   }
   if (payload.is_collection_order || stored.is_collection_order) return;
-  if ((payload.status || stored.status || 'pending') !== 'pending') return;
+  // createCSV makes the order pending whatever it is sent with (`CSV`), and an
+  // update is checked when the order is or becomes pending: the state changed
+  // in the same write skipped it (review 5)
+  let statuses = [payload.status || 'pending'];
+  if (csv) statuses = ['pending'];
+  else if (stored.id) statuses = [stored.status, payload.status];
+  if (!statuses.includes('pending')) return;
   const effective = { id: stored.id };
   for (const field of RATE_INPUTS) effective[field] = field in payload ? payload[field] : stored[field];
   const owner = 'owner' in payload ? payload.owner : stored.owner;

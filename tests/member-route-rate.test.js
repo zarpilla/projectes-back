@@ -216,4 +216,30 @@ describe("the office's orders get the server's route rate too (issues/186)", () 
     );
     expect(body.data.route_rate).toBe(37);
   });
+  // review 5: the CSV import sends `status: "CSV"` (createCSV makes it pending
+  // afterwards), and a write that also changed the state skipped the check
+  it('checks the CSV import whatever status it sends', async () => {
+    const csv = await send(
+      'api::order.order.createCSV',
+      {
+        method: 'POST',
+        body: {
+          owner: { id: 300 },
+          status: 'CSV',
+          route: { id: 14 },
+          delivery_type: { id: FRED },
+          pickup: { id: 1 },
+          route_rate: { id: 41 },
+          price: 3,
+        },
+      },
+      OFFICE,
+    );
+    expect(csv).toMatchObject({ route_rate: { id: 42 }, price: null });
+  });
+
+  it('checks a pending order whose state changes in the same write', async () => {
+    const body = await officePut(24905, { status: 'processed', route_rate: 37, price: 1 });
+    expect(body.data).toMatchObject({ status: 'processed', route_rate: 42, price: null });
+  });
 });
