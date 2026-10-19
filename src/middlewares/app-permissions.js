@@ -330,6 +330,45 @@ async function memberRouteRate(strapi, payload, userId, { order, csv }) {
   payload.route_rate = rate ? (csv ? { id: rate.id } : rate.id) : null;
 }
 
+const ORDER_WRITES = new Set([`${ORDER}.create`, `${ORDER}.update`, `${ORDER}.createCSV`]);
+
+/**
+ * The office's orders get the server's rate too (the user's decision,
+ * 2026-10-19), whoever writes them from the app: most office users also have
+ * `projects` or `admin`, so this runs before the full-access shortcut. On a
+ * regular pending order whose rate inputs are sent, a rate other than the one
+ * the order form would pick is replaced, and its price left for the server to
+ * compute (route-price.js fillMissingPrice); with the right rate the price
+ * sent stays. A special rate can still be set in the Strapi admin panel.
+ */
+async function officeRouteRate(strapi, ctx, action) {
+  const csv = action === `${ORDER}.createCSV`;
+  const payload = csv ? ctx.request.body || {} : payloadOf(ctx);
+  let stored = {};
+  if (action === `${ORDER}.update`) {
+    if (!PRICE_INPUTS.some((field) => field in payload)) return;
+    const where = addressedRow(ctx);
+    if (!where) return;
+    stored = await strapi.db.query(ORDER).findOne({
+      where,
+      populate: Object.fromEntries(
+        [...RATE_INPUTS, 'owner', 'route_rate'].map((field) => [field, { select: ['id'] }]),
+      ),
+    });
+    if (!stored) return;
+  }
+  if (payload.is_collection_order || stored.is_collection_order) return;
+  if ((payload.status || stored.status || 'pending') !== 'pending') return;
+  const effective = { id: stored.id };
+  for (const field of RATE_INPUTS) effective[field] = field in payload ? payload[field] : stored[field];
+  const owner = 'owner' in payload ? payload.owner : stored.owner;
+  const rate = await findOrderRouteRate(effective, owner, strapi);
+  const sent = relationId('route_rate' in payload ? payload.route_rate : stored.route_rate);
+  if ((sent === undefined ? null : sent) === (rate ? rate.id : null)) return;
+  payload.route_rate = rate ? (csv ? { id: rate.id } : rate.id) : null;
+  payload.price = null;
+}
+
 /**
  * The delivery point of a member's order must be a delivery point (a contact
  * with an owner, any member's) or a contact she sees, and the collection point
@@ -945,6 +984,8 @@ module.exports = (config, { strapi }) =>
 
     const permissions = await appPermissionsOf(strapi, user.id);
     if (!isAllowed(action, permissions)) throw forbidden();
+    // a member's rate is set by her scope (memberRouteRate)
+    if (ORDER_WRITES.has(action) && !isOrdersMember(permissions)) await officeRouteRate(strapi, ctx, action);
     if (permissions.some((p) => FULL_ACCESS.includes(p))) return next();
 
     if (action === 'api::me.me.find') {

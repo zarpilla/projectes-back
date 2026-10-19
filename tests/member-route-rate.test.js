@@ -34,13 +34,25 @@ const STORED = {
     delivery_type: { id: FRED },
     pickup: { id: 1 },
     collection_point: null,
+    route_rate: { id: 42 },
+  },
+  24906: {
+    id: 24906,
+    status: 'delivered',
+    owner: { id: 300 },
+    route: { id: 14 },
+    delivery_type: { id: FRED },
+    pickup: { id: 1 },
+    route_rate: { id: 41 },
   },
 };
 
-function makeStrapi({ pendingFarmOrders = 0 } = {}) {
+function makeStrapi({ pendingFarmOrders = 0, permissions = ['orders'] } = {}) {
   const query = (uid) => ({
     findOne: jest.fn(async ({ where }) => {
-      if (uid === 'plugin::users-permissions.user') return { id: where.id, permissions: [{ permission: 'orders' }] };
+      if (uid === 'plugin::users-permissions.user') {
+        return { id: where.id, permissions: permissions.map((permission) => ({ permission })) };
+      }
       if (uid === 'api::order.order') return STORED[where.id] || null;
       if (uid === 'api::pickup.pickup') return [GIRONA, FINCA].find((p) => p.id === where.id) || null;
       if (uid === 'api::contact.contact') return { id: where.id, pickup_discount: 0 };
@@ -66,7 +78,7 @@ function ctxFor(handler, { method, body, numericId }) {
   };
 }
 
-async function send(handler, opts, strapiOptions) {
+async function send(handler, opts, strapiOptions = {}) {
   jest.resetModules();
   const strapi = makeStrapi(strapiOptions);
   const middleware = require('../src/middlewares/app-permissions')({}, { strapi });
@@ -130,7 +142,12 @@ describe('pickOrderRouteRate (issues/186)', () => {
   const { pickOrderRouteRate } = require('../src/api/order/services/route-price');
 
   it('finds no rate without a route that has one', () => {
-    expect(pickOrderRouteRate(RATES.filter((r) => r.id !== 43), { route: 99, delivery_type: NORMAL })).toBeNull();
+    expect(
+      pickOrderRouteRate(
+        RATES.filter((r) => r.id !== 43),
+        { route: 99, delivery_type: NORMAL },
+      ),
+    ).toBeNull();
   });
 
   it('a collection point takes the warehouse rates even for a farm pickup', () => {
@@ -140,5 +157,63 @@ describe('pickOrderRouteRate (issues/186)', () => {
       { pickup: FINCA },
     );
     expect(rate.id).toBe(41);
+  });
+});
+
+// The user's decision (2026-10-19): the office's orders get the same rate,
+// whoever writes them from the app (most office users also have `projects`).
+describe("the office's orders get the server's route rate too (issues/186)", () => {
+  const OFFICE = { permissions: ['hours', 'orders_admin', 'projects'] };
+  const officePut = (numericId, data, options = OFFICE) =>
+    send('api::order.order.update', { method: 'PUT', numericId, body: { data } }, options);
+
+  it.each([[OFFICE], [{ permissions: ['orders_admin'] }]])(
+    'replaces a wrong rate and leaves the price to the server (%j)',
+    async (options) => {
+      const body = await officePut(24905, { route_rate: 37, price: 8.77, kilograms: 14.5 }, options);
+      expect(body.data).toMatchObject({ route_rate: 42, price: null, kilograms: 14.5 });
+    },
+  );
+
+  it('keeps the price she sends with the right rate', async () => {
+    const body = await officePut(24905, { route_rate: { id: 42 }, price: 13.99, kilograms: 14.5 });
+    expect(body.data).toEqual({ route_rate: { id: 42 }, price: 13.99, kilograms: 14.5 });
+  });
+
+  it('leaves delivered orders and the writes without rate inputs alone', async () => {
+    expect((await officePut(24906, { route_rate: 37, price: 1 })).data).toEqual({ route_rate: 37, price: 1 });
+    expect((await officePut(24905, { comments: 'x', price: 2 })).data).toEqual({ comments: 'x', price: 2 });
+  });
+
+  it('chooses it on create and on the CSV import, for the owner of the order', async () => {
+    const created = await send(
+      'api::order.order.create',
+      {
+        method: 'POST',
+        body: {
+          data: { owner: 300, route: 14, delivery_type: FRED, pickup: 1, route_rate: 41, price: 11.88 },
+        },
+      },
+      OFFICE,
+    );
+    expect(created.data).toMatchObject({ route_rate: 42, price: null, owner: 300 });
+    const csv = await send(
+      'api::order.order.createCSV',
+      {
+        method: 'POST',
+        body: { owner: { id: 300 }, route: { id: 14 }, delivery_type: { id: NORMAL }, pickup: { id: 1 } },
+      },
+      OFFICE,
+    );
+    expect(csv).toMatchObject({ route_rate: { id: 41 }, price: null });
+  });
+
+  it('leaves collection orders alone', async () => {
+    const body = await send(
+      'api::order.order.create',
+      { method: 'POST', body: { data: { is_collection_order: true, route: 14, route_rate: 37 } } },
+      OFFICE,
+    );
+    expect(body.data.route_rate).toBe(37);
   });
 });
