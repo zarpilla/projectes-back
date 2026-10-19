@@ -276,6 +276,10 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     if (order.contact && order.contact.id) {
       order.contact = order.contact.id;
     } else if (order.contact) {
+      // a delivery point needs a trade name (issues/215): the file's name stands in
+      if (!order.contact.trade_name || !String(order.contact.trade_name).trim()) {
+        order.contact.trade_name = order.contact.name;
+      }
       for (const f of ['time_slot_1_ini', 'time_slot_1_end', 'time_slot_2_ini', 'time_slot_2_end']) {
         if (!order.contact[f]) order.contact[f] = null;
       }
