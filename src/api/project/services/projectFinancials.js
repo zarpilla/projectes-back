@@ -476,6 +476,18 @@ const calculateEstimatedTotals = async (
 };
 
 /**
+ * The `deductible_vat_pct` of a year: the year's own (Taules auxiliars ›
+ * Anys) when it exists, else the global fallback (Configuració), else 100.
+ * Shared by the project totals and the treasury «IVA previst» (issues/221).
+ */
+const deductibleVatPctForYear = (deductibleVatPctByYear, fallback_deductible_vat_pct, year) => {
+  const key = year == null ? null : String(year);
+  return key !== null && deductibleVatPctByYear.has(key)
+    ? deductibleVatPctByYear.get(key)
+    : parseFloat(fallback_deductible_vat_pct || 100);
+};
+
+/**
  * Build the deductible-ratio resolver for a project, using the
  * applicable `deductible_vat_pct` for the row's year (or the project
  * default year, or the global fallback).
@@ -484,9 +496,11 @@ const makeGetDeductibleRatioForDate =
   (deductibleVatPctByYear, fallback_deductible_vat_pct, projectDefaultYear) => (dateValue) => {
     const extractedYear = (dateValue && String(dateValue).substring(0, 4)) || null;
     const appliedYear = extractedYear || projectDefaultYear;
-    const deductible_vat_pct = deductibleVatPctByYear.has(appliedYear)
-      ? deductibleVatPctByYear.get(appliedYear)
-      : parseFloat(fallback_deductible_vat_pct || 100);
+    const deductible_vat_pct = deductibleVatPctForYear(
+      deductibleVatPctByYear,
+      fallback_deductible_vat_pct,
+      appliedYear,
+    );
     return (100.0 - deductible_vat_pct) / 100.0;
   };
 
@@ -1412,6 +1426,7 @@ module.exports = {
   // Exposed for tests / future reuse:
   noPhaseInfo,
   makeGetDeductibleRatioForDate,
+  deductibleVatPctForYear,
   groupTotalsByYearMonth,
   buildPlannedHoursByMonth,
   // Stored-totals migration (step 1 — not yet wired into lifecycles):

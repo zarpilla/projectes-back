@@ -27,7 +27,7 @@ const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { getMe } = require('../../../services/me-settings');
 const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
-const { addExpectedVat } = require('../services/vat-forecast');
+const { addExpectedVat, applyExpectedVatPct } = require('../services/vat-forecast');
 const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
 
 const getDeductiblePct = (years, emitted) => {
@@ -1032,6 +1032,13 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     }
 
     // Add expected VAT entries to treasury with cumulative balance
+    // Each quarter deducts its year's %, Configuració's only as fallback (issues/221)
+    applyExpectedVatPct(
+      vat_expected,
+      vat_expected_by_quarter,
+      deductibleVatPctByYear,
+      fallback_deductible_vat_pct,
+    );
     // Sort quarters chronologically
     const sortedExpectedVatQuarters = Object.keys(vat_expected_by_quarter)
       .map((key) => ({ key, ...vat_expected_by_quarter[key] }))
@@ -1043,10 +1050,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     let cumulativeExpectedVatBalance = 0;
 
     for (let qData of sortedExpectedVatQuarters) {
-      // `me.options` is an optional component — the same value is already
-      // resolved with a 100% fallback above; use it rather than dereferencing.
-      const quarterBalance =
-        qData.received - (qData.paid * fallback_deductible_vat_pct) / 100;
+      const quarterBalance = qData.received - qData.deductible_paid;
       cumulativeExpectedVatBalance += quarterBalance;
 
       // Only create treasury entry if cumulative balance is positive (payment required)
