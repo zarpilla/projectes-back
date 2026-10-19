@@ -27,6 +27,27 @@ const STATE_LABELS = { open: 'Oberta', wip: 'En procés', closed: 'Tancada' };
 
 const idOf = (value) => (value && typeof value === 'object' ? value.id : value);
 
+const incidenceWhere = (incidenceId) =>
+  /^\d+$/.test(String(incidenceId)) ? { id: Number(incidenceId) } : { documentId: incidenceId };
+
+/**
+ * Reopening a closed incidence clears when and by whom it was closed
+ * (issues/226). The screen sends only the new state; for users without full
+ * access app-permissions already did it (issues/190), for the others the
+ * panel still said «Tancada …» after reopening.
+ */
+async function clearClosedOnReopen(incidenceId, payload) {
+  const { state } = payload;
+  if (state === undefined || state === null || state === 'closed') return;
+  const stored = await strapi.db
+    .query('api::incidence.incidence')
+    .findOne({ where: incidenceWhere(incidenceId), select: ['id', 'state'] });
+  if (stored && stored.state === 'closed') {
+    payload.closed_date = null;
+    payload.closed_user = null;
+  }
+}
+
 /**
  * The replies an update leaves: the stored ones as they are, plus the ones
  * sent after them, in the name of whoever sends them and dated now
@@ -36,10 +57,9 @@ const idOf = (value) => (value && typeof value === 'object' ? value.id : value);
  * else.
  */
 async function appendedReplies(incidenceId, sent, user) {
-  const where = /^\d+$/.test(String(incidenceId)) ? { id: Number(incidenceId) } : { documentId: incidenceId };
   const stored = await strapi.db
     .query('api::incidence.incidence')
-    .findOne({ where, populate: { incidence_response: { populate: { user: true } } } });
+    .findOne({ where: incidenceWhere(incidenceId), populate: { incidence_response: { populate: { user: true } } } });
   const kept = ((stored && stored.incidence_response) || []).map((reply) => ({
     id: reply.id,
     text: reply.text,
@@ -88,6 +108,7 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
         ctx.state.user,
       );
     }
+    await clearClosedOnReopen(numericId(ctx), payload);
     if (ctx.state.user) {
       setCurrentUserId(ctx.state.user.id);
     }
