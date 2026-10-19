@@ -16,7 +16,7 @@ jest.mock('../src/services/me-settings', () => ({
 
 const year = moment().year();
 const day = `${year}-02-10`;
-const doc = (id, total_vat) => ({ id, code: `D${id}`, emitted: day, total: 100 + total_vat, total_vat, projects: [], document_type: { name: 'Tiquet' } });
+const doc = (id, total_vat) => ({ id, code: `D${id}`, emitted: day, total_base: 100, total: 100 + total_vat, total_vat, projects: [], document_type: { name: 'Tiquet' } });
 
 function stubStrapi(rows) {
   global.strapi = {
@@ -79,5 +79,15 @@ describe('VAT of received expenses on the IVA screen (issues/209)', () => {
     expect(vat.deductible_paid).toBeCloseTo(0.8 * 15);
     expect(q.deductible_paid).toBeCloseTo(0.8 * 15);
     expect(vat.deductible_vat).toBeCloseTo(0.8 * 15 - 21);
+  });
+
+  it('lists each pending document with its base', async () => {
+    const { vat } = await forecast();
+
+    expect(vat.documents.map((d) => [d.type, d.total_base])).toEqual([
+      ['emitted-invoices', 100],
+      ['received-invoices', 100],
+      ['received-expenses', 100],
+    ]);
   });
 });
