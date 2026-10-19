@@ -27,6 +27,8 @@ const { frontUrlsWithoutHash } = require('./services/front-urls-without-hash');
 const { clearQuotePreviewLinks } = require('./services/clear-quote-preview-links');
 const { padFourDigitPostcodes } = require('./services/pad-four-digit-postcodes');
 const { refreshUndatedOriginalTotals } = require('./services/refresh-undated-original-totals');
+const { widenBudgetLineDecimals } = require('./services/widen-budget-line-decimals');
+const { repairBudgetLineTotals } = require('./services/repair-budget-line-totals');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
@@ -143,6 +145,10 @@ module.exports = {
       ['padFourDigitPostcodes', padFourDigitPostcodes, { runOnce: true }],
       // issues/195: undated original-budget lines were left out of the Original totals.
       ['refreshUndatedOriginalTotals', refreshUndatedOriginalTotals, { runOnce: true }],
+      // issues/194: budget lines keep 4 decimals in quantity and price (before the repair below).
+      ['widenBudgetLineDecimals', widenBudgetLineDecimals, { runOnce: false }],
+      // issues/194: lines whose stored total ≠ quantity × price.
+      ['repairBudgetLineTotals', repairBudgetLineTotals, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
