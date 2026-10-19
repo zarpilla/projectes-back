@@ -274,6 +274,17 @@ const ECONOMIC_DETAIL_POPULATE = {
   },
 };
 
+// State filter of projects/economic-detail (Ingressos/Despeses, Preu hora).
+// The id 0 is the «Sense estat» chip: projects without a project_state
+// (issues/205).
+const NO_STATE = 0;
+const economicDetailStateFilter = (stateIds) => {
+  const ids = (stateIds || []).map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
+  const withState = { project_state: { id: { $in: ids.filter((n) => n !== NO_STATE) } } };
+  if (!ids.includes(NO_STATE)) return withState;
+  return { $or: [withState, { project_state: { id: { $null: true } } }] };
+};
+
 module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   /**
    * find override — ports the v3 afterFind hook (removed in v5): aggregates
@@ -851,6 +862,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     // and answered "Unknown column 't0.year' in 'where clause'". Build the
     // project query explicitly instead, on both branches.
     const projectQuery = { _limit: -1, published_at_null: false };
+    let stateFilter = null;
 
     // Handle project_state filtering
     if (ctx.query && ctx.query._where) {
@@ -862,19 +874,24 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           typeof ctx.query._where.project_state_in === 'string'
             ? ctx.query._where.project_state_in.split(',').map((s) => parseInt(s))
             : ctx.query._where.project_state_in;
-        projectQuery.project_state_in = stateIds;
+        stateFilter = economicDetailStateFilter(stateIds);
       }
     }
+
+    // the state filter is ANDed apart: the `_q` search already uses `$or`
+    const withStates = (args) => (stateFilter ? { ...args, where: { $and: [args.where, stateFilter] } } : args);
 
     if (ctx.query._q) {
       promises.push(
         strapi.db
           .query('api::project.project')
           .findMany(
-            toDbArgs(
-              adaptQuery({ ...projectQuery, _q: ctx.query._q }, { searchFields: ['name'] }),
-              ECONOMIC_DETAIL_POPULATE,
-            )
+            withStates(
+              toDbArgs(
+                adaptQuery({ ...projectQuery, _q: ctx.query._q }, { searchFields: ['name'] }),
+                ECONOMIC_DETAIL_POPULATE,
+              ),
+            ),
           )
       );
     } else {
@@ -887,7 +904,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       promises.push(
         strapi.db
           .query('api::project.project')
-          .findMany(toDbArgs(adaptQuery(projectQuery), ECONOMIC_DETAIL_POPULATE)),
+          .findMany(withStates(toDbArgs(adaptQuery(projectQuery), ECONOMIC_DETAIL_POPULATE))),
       );
     }
 
