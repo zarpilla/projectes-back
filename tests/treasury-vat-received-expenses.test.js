@@ -91,3 +91,24 @@ describe('VAT of received expenses on the IVA screen (issues/209)', () => {
     ]);
   });
 });
+
+// issues/229: «IVA › Documents pendents» showed a received expense's id (662)
+// instead of its code (2026-233).
+describe('pending VAT documents of received expenses (issues/229)', () => {
+  beforeEach(() => {
+    jest.resetModules();
+    stubStrapi({
+      'api::year.year': [{ id: 1, year, deductible_vat_pct: 80 }],
+      'api::received-expense.received-expense': [doc(3, 5)],
+    });
+  });
+
+  afterEach(() => {
+    delete global.strapi;
+  });
+
+  it('shows the expense code, not its id', async () => {
+    const { vat } = await forecast();
+    expect(vat.documents.map((d) => [d.id, d.code])).toEqual([[3, 'D3']]);
+  });
+});

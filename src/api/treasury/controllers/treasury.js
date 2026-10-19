@@ -809,7 +809,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           const theoreticalPct = getDeductiblePct(years, e.emitted) * 100;
           vat.documents.push({
             id: e.id,
-            code: e.id,
+            code: e.code,
             type: 'received-expenses',
             total_vat: e.total_vat,
             total_base: e.total_base,
