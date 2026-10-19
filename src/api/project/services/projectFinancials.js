@@ -963,19 +963,21 @@ const buildProjectRows = async (p, ctx) => {
  * across all projects — exposed here so `doProjectInfoCalculations` can
  * build the `activitiesByProject` Map for one project without
  * duplicating logic.
+ * Undated activities go to the UNDATED_YEAR bucket, like undated lines; they
+ * were grouped under a NaN year (issues/205).
  */
 const buildSingleProjectActivitiesMap = (projectId, activities) => {
   const grouped = _(
     (activities || []).map((a) => ({
       ...a,
-      ym: `${moment(a.date, 'YYYY-MM-DD').year()}.${moment(a.date, 'YYYY-MM-DD').month()}`,
+      ym: `${rowYear(a.date)}.${rowMonth(a.date)}`,
     })),
   )
     .groupBy('ym')
     .map((rows, id) => ({
       projectId,
       year: parseInt(id.split('.')[0]),
-      month: parseInt(id.split('.')[1]) + 1,
+      month: parseInt(id.split('.')[1]),
       cost: _.sumBy(rows, (r) => (r.hours || 0) * (r.cost_by_hour || 0)),
       hours: _.sumBy(rows, 'hours'),
     }))
