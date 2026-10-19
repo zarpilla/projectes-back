@@ -1051,10 +1051,11 @@ const GENERAL_SCOPES = {
   [`${INCIDENCE}.update`]: scopeIncidenceUpdate,
 };
 
-// the user's own data: nothing to clean
+// the user's own data: nothing to clean. `users/me` is not one of them: it
+// populates like `/users` (her own periods' salary fields, issues/220) and
+// goes through the sanitizer, where her own row keeps her calendar and identity.
 const OWN_DATA_ACTIONS = new Set([
   'api::me.me.find',
-  'plugin::users-permissions.user.me',
   'plugin::users-permissions.user.home',
   'plugin::users-permissions.user.updateHome',
 ]);
