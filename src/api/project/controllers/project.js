@@ -18,7 +18,7 @@ const { fiscalYearStartMonth } = require('../../../services/fiscal-year');
 const { documentsOfProject, mergeDocuments, refreshLineWarnings } = require('../../../services/refresh-line-warnings');
 const { activitiesByProjectMonth } = require('../services/economic-detail-activities');
 const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDocuments');
-const { lineTotal } = require('../../../services/budget-line');
+const { lineTotal, invalidLineValueMessage } = require('../../../services/budget-line');
 const {
   buildProjectRows,
   aggregateRowsByYear,
@@ -1562,6 +1562,12 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         entity: 'project-original-phases',
       },
     ];
+
+    // A non-numeric quantity / price is the caller's error, not a 500 (issues/224)
+    for (const section of sections) {
+      const message = data[section.flag] ? invalidLineValueMessage(data[section.phases]) : null;
+      if (message) return ctx.badRequest(message);
+    }
 
     // One transaction for the phase writes and the core update: if the update
     // fails (validation, beforeUpdate totals, afterUpdate is_mother), the phase
