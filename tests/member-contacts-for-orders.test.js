@@ -9,6 +9,9 @@
  * 2. `GET /contacts/96` (another member's) → 403, but `POST /orders` with
  *    `contact: 96` → 201, and from then on 96 was «a contact her orders go to»:
  *    readable in full and its address editable.
+ * Decision (2026-10-19): as on master, members see and use every delivery
+ * point (a contact with an owner); the rest of the directory (the entity's
+ * clients, other members' own contacts) stays out.
  */
 
 const ME = 100;
@@ -22,6 +25,9 @@ const CONTACTS = {
   31: { id: 31, owner: { id: OTHER }, users_permissions_user: null },
   96: { id: 96, owner: { id: OTHER }, users_permissions_user: null },
   97: { id: 97, owner: { id: OTHER }, users_permissions_user: null },
+  // the entity's client, and another member's own contact: not delivery points
+  95: { id: 95, owner: null, users_permissions_user: null },
+  94: { id: 94, owner: null, users_permissions_user: { id: OTHER } },
 };
 // the office created an order of hers to 97
 const ORDERS = { 1: { id: 1, status: 'pending', owner: { id: ME }, contact: { id: 97 } } };
@@ -99,10 +105,12 @@ const everyone = Object.values(CONTACTS).map((c) => ({
 }));
 
 describe('contacts/for-orders for a member (issues/187)', () => {
-  it('lists only the points she sees: hers, the shared ones and the ones of her orders', async () => {
-    const ctx = ctxFor('api::contact.contact.forOrders', { query: { owned: '1' } });
-    await run(ctx, everyone);
-    expect(ctx.body.map((c) => c.id).sort((a, b) => a - b)).toEqual([7, 8, 9, 97]);
+  it('asks for the delivery points only, whichever list she calls', async () => {
+    for (const query of [{}, { owned: '1' }]) {
+      const ctx = ctxFor('api::contact.contact.forOrders', { query });
+      await run(ctx, everyone);
+      expect(ctx.query.owned).toBe('1');
+    }
   });
 
   it('gives her only her own contact from the members list (her collection points)', async () => {
@@ -116,13 +124,14 @@ describe("the points of a member's order (issues/187)", () => {
   const create = (data) =>
     ctxFor('api::order.order.create', { method: 'POST', body: { data }, apiName: 'order' });
 
-  it("refuses an order to another member's point", async () => {
-    await expect(run(create({ contact: 96 }))).rejects.toMatchObject({ name: 'ForbiddenError' });
-    await expect(run(create({ contact: { id: 96 } }))).rejects.toMatchObject({ name: 'ForbiddenError' });
+  it("refuses an order to a contact that isn't a delivery point", async () => {
+    for (const contact of [95, 94, { id: 95 }]) {
+      await expect(run(create({ contact }))).rejects.toMatchObject({ name: 'ForbiddenError' });
+    }
   });
 
-  it('accepts her points, the shared ones and the ones of her orders', async () => {
-    for (const contact of [8, 9, 97]) expect(await run(create({ contact }))).toHaveBeenCalled();
+  it("accepts any delivery point, another member's too, and her own contact", async () => {
+    for (const contact of [7, 8, 9, 96, 97]) expect(await run(create({ contact }))).toHaveBeenCalled();
   });
 
   it('accepts her collection points only', async () => {
@@ -134,18 +143,18 @@ describe("the points of a member's order (issues/187)", () => {
     const update = ctxFor('api::order.order.update', {
       method: 'PUT',
       numericId: 1,
-      body: { data: { contact: 96 } },
+      body: { data: { contact: 95 } },
       apiName: 'order',
     });
     await expect(run(update)).rejects.toMatchObject({ name: 'ForbiddenError' });
     const csv = (body) => ctxFor('api::order.order.createCSV', { method: 'POST', body, apiName: 'order' });
-    await expect(run(csv({ contact: { id: 96 } }))).rejects.toMatchObject({ name: 'ForbiddenError' });
+    await expect(run(csv({ contact: { id: 95 } }))).rejects.toMatchObject({ name: 'ForbiddenError' });
     expect(await run(csv({ contact: { name: 'Nou punt' } }))).toHaveBeenCalled();
   });
 });
 
 describe('a driver who is a member too (issues/187)', () => {
-  it('keeps creating her own orders to any point: as a driver she sees them all', async () => {
+  it('keeps creating her own orders to any contact: as a driver she sees them all', async () => {
     jest.resetModules();
     const strapi = makeStrapi();
     const findOne = strapi.db.query;
@@ -162,7 +171,7 @@ describe('a driver who is a member too (issues/187)', () => {
     middleware = require('../src/middlewares/app-permissions')({}, { strapi });
     const ctx = ctxFor('api::order.order.create', {
       method: 'POST',
-      body: { data: { contact: 96 } },
+      body: { data: { contact: 95 } },
       apiName: 'order',
     });
     expect(await run(ctx)).toHaveBeenCalled();

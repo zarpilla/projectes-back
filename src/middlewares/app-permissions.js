@@ -331,19 +331,22 @@ async function memberRouteRate(strapi, payload, userId, { order, csv }) {
 }
 
 /**
- * The delivery point and the collection point of a member's order must be ones
- * she sees: attaching any contact id to an order made it «one her orders go
- * to», readable in full and editable from then on (issues/187). A new point
- * (the CSV import's contact without id) is created as hers.
+ * The delivery point of a member's order must be a delivery point (a contact
+ * with an owner, any member's) or a contact she sees, and the collection point
+ * one of hers: attaching any contact id (the entity's clients, another
+ * member's own contact) made it «one her orders go to», readable in full and
+ * editable from then on (issues/187). A new point (the CSV import's contact
+ * without id) is created as hers.
  */
 async function checkMemberOrderContacts(strapi, payload, userId) {
   const contactId = relationId(payload.contact);
   if (contactId !== undefined) {
-    await loadVisibleContact(
-      strapi,
-      typeof contactId === 'number' ? { id: contactId } : { documentId: contactId },
-      userId,
-    );
+    const where = typeof contactId === 'number' ? { id: contactId } : { documentId: contactId };
+    // any delivery point (a contact with an owner) is hers to send to
+    const point = await strapi.db
+      .query(CONTACT)
+      .findOne({ where, select: ['id'], populate: { owner: { select: ['id'] } } });
+    if (!point || !point.owner) await loadVisibleContact(strapi, where, userId);
   }
   const pointId = relationId(payload.collection_point);
   if (pointId !== undefined) {
@@ -606,25 +609,19 @@ async function scopeContactList(ctx, next, { strapi, userId }) {
 
 /**
  * `contacts/for-orders` (Comandes, the order form) gave a member the whole
- * directory, with NIF, phone, address, notes and discounts (issues/187): she
- * gets the contacts «Punts d'entrega» shows her, and of the `?socies=1` list
- * (her collection points) only her own contact.
+ * directory, the entity's clients included (issues/187). She gets the delivery
+ * points (contacts with an owner), every member's, as on master: the order form
+ * lets her send an order to any point (the user's decision, 2026-10-19); and
+ * of the `?socies=1` list (her collection points) only her own contact.
  */
-async function scopeContactsForOrders(ctx, next, { strapi, userId }) {
-  const socies = ['1', 'true'].includes(String((ctx.query || {}).socies));
-  const visible = socies
-    ? null
-    : await strapi.db
-        .query(CONTACT)
-        .findMany({ where: (await memberContactsClauses(strapi, userId)).v5, select: ['id'] });
+async function scopeContactsForOrders(ctx, next, { userId }) {
+  const query = { ...(ctx.query || {}) };
+  const socies = ['1', 'true'].includes(String(query.socies));
+  if (!socies) ctx.query = { ...query, owned: '1' };
   await next();
-  if (!Array.isArray(ctx.body)) return;
-  if (socies) {
+  if (socies && Array.isArray(ctx.body)) {
     ctx.body = ctx.body.filter((c) => idOf(c.users_permissions_user) === userId);
-    return;
   }
-  const ids = new Set(visible.map((c) => c.id));
-  ctx.body = ctx.body.filter((c) => ids.has(c.id));
 }
 
 async function loadVisibleContact(strapi, where, userId) {
