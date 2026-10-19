@@ -2,6 +2,13 @@
 # Zero-downtime deploy of a backend image to the Docker tenants (blue/green).
 #
 #   ./deploy.sh v5-<40-hex sha> [tenant ...]     e.g. ./deploy.sh v5-8b48003... buida
+#   ./deploy.sh redesign-<40-hex sha> tenant ...  a build of the redesign branch
+#
+# Pinned tenants (pinned.conf: <tenant> <tag>) are on a redesign build: a deploy
+# without a tenant list skips them. Deploying redesign-<sha> to a tenant pins it,
+# deploying a v5-<sha> to it by name unpins it (back to main). The canary can't be
+# pinned. Going back is not free: main's schema sync may drop the columns only the
+# redesign has.
 #
 # Per tenant: start the new build in the idle slot (blue <-> green), wait until it
 # answers, point the proxy (Caddy, graceful reload) at it, let the old slot drain,
@@ -24,7 +31,7 @@ LOG=deploy.log
 
 if [ -n "${SSH_ORIGINAL_COMMAND:-}" ]; then read -r -a ARGS <<<"$SSH_ORIGINAL_COMMAND"; else ARGS=("$@"); fi
 TAG="${ARGS[0]:-}"
-[[ "$TAG" =~ ^v5-[0-9a-f]{40}$ ]] || { echo "Usage: deploy.sh v5-<40-hex sha> [tenant ...]"; exit 2; }
+[[ "$TAG" =~ ^(v5|redesign)-[0-9a-f]{40}$ ]] || { echo "Usage: deploy.sh v5-<40-hex sha> [tenant ...] | redesign-<40-hex sha> tenant ..."; exit 2; }
 
 declare -A PORT
 ALL=()
@@ -34,6 +41,18 @@ while read -r name port _; do
 done < tenants.conf
 ONLY=("${ARGS[@]:1}")
 for t in "${ONLY[@]}"; do [ -n "${PORT[$t]:-}" ] || { echo "Unknown tenant: $t"; exit 2; }; done
+
+declare -A PINNED
+if [ -f pinned.conf ]; then
+  while read -r name tag _; do
+    [[ -z "$name" || "$name" == \#* ]] && continue
+    PINNED[$name]=$tag
+  done < pinned.conf
+fi
+if [[ "$TAG" == redesign-* ]]; then
+  [ ${#ONLY[@]} -gt 0 ] || { echo "A redesign build goes only to the tenants you name"; exit 2; }
+  for t in "${ONLY[@]}"; do [ "$t" != "$CANARY" ] || { echo "The canary ($CANARY) can't be pinned to a redesign build"; exit 2; }; done
+fi
 
 exec 9>.deploy.lock
 flock -n 9 || { echo "Another deploy is running"; exit 3; }
@@ -49,7 +68,8 @@ if [ ${#ONLY[@]} -gt 0 ]; then ORDER=("${ONLY[@]}")
 else
   ORDER=()
   [ -n "${PORT[$CANARY]:-}" ] && ORDER+=("$CANARY")
-  for t in "${ALL[@]}"; do [ "$t" = "$CANARY" ] || ORDER+=("$t"); done
+  for t in "${ALL[@]}"; do [ "$t" = "$CANARY" ] || [ -n "${PINNED[$t]:-}" ] || ORDER+=("$t"); done
+  [ ${#PINNED[@]} -eq 0 ] || echo "--- skipping pinned tenants: ${!PINNED[*]}"
 fi
 
 active() { cat "state/$1" 2>/dev/null || echo blue; }
@@ -126,10 +146,17 @@ while [ $i -lt ${#ORDER[@]} ]; do deploy_batch "${ORDER[@]:i:PARALLEL}"; i=$((i 
 
 if [ ${#ONLY[@]} -eq 0 ]; then
   { grep -v '^BACK_TAG=' .env 2>/dev/null || true; echo "BACK_TAG=$TAG"; } > .env.new && mv .env.new .env
+else
+  for t in "${ONLY[@]}"; do
+    if [[ "$TAG" == redesign-* ]]; then PINNED[$t]=$TAG; else unset "PINNED[$t]"; fi
+  done
+  { echo "# <tenant> <tag>: on a redesign build, skipped by deploys to every tenant (written by deploy.sh)"
+    for t in "${!PINNED[@]}"; do echo "$t ${PINNED[$t]}"; done; } > pinned.conf.new && mv pinned.conf.new pinned.conf
 fi
 
-# Keep the current and previous backend images; drop older ones.
+# Keep the current and previous backend images and the pinned ones; drop older ones.
 KEEP="webcoop/esstrapis-back:$TAG webcoop/esstrapis-back:$PREV"
+for t in "${!PINNED[@]}"; do KEEP+=" webcoop/esstrapis-back:${PINNED[$t]}"; done
 docker images webcoop/esstrapis-back --format '{{.Repository}}:{{.Tag}}' | while read -r img; do
   case " $KEEP " in *" $img "*) ;; *) docker rmi "$img" >/dev/null 2>&1 || true ;; esac
 done
