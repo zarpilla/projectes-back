@@ -50,6 +50,7 @@ const {
   LOGISTICS,
 } = require('../services/app-access-rules');
 const { rulesFor, sanitizeResponse, modelUidOfAction } = require('../services/response-sanitizer');
+const { relationId } = require('../services/relation-input');
 
 const ORDER = 'api::order.order';
 const CONTACT = 'api::contact.contact';
@@ -309,8 +310,43 @@ function ownMoves(payload, userId) {
  * for the server to compute (route-price.js, the form's tiers) when the order
  * is new or one of its inputs changes; the discounts are the lifecycles'.
  */
-async function memberOrderPayload(strapi, payload, userId, { creating }) {
+/**
+ * The delivery point and the collection point of a member's order must be ones
+ * she sees: attaching any contact id to an order made it «one her orders go
+ * to», readable in full and editable from then on (issues/187). A new point
+ * (the CSV import's contact without id) is created as hers.
+ */
+async function checkMemberOrderContacts(strapi, payload, userId) {
+  const contactId = relationId(payload.contact);
+  if (contactId !== undefined) {
+    await loadVisibleContact(
+      strapi,
+      typeof contactId === 'number' ? { id: contactId } : { documentId: contactId },
+      userId,
+    );
+  }
+  const pointId = relationId(payload.collection_point);
+  if (pointId !== undefined) {
+    const own = await strapi.db.query(CONTACT).findMany({
+      where: { users_permissions_user: { id: userId } },
+      select: ['id'],
+      populate: { collection_points: { select: ['id', 'documentId'] } },
+    });
+    const points = own.flatMap((c) => c.collection_points || []);
+    if (!points.some((p) => p.id === pointId || p.documentId === pointId)) {
+      await loadVisibleContact(
+        strapi,
+        typeof pointId === 'number' ? { id: pointId } : { documentId: pointId },
+        userId,
+      );
+    }
+  }
+}
+
+async function memberOrderPayload(strapi, payload, userId, { creating, permissions = [] }) {
   const depositSent = 'deposit_date' in payload;
+  // a driver who is a member too sees every point already
+  if (!permissions.includes('orders_delivery')) await checkMemberOrderContacts(strapi, payload, userId);
   omit(payload, OFFICE_ORDER_FIELDS);
   if (depositSent) payload.deposit_user = payload.deposit_date ? userId : null;
   const contactId = idOf(payload.contact);
@@ -325,13 +361,13 @@ async function memberOrderPayload(strapi, payload, userId, { creating }) {
 }
 
 /** A member's own order: the order form, the Comandes list, Dipòsits. */
-async function memberOwnOrderUpdate(strapi, order, payload, userId) {
+async function memberOwnOrderUpdate(strapi, order, payload, userId, permissions = []) {
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
     throw forbidden();
   if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
   // once the office has the order, the form is read-only for her
   if (order.status !== 'pending') pick(payload, [...MEMBER_LATE_FIELDS]);
-  await memberOrderPayload(strapi, payload, userId, { creating: false });
+  await memberOrderPayload(strapi, payload, userId, { creating: false, permissions });
 }
 
 // ---------------------------------------------------------------------------
@@ -362,25 +398,25 @@ async function scopeOrderRow(ctx, next, { strapi, userId }) {
   return next();
 }
 
-async function scopeOrderCreate(ctx, next, { strapi, userId }) {
+async function scopeOrderCreate(ctx, next, { strapi, userId, permissions }) {
   const payload = payloadOf(ctx);
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
     throw forbidden();
   payload.owner = userId;
   // a new order is the office's to process (issues/163)
   payload.status = 'pending';
-  await memberOrderPayload(strapi, payload, userId, { creating: true });
+  await memberOrderPayload(strapi, payload, userId, { creating: true, permissions });
   return next();
 }
 
-async function scopeOrderCsv(ctx, next, { strapi, userId }) {
+async function scopeOrderCsv(ctx, next, { strapi, userId, permissions }) {
   const body = ctx.request.body || {};
   if (body.owner !== undefined && body.owner !== null && idOf(body.owner) !== userId) throw forbidden();
   // a new point (a contact without id): the office's fields of a contact stay out too
   if (body.contact && typeof body.contact === 'object' && body.contact.id === undefined) {
     pick(body.contact, MEMBER_NEW_CONTACT_FIELDS);
   }
-  await memberOrderPayload(strapi, body, userId, { creating: true });
+  await memberOrderPayload(strapi, body, userId, { creating: true, permissions });
   // createCSV reads `owner.id`, and gives the same owner to a contact it creates
   body.owner = { id: userId };
   return next();
@@ -502,11 +538,11 @@ async function orderContactIds(strapi, userId) {
  * The contacts a member sees on «Punts d'entrega» and in the order form (issues/165):
  * hers (owner or her own contact), the shared ones, and the ones her orders go to.
  */
-async function scopeContactList(ctx, next, { strapi, userId }) {
+/** The contacts a member sees, as v3 and v5 clauses (issues/165). */
+async function memberContactsClauses(strapi, userId) {
   const ids = idList(await orderContactIds(strapi, userId));
-  narrowQuery(
-    ctx,
-    {
+  return {
+    v3: {
       _or: [
         { 'owner.id': userId },
         { 'users_permissions_user.id': userId },
@@ -515,7 +551,7 @@ async function scopeContactList(ctx, next, { strapi, userId }) {
         { 'id_in': ids },
       ],
     },
-    {
+    v5: {
       $or: [
         { owner: { id: userId } },
         { users_permissions_user: { id: userId } },
@@ -524,8 +560,36 @@ async function scopeContactList(ctx, next, { strapi, userId }) {
         { id: { $in: ids } },
       ],
     },
-  );
+  };
+}
+
+async function scopeContactList(ctx, next, { strapi, userId }) {
+  const { v3, v5 } = await memberContactsClauses(strapi, userId);
+  narrowQuery(ctx, v3, v5);
   return next();
+}
+
+/**
+ * `contacts/for-orders` (Comandes, the order form) gave a member the whole
+ * directory, with NIF, phone, address, notes and discounts (issues/187): she
+ * gets the contacts «Punts d'entrega» shows her, and of the `?socies=1` list
+ * (her collection points) only her own contact.
+ */
+async function scopeContactsForOrders(ctx, next, { strapi, userId }) {
+  const socies = ['1', 'true'].includes(String((ctx.query || {}).socies));
+  const visible = socies
+    ? null
+    : await strapi.db
+        .query(CONTACT)
+        .findMany({ where: (await memberContactsClauses(strapi, userId)).v5, select: ['id'] });
+  await next();
+  if (!Array.isArray(ctx.body)) return;
+  if (socies) {
+    ctx.body = ctx.body.filter((c) => idOf(c.users_permissions_user) === userId);
+    return;
+  }
+  const ids = new Set(visible.map((c) => c.id));
+  ctx.body = ctx.body.filter((c) => ids.has(c.id));
 }
 
 async function loadVisibleContact(strapi, where, userId) {
@@ -607,7 +671,7 @@ async function scopeDriverOrderUpdate(ctx, next, { strapi, userId, permissions }
   const payload = payloadOf(ctx);
   // her own pending order, when she is a member too
   if (permissions.includes('orders') && idOf(order.owner) === userId && order.status === 'pending') {
-    await memberOwnOrderUpdate(strapi, order, payload, userId);
+    await memberOwnOrderUpdate(strapi, order, payload, userId, permissions);
     return next();
   }
   if (Object.keys(payload).some((key) => !DRIVER_ORDER_FIELDS.has(key))) throw forbidden();
@@ -776,6 +840,7 @@ const MEMBER_SCOPES = {
   [`${CONTACT}.findOne`]: scopeContactRow,
   [`${CONTACT}.create`]: scopeContactCreate,
   [`${CONTACT}.update`]: scopeContactUpdate,
+  [`${CONTACT}.forOrders`]: scopeContactsForOrders,
   'api::orders-import.orders-import.create': scopeOrdersImport,
 };
 
