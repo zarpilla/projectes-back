@@ -720,7 +720,7 @@ describe('app permissions (issues/099)', () => {
           pickup_date: '2026-10-18',
         }),
       );
-      expect(ctx.request.body.data).toEqual({ kilograms: 12, price: null });
+      expect(ctx.request.body.data).toEqual({ kilograms: 12, price: null, route_rate: null });
     });
 
     it('keeps the stored price when nothing it depends on changes', async () => {
@@ -757,7 +757,7 @@ describe('app permissions (issues/099)', () => {
         method: 'POST',
         body: { data: { status: 'invoiced', price: 0.01, emitted_invoice: 4, kilograms: 3 } },
       });
-      expect(ctx.request.body.data).toEqual({ status: 'pending', owner: ME, kilograms: 3, price: null });
+      expect(ctx.request.body.data).toEqual({ status: 'pending', owner: ME, kilograms: 3, price: null, route_rate: null });
     });
 
     it("cleans the CSV import's orders and new points the same way", async () => {
@@ -773,6 +773,7 @@ describe('app permissions (issues/099)', () => {
       expect(ctx.request.body).toEqual({
         kilograms: 3,
         price: null,
+        route_rate: null,
         contact: { name: 'Nou' },
         owner: { id: ME },
       });
@@ -806,7 +807,7 @@ describe('app permissions (issues/099)', () => {
         userId: 300,
         body: { data: { price: 1 } },
       });
-      expect(ctx.request.body.data).toEqual({ owner: 300, status: 'pending', price: null });
+      expect(ctx.request.body.data).toEqual({ owner: 300, status: 'pending', price: null, route_rate: null });
       // her own pending order, as a member
       const own = await expectAllowed('api::order.order.update', put(20, { units: 2, price: 1 }, 300));
       expect(own.request.body.data).toEqual({ units: 2 });

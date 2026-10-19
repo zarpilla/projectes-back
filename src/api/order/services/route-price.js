@@ -175,7 +175,99 @@ const findCollectionOrderRouteRate = async (collectionOrder) => {
   });
 };
 
+/**
+ * The rate of a regular order, as the order form picks it (the front's
+ * assignRouteRate): the rates of its route (or of every route), of its
+ * delivery type (or of any), and of its kind of pickup -- the farm's own rates
+ * for a farm pickup unless the owner already has a farm pickup pending on that
+ * route or the boxes go through a collection point, the warehouses' rates
+ * otherwise. Ties: the very pickup point's rate, then route-specific, then
+ * delivery-type-specific, then the lowest id (issues/151, 186).
+ *
+ * @param {object[]} rates  rates with routes, pickup ({id, pickup}) and delivery_type
+ * @param {object} order    { route, delivery_type, pickup, collection_point } (ids or objects)
+ * @param {object} [opts]   pickup: the order's pickup row ({id, pickup}); farmOrderPending
+ */
+const pickOrderRouteRate = (rates, order, { pickup = null, farmOrderPending = false } = {}) => {
+  const routeId = idOf(order.route);
+  const deliveryTypeId = idOf(order.delivery_type);
+  const pickupId = idOf(order.pickup);
+  const isFarm = (p) => Boolean(p) && !isWarehousePickup(p);
+  const orderPickup = pickup || order.pickup;
+  const farmRates =
+    !idOf(order.collection_point) && orderPickup != null && isFarm(orderPickup) && !farmOrderPending;
+  const routesOf = (r) => (Array.isArray(r.routes) ? r.routes : []);
+  const candidates = (rates || []).filter((r) => {
+    if (!r) return false;
+    const routes = routesOf(r);
+    if (routes.length && !routes.some((rt) => idOf(rt) === routeId)) return false;
+    if (r.delivery_type && idOf(r.delivery_type) !== deliveryTypeId) return false;
+    if (!r.pickup) return true;
+    return farmRates ? idOf(r.pickup) === pickupId : !isFarm(r.pickup);
+  });
+  const rank = (r) => [
+    r.pickup && idOf(r.pickup) === pickupId ? 0 : 1,
+    routesOf(r).length ? 0 : 1,
+    r.delivery_type ? 0 : 1,
+    Number(r.id) || 0,
+  ];
+  candidates.sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+    return 0;
+  });
+  return candidates[0] || null;
+};
+
+/**
+ * The rate the server gives a regular order of `owner` (a member's write:
+ * the rate she sends isn't trusted, issues/186). `order` holds the order's
+ * route, delivery type, pickup and collection point, and its id when stored.
+ */
+const findOrderRouteRate = async (order, owner, s = strapi) => {
+  const routeId = relationId(order.route);
+  if (routeId === undefined) return null;
+  const pickupId = relationId(order.pickup);
+  const pickup =
+    pickupId === undefined
+      ? null
+      : await s.db
+          .query('api::pickup.pickup')
+          .findOne({ where: { id: pickupId }, select: ['id', 'pickup'] });
+  let farmOrderPending = false;
+  if (pickup && !isWarehousePickup(pickup) && !relationId(order.collection_point)) {
+    const where = {
+      owner: { id: relationId(owner) },
+      route: { id: routeId },
+      pickup: { id: pickupId },
+      status: 'pending',
+    };
+    if (order.id) where.id = { $ne: order.id };
+    farmOrderPending = (await s.db.query('api::order.order').count({ where })) > 0;
+  }
+  const rates = await s.db.query('api::route-rate.route-rate').findMany({
+    populate: {
+      routes: { select: ['id'] },
+      pickup: { select: ['id', 'pickup'] },
+      delivery_type: { select: ['id'] },
+    },
+  });
+  return pickOrderRouteRate(
+    rates,
+    {
+      route: routeId,
+      delivery_type: relationId(order.delivery_type),
+      pickup: pickupId,
+      collection_point: relationId(order.collection_point),
+    },
+    { pickup, farmOrderPending },
+  );
+};
+
 module.exports = {
+  pickOrderRouteRate,
+  findOrderRouteRate,
   calculatePriceFromRouteRate,
   fillMissingPrice,
   isWarehousePickup,

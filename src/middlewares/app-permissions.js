@@ -50,6 +50,7 @@ const {
   LOGISTICS,
 } = require('../services/app-access-rules');
 const { rulesFor, sanitizeResponse, modelUidOfAction } = require('../services/response-sanitizer');
+const { findOrderRouteRate } = require('../api/order/services/route-price');
 
 const ORDER = 'api::order.order';
 const CONTACT = 'api::contact.contact';
@@ -303,13 +304,39 @@ function ownMoves(payload, userId) {
   }
 }
 
+// The relations a regular order's rate depends on (route-price.js findOrderRouteRate).
+const RATE_INPUTS = ['route', 'delivery_type', 'pickup', 'collection_point'];
+
+/**
+ * The rate of a member's order is the server's, whatever rate she sends: any
+ * rate id was priced, another route's cheaper one, the normal rate of a
+ * refrigerated order, an empty one at 0 € (issues/186). `order` is the stored
+ * row on update; the CSV import reads the rate as `{ id }`.
+ */
+async function memberRouteRate(strapi, payload, userId, { order, csv }) {
+  let stored = {};
+  if (order && order.id) {
+    stored =
+      (await strapi.db.query(ORDER).findOne({
+        where: { id: order.id },
+        populate: Object.fromEntries(RATE_INPUTS.map((field) => [field, { select: ['id'] }])),
+      })) || {};
+    if (stored.is_collection_order) return;
+  }
+  const effective = { id: order && order.id };
+  for (const field of RATE_INPUTS) effective[field] = field in payload ? payload[field] : stored[field];
+  const rate = await findOrderRouteRate(effective, userId, strapi);
+  payload.route_rate = rate ? (csv ? { id: rate.id } : rate.id) : null;
+}
+
 /**
  * What a member sends for her order, without the office's fields (issues/163).
- * The pickup discount is the one of the delivery point, and the price is left
- * for the server to compute (route-price.js, the form's tiers) when the order
- * is new or one of its inputs changes; the discounts are the lifecycles'.
+ * The pickup discount is the one of the delivery point, and the rate and price
+ * are left for the server to compute (route-price.js, the form's choice and
+ * tiers) when the order is new or one of its inputs changes; the discounts are
+ * the lifecycles'.
  */
-async function memberOrderPayload(strapi, payload, userId, { creating }) {
+async function memberOrderPayload(strapi, payload, userId, { creating, order = null, csv = false }) {
   const depositSent = 'deposit_date' in payload;
   omit(payload, OFFICE_ORDER_FIELDS);
   if (depositSent) payload.deposit_user = payload.deposit_date ? userId : null;
@@ -320,7 +347,10 @@ async function memberOrderPayload(strapi, payload, userId, { creating }) {
       .findOne({ where: { id: contactId }, select: ['id', 'pickup_discount'] });
     payload.contact_pickup_discount = (contact && contact.pickup_discount) || 0;
   }
-  if (creating || PRICE_INPUTS.some((field) => field in payload)) payload.price = null;
+  if (creating || PRICE_INPUTS.some((field) => field in payload)) {
+    payload.price = null;
+    await memberRouteRate(strapi, payload, userId, { order, csv });
+  }
   return payload;
 }
 
@@ -331,7 +361,7 @@ async function memberOwnOrderUpdate(strapi, order, payload, userId) {
   if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
   // once the office has the order, the form is read-only for her
   if (order.status !== 'pending') pick(payload, [...MEMBER_LATE_FIELDS]);
-  await memberOrderPayload(strapi, payload, userId, { creating: false });
+  await memberOrderPayload(strapi, payload, userId, { creating: false, order });
 }
 
 // ---------------------------------------------------------------------------
@@ -380,7 +410,7 @@ async function scopeOrderCsv(ctx, next, { strapi, userId }) {
   if (body.contact && typeof body.contact === 'object' && body.contact.id === undefined) {
     pick(body.contact, MEMBER_NEW_CONTACT_FIELDS);
   }
-  await memberOrderPayload(strapi, body, userId, { creating: true });
+  await memberOrderPayload(strapi, body, userId, { creating: true, csv: true });
   // createCSV reads `owner.id`, and gives the same owner to a contact it creates
   body.owner = { id: userId };
   return next();
