@@ -21,15 +21,11 @@
 
 const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
 
-/**
- * The invoice line of an order: base (price − volume discount, never below 0:
- * an order without price, or cheaper than the discount, counted negative in
- * the KPIs and Facturar, issues/227) and discount %.
- */
+/** The invoice line of an order: base (price − volume discount) and discount %. */
 function orderInvoiceLine(order) {
   const o = order || {};
   return {
-    base: Math.max(0, (Number(o.price) || 0) - (Number(o.volume_discount) || 0)),
+    base: (Number(o.price) || 0) - (Number(o.volume_discount) || 0),
     discount: (Number(o.multidelivery_discount) || 0) + (Number(o.contact_pickup_discount) || 0),
   };
 }

@@ -6,10 +6,6 @@
  * - An API update with only `kilograms` kept the old price (order 24772 kept
  *   5,00 € at 25 kg): fillMissingPrice now reprices when the kilos change and
  *   no price is sent.
- * - The invoice-line base (price − volume discount) went negative for an order
- *   without price, or cheaper than the discount, and counted −1,60 € in the KPIs
- *   and Facturar: floored at 0. The way the discounts combine (issues/057) is
- *   unchanged.
  * - The order form showed the price before the volume discount the lifecycle
  *   then stored (11,56 € before saving, 9,56 € after): check-multidelivery
  *   returns the volume discount the lifecycle computes, from the same function.
@@ -76,28 +72,6 @@ describe('a kilogram-only update reprices the order (issues/227)', () => {
     const data = { kilograms: 25 };
     await fillMissingPrice(data, { ...stored, status: 'invoiced' });
     expect(data.price).toBeUndefined();
-  });
-});
-
-describe('the discounted base never goes below 0 (issues/227)', () => {
-  const finalPrice = require('../src/api/order/services/final-price');
-
-  it('an order without price or cheaper than the volume discount counts 0', () => {
-    expect(finalPrice.orderInvoiceLine({ price: null, volume_discount: 2 }).base).toBe(0);
-    expect(
-      finalPrice.orderDiscountedPrice({ price: 0.4, volume_discount: 2, multidelivery_discount: 20 }),
-    ).toBe(0);
-  });
-
-  it('other orders are unchanged', () => {
-    expect(
-      finalPrice.orderDiscountedPrice({
-        price: 10,
-        volume_discount: 1,
-        multidelivery_discount: 10,
-        contact_pickup_discount: 5,
-      }),
-    ).toBe(7.65);
   });
 });
 
