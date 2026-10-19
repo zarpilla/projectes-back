@@ -794,6 +794,33 @@ function checkOwnPayload(ctx, userId) {
   return payload;
 }
 
+/**
+ * The holidays: the ones for everyone and her own. The personal holidays of
+ * the others (vacances, festiu local…) came with the person to every user
+ * (`festives?populate[users_permissions_user]`, issues/188); the hours screens
+ * only use the shared ones and her own.
+ */
+const sharedOrOwnClause = (userId) => ({
+  v3: { _or: [{ 'users_permissions_user.id_null': true }, { 'users_permissions_user.id': userId }] },
+  v5: { $or: [{ users_permissions_user: { id: { $null: true } } }, { users_permissions_user: { id: userId } }] },
+});
+
+async function scopeFestiveList(ctx, next, { userId }) {
+  const { v3, v5 } = sharedOrOwnClause(userId);
+  narrowQuery(ctx, v3, v5);
+  return next();
+}
+
+async function scopeFestiveRow(ctx, next, { strapi, userId }) {
+  const where = addressedRow(ctx);
+  if (!where) throw forbidden();
+  const row = await strapi.db
+    .query(FESTIVE)
+    .findOne({ where, populate: { users_permissions_user: { select: ['id'] } } });
+  if (row && row.users_permissions_user && idOf(row.users_permissions_user) !== userId) throw forbidden();
+  return next();
+}
+
 const scopeOwnCreate = (ctx, next, { userId }) => {
   checkOwnPayload(ctx, userId).users_permissions_user = userId;
   return next();
@@ -850,6 +877,8 @@ const OWN_SCOPES = {
   [`${DAILY_DEDICATION}.findOne`]: scopeOwnRow(DAILY_DEDICATION),
   // the holidays for everyone stay readable (calendars); the festive controller
   // already keeps their changes to admins (issues/140)
+  [`${FESTIVE}.find`]: scopeFestiveList,
+  [`${FESTIVE}.findOne`]: scopeFestiveRow,
   [`${FESTIVE}.create`]: scopeOwnCreate,
   [`${FESTIVE}.update`]: scopeOwnRow(FESTIVE),
   [`${FESTIVE}.delete`]: scopeOwnRow(FESTIVE),
@@ -935,7 +964,12 @@ module.exports = (config, { strapi }) =>
     if (scope) await scope(ctx, next, { strapi, userId: user.id, permissions });
     else await next();
     if (!OWN_DATA_ACTIONS.has(action)) {
-      sanitizeResponse(strapi, modelUidOfAction(action), ctx.body, rulesFor({ member, selfId: user.id }));
+      sanitizeResponse(
+        strapi,
+        modelUidOfAction(action),
+        ctx.body,
+        rulesFor({ member, selfId: user.id, permissions }),
+      );
     }
   };
 

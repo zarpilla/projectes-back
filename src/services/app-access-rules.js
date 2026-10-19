@@ -78,13 +78,6 @@ for (const name of [
   'sector',
   'contact-type',
   'city',
-  'route',
-  'pickup',
-  'delivery-type',
-  'route-rate',
-  'product',
-  'city-route',
-  'route-festive',
   'vat-type',
   'payment-method',
   'income-type',
@@ -94,7 +87,12 @@ for (const name of [
   allow(api(name), READ, EVERYONE);
 }
 allow(api('activity-type'), ['getBasic'], EVERYONE);
-allow(api('city-route'), ['basic'], EVERYONE);
+// The logistics catalogs, for the logistics screens only: no hours screen
+// reads routes, tariffs, pickups or products (issues/188).
+for (const name of ['route', 'pickup', 'delivery-type', 'route-rate', 'product', 'city-route', 'route-festive']) {
+  allow(api(name), READ, LOGISTICS);
+}
+allow(api('city-route'), ['basic'], LOGISTICS);
 // the CP of each town, for the delivery point form (issues/182)
 allow(api('city'), ['postcodes'], EVERYONE);
 // Person pickers and owner columns on the hours and logistics screens.
