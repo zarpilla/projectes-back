@@ -30,6 +30,7 @@ const { refreshUndatedOriginalTotals } = require('./services/refresh-undated-ori
 const { widenBudgetLineDecimals } = require('./services/widen-budget-line-decimals');
 const { repairBudgetLineTotals } = require('./services/repair-budget-line-totals');
 const { fillDeliveryPointTradeNames } = require('./services/fill-delivery-point-trade-names');
+const { clearDanglingMotherLinks } = require('./services/clear-dangling-mother-links');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
@@ -152,6 +153,8 @@ module.exports = {
       ['repairBudgetLineTotals', repairBudgetLineTotals, { runOnce: true }],
       // issues/215: delivery points saved without «Nom comercial» take their name.
       ['fillDeliveryPointTradeNames', fillDeliveryPointTradeNames, { runOnce: true }],
+      // issues/206: projects migrated from v3 pointing at a deleted mother.
+      ['clearDanglingMotherLinks', clearDanglingMotherLinks, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
