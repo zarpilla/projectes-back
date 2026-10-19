@@ -1,6 +1,7 @@
 'use strict';
 
 const moment = require('moment');
+const { deductibleVatPctForYear } = require('../../project/services/projectFinancials');
 
 /**
  * The forecast VAT of a project line (issues/072): added to the totals and to
@@ -29,4 +30,23 @@ function addExpectedVat(vatExpected, byQuarter, { kind, amount, date, document }
   return true;
 }
 
-module.exports = { addExpectedVat };
+/**
+ * Sets each forecast quarter's deductible VAT % and deductible supported VAT:
+ * the quarter's year %, Configuració's only as fallback, like executed VAT and
+ * the economic forecast (issues/221). Also sets the totals' deductible_paid.
+ */
+function applyExpectedVatPct(vatExpected, byQuarter, deductibleVatPctByYear, fallback_deductible_vat_pct) {
+  let deductiblePaid = 0;
+  for (const q of Object.values(byQuarter)) {
+    q.deductible_vat_pct = deductibleVatPctForYear(
+      deductibleVatPctByYear,
+      fallback_deductible_vat_pct,
+      q.year,
+    );
+    q.deductible_paid = (q.paid * q.deductible_vat_pct) / 100;
+    deductiblePaid += q.deductible_paid;
+  }
+  vatExpected.deductible_paid = deductiblePaid;
+}
+
+module.exports = { addExpectedVat, applyExpectedVatPct };
