@@ -20,6 +20,7 @@ const _ = require('lodash');
 const moment = require('moment');
 const { adaptQuery, toDbArgs } = require('../../../services/query-adapter');
 const { fiscalYearOf, fiscalYearEnd } = require('../../../services/fiscal-year');
+const { lineTotal } = require('../../../services/budget-line');
 /* global strapi */ // strapi injected at runtime for the stored-totals refresh functions.
 
 const noPhaseInfo = { phase: '-', subphase: '-' };
@@ -91,7 +92,7 @@ const findUndatedLines = (p) => {
           type,
           phase: ph.name || '',
           concept: line.concept || '',
-          total_amount: (line.quantity || 0) * (line.amount || 0),
+          total_amount: lineTotal(line),
         });
       }
     }
@@ -239,9 +240,9 @@ const calculateEstimatedTotals = async (
           var subphase_estimated_hours = 0;
 
           subphase.total_amount =
-            (subphase.quantity ? subphase.quantity : 0) * (subphase.amount ? subphase.amount : 0);
+            lineTotal(subphase);
           total_incomes +=
-            (subphase.quantity ? subphase.quantity : 0) * (subphase.amount ? subphase.amount : 0);
+            lineTotal(subphase);
 
           const ey = getEstimateYear(subphase, projectDefaultYear);
           rowsByYear.push({ year: ey, total_incomes: subphase.total_amount });
@@ -386,7 +387,7 @@ const calculateEstimatedTotals = async (
           }
           if (subphase.paid) {
             total_real_incomes +=
-              (subphase.quantity ? subphase.quantity : 0) * (subphase.amount ? subphase.amount : 0);
+              lineTotal(subphase);
             if (real) {
               const realYear = getRealYear(
                 subphase.income ? subphase.income : subphase.expense ? subphase.expense : subphase.invoice,
@@ -395,7 +396,7 @@ const calculateEstimatedTotals = async (
               rowsByYear.push({
                 year: realYear,
                 total_real_incomes:
-                  (subphase.quantity ? subphase.quantity : 0) * (subphase.amount ? subphase.amount : 0),
+                  lineTotal(subphase),
               });
             }
           }
@@ -406,8 +407,8 @@ const calculateEstimatedTotals = async (
           const expense = phase.expenses[j];
 
           expense.total_amount =
-            (expense.quantity ? expense.quantity : 0) * (expense.amount ? expense.amount : 0);
-          total_expenses += (expense.quantity ? expense.quantity : 0) * (expense.amount ? expense.amount : 0);
+            lineTotal(expense);
+          total_expenses += lineTotal(expense);
 
           expense.total_expenses_vat = (expense.total_amount * expenseVatPct(expense)) / 100.0;
 
@@ -422,7 +423,7 @@ const calculateEstimatedTotals = async (
 
           if (expense.paid) {
             total_real_expenses +=
-              (expense.quantity ? expense.quantity : 0) * (expense.amount ? expense.amount : 0);
+              lineTotal(expense);
 
             if (real) {
               const realYear = getRealYear(expense.invoice ? expense.invoice : expense.expense);
@@ -430,7 +431,7 @@ const calculateEstimatedTotals = async (
               rowsByYear.push({
                 year: realYear,
                 total_real_expenses:
-                  (expense.quantity ? expense.quantity : 0) * (expense.amount ? expense.amount : 0),
+                  lineTotal(expense),
                 total_real_expenses_vat: expense.invoice
                   ? expense.invoice.total_vat || 0
                   : expense.total_expenses_vat || 0,
@@ -521,9 +522,9 @@ const pushEstimatedIncomeRows = (out, p, projectInfo) => {
         paid: sph.paid,
         date: estimate_date,
         income_orig: 0,
-        income_esti: sph.quantity * sph.amount,
+        income_esti: lineTotal(sph),
         income_real: 0,
-        ...lineExportFields(sph, sph.income_type, sph.quantity * sph.amount),
+        ...lineExportFields(sph, sph.income_type, lineTotal(sph)),
         year: rowYear(estimate_date),
         month: rowMonth(estimate_date),
         row_type: sph.income_type && sph.income_type.name ? sph.income_type.name : '',
@@ -541,8 +542,8 @@ const pushEstimatedIncomeRows = (out, p, projectInfo) => {
           date: real_date,
           income_orig: 0,
           income_esti: 0,
-          income_real: sph.quantity * sph.amount,
-          ...lineExportFields(sph, sph.income_type, sph.quantity * sph.amount),
+          income_real: lineTotal(sph),
+          ...lineExportFields(sph, sph.income_type, lineTotal(sph)),
           year: rowYear(real_date),
           month: rowMonth(real_date),
           row_type: sph.income_type && sph.income_type.name ? sph.income_type.name : '',
@@ -574,11 +575,11 @@ const pushEstimatedExpenseRows = (out, p, projectInfo, getDeductibleRatio) => {
         paid: sph.paid,
         expense_orig: 0,
         expense_orig_vat: 0,
-        expense_esti: -1 * sph.quantity * sph.amount,
-        expense_esti_vat: (-1 * estimatedDeductibleRatio * sph.quantity * sph.amount * vat_pct) / 100.0,
+        expense_esti: -1 * lineTotal(sph),
+        expense_esti_vat: (-1 * estimatedDeductibleRatio * lineTotal(sph) * vat_pct) / 100.0,
         expense_real: 0,
         expense_real_vat: 0,
-        ...lineExportFields(sph, sph.expense_type, -1 * sph.quantity * sph.amount),
+        ...lineExportFields(sph, sph.expense_type, -1 * lineTotal(sph)),
         date: estimate_date,
         year: rowYear(estimate_date),
         month: rowMonth(estimate_date),
@@ -591,7 +592,7 @@ const pushEstimatedExpenseRows = (out, p, projectInfo, getDeductibleRatio) => {
         const real_date = document.emitted;
         // Match VAT calculation logic from calculateEstimatedTotals:
         // use invoice.total_vat if available, otherwise the calculated VAT.
-        const calculated_vat = (sph.quantity * sph.amount * vat_pct) / 100.0;
+        const calculated_vat = (lineTotal(sph) * vat_pct) / 100.0;
         const expense_vat =
           sph.invoice && sph.invoice.total_vat !== undefined ? sph.invoice.total_vat : calculated_vat;
         const realDeductibleRatio = getDeductibleRatio(real_date);
@@ -605,9 +606,9 @@ const pushEstimatedExpenseRows = (out, p, projectInfo, getDeductibleRatio) => {
           expense_orig_vat: 0,
           expense_esti: 0,
           expense_esti_vat: 0,
-          expense_real: -1 * sph.quantity * sph.amount,
+          expense_real: -1 * lineTotal(sph),
           expense_real_vat: -1 * expense_vat * realDeductibleRatio,
-          ...lineExportFields(sph, sph.expense_type, -1 * sph.quantity * sph.amount),
+          ...lineExportFields(sph, sph.expense_type, -1 * lineTotal(sph)),
           date: real_date,
           year: rowYear(real_date),
           month: rowMonth(real_date),
@@ -635,10 +636,10 @@ const pushOriginalIncomeAndExpenseRows = (out, p, projectInfo, getDeductibleRati
         ...phaseInfo,
         type: 'income',
         date,
-        income_orig: sph.quantity * sph.amount,
+        income_orig: lineTotal(sph),
         income_esti: 0,
         income_real: 0,
-        ...lineExportFields(sph, sph.income_type, sph.quantity * sph.amount),
+        ...lineExportFields(sph, sph.income_type, lineTotal(sph)),
         year: rowYear(date),
         month: rowMonth(date),
         row_type: sph.income_type && sph.income_type.name ? sph.income_type.name : '',
@@ -660,13 +661,13 @@ const pushOriginalIncomeAndExpenseRows = (out, p, projectInfo, getDeductibleRati
         ...projectInfo,
         ...phaseInfo,
         type: 'expense',
-        expense_orig: -1 * Math.abs(sph.quantity * sph.amount),
+        expense_orig: -1 * Math.abs(lineTotal(sph)),
         expense_orig_vat:
-          (-1 * originalDeductibleRatio * Math.abs(sph.quantity * sph.amount) * vat_pct) / 100.0,
+          (-1 * originalDeductibleRatio * Math.abs(lineTotal(sph)) * vat_pct) / 100.0,
         expense_esti: 0,
         expense_esti_vat: 0,
         expense_real: 0,
-        ...lineExportFields(sph, sph.expense_type, -1 * Math.abs(sph.quantity * sph.amount)),
+        ...lineExportFields(sph, sph.expense_type, -1 * Math.abs(lineTotal(sph))),
         date,
         year: rowYear(date),
         month: rowMonth(date),
@@ -1056,24 +1057,12 @@ const aggregateRowsByYear = (rows) => {
     })
     .value();
 
-  // Drop empty undated buckets (rows with no resolvable date).
-  return grouped.filter((y) => {
-    if (y.year !== UNDATED_YEAR) return true;
-    return (
-      y.total_incomes !== 0 ||
-      y.total_expenses !== 0 ||
-      y.total_expenses_vat !== 0 ||
-      y.total_real_incomes !== 0 ||
-      y.total_real_expenses !== 0 ||
-      y.total_real_expenses_vat !== 0 ||
-      y.total_estimated_hours !== 0 ||
-      y.total_estimated_hours_price !== 0 ||
-      y.total_real_hours !== 0 ||
-      y.total_real_hours_price !== 0 ||
-      y.total_real_incomes_expenses !== 0 ||
-      y.incomes_expenses !== 0
-    );
-  });
+  // Drop empty undated buckets (rows with no resolvable date). Every total
+  // counts, the original ones too (issues/195: an undated original line was
+  // dropped from the Original totals).
+  return grouped.filter(
+    (y) => y.year !== UNDATED_YEAR || Object.entries(y).some(([k, v]) => k !== 'year' && v !== 0),
+  );
 };
 
 // ---------------------------------------------------------------------------

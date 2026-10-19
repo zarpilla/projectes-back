@@ -4,7 +4,7 @@ const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
 const _merge = require('lodash.merge');
-const transliterate = require('transliteration').transliterate;
+const { printableText } = require('./pdf-text');
 
 /**
  * Invoice
@@ -234,7 +234,7 @@ module.exports = class MicroinvoiceOrder {
       return value;
     }
 
-    return transliterate(value);
+    return printableText(value, this.options.style.fonts.fallback.path);
   }
 
   /**

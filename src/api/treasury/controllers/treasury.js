@@ -224,6 +224,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       deductible_vat_pct: 0,
       deductible_vat_pct_sum: 0,
       deductible_vat_pct_n: 0,
+      // deductible part of the supported VAT; deductible_vat is the balance
+      deductible_paid: 0,
       deductible_vat: 0,
       documents: [],
     };
@@ -552,6 +554,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             code: i.code,
             type: 'emitted-invoices',
             total_vat: i.total_vat,
+            total_base: i.total_base,
             total: i.total,
             date: i.emitted,
             deductible_vat_pct: i.deductible_vat_pct || null,
@@ -616,6 +619,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             code: i.code,
             type: 'received-incomes',
             total_vat: i.total_vat,
+            total_base: i.total_base,
             total: i.total,
             date: i.emitted,
             deductible_vat_pct: i.deductible_vat_pct || null,
@@ -702,6 +706,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       if (e.total_vat) {
         if (!e.vat_paid_date) {
           vat.paid += e.total_vat;
+          vat.deductible_paid += getDeductiblePct(years, e.emitted) * e.total_vat;
           vat.deductible_vat += getDeductiblePct(years, e.emitted) * e.total_vat;
           vat.deductible_vat_pct_sum += getDeductiblePct(years, e.emitted);
           vat.deductible_vat_pct_n++;
@@ -711,6 +716,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             code: e.code,
             type: 'received-invoices',
             total_vat: e.total_vat,
+            total_base: e.total_base,
             total: e.total,
             date: e.emitted,
             deductible_vat_pct: e.deductible_vat_pct || null,
@@ -794,7 +800,9 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       if (e.total_vat) {
         // treasury.push(vat);
         if (!e.vat_paid_date) {
-          vat.received += e.total_vat;
+          // Supported VAT, as on received invoices (issues/209).
+          vat.paid += e.total_vat;
+          vat.deductible_paid += getDeductiblePct(years, e.emitted) * e.total_vat;
           vat.deductible_vat += getDeductiblePct(years, e.emitted) * e.total_vat;
           vat.deductible_vat_pct_sum += getDeductiblePct(years, e.emitted);
           vat.deductible_vat_pct_n++;
@@ -804,6 +812,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             code: e.id,
             type: 'received-expenses',
             total_vat: e.total_vat,
+            total_base: e.total_base,
             total: e.total,
             date: e.emitted,
             deductible_vat_pct: e.deductible_vat_pct || null,
@@ -944,6 +953,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           quarter,
           paid: 0,
           received: 0,
+          deductible_paid: 0,
           deductible_vat: 0,
           deductible_vat_pct_sum: 0,
           deductible_vat_pct_n: 0,
@@ -954,6 +964,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       if (doc.type === 'received-invoices' || doc.type === 'received-expenses') {
         const deductiblePct = getDeductiblePct(years, doc.date);
         vatByQuarter[key].paid += doc.total_vat;
+        vatByQuarter[key].deductible_paid += deductiblePct * doc.total_vat;
         vatByQuarter[key].deductible_vat += deductiblePct * doc.total_vat;
         vatByQuarter[key].deductible_vat_pct_sum += deductiblePct;
         vatByQuarter[key].deductible_vat_pct_n++;
