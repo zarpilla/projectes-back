@@ -316,13 +316,19 @@ async function main() {
               `WHERE \`${v3OwnerCol}\` > 0 AND \`${v3TargetCol}\` > 0`;
           }
         } else if (hasInlineFk) {
+          // v3 left the column pointing at a deleted row (resilience's project
+          // 388 kept mother 731, issues/206) and the foreign keys are off here,
+          // so copy only the links whose target was migrated too.
+          const targetIds = `SELECT id FROM \`${FROM}\`.\`${targetTable}\``;
+          const targetExists =
+            targetTable && v3TableNames.has(targetTable) ? ` AND \`${attrName}\` IN (${targetIds})` : '';
           sql =
             `INSERT INTO \`${TO}\`.\`${v5Lnk}\` (\`${ownerCol}\`, \`${targetCol}\`) ` +
             // `> 0`, not just NOT NULL: v3 wrote 0 into an FK column to mean
             // "unset" (diligencia has 833 contacts with legal_form = 0), and
             // copying that verbatim produced 830 link rows pointing at a row
             // that does not exist. In v5 "no value" is the absence of a link.
-            `SELECT id, \`${attrName}\` FROM \`${FROM}\`.\`${ent.table}\` WHERE \`${attrName}\` > 0`;
+            `SELECT id, \`${attrName}\` FROM \`${FROM}\`.\`${ent.table}\` WHERE \`${attrName}\` > 0${targetExists}`;
         }
         if (!sql) {
           stats.relationsNoSource.push(v5Lnk);
