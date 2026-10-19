@@ -641,20 +641,23 @@ describe('app permissions (issues/099)', () => {
     });
 
     it("changes the contacts she sees on «Punts d'entrega» only", async () => {
-      // hers, her own contact, a shared one, one her orders go to
-      for (const id of [10, MY_CONTACT, 9, 11]) {
+      // hers, her own contact, a shared one
+      for (const id of [10, MY_CONTACT, 9]) {
         await expectAllowed('api::contact.contact.update', {
           method: 'PUT',
           numericId: id,
           body: { data: { phone: '1' } },
         });
       }
-      // another member's delivery point (issues/099: PUT /api/contacts/2239)
-      await expectRefused('api::contact.contact.update', {
-        method: 'PUT',
-        numericId: 12,
-        body: { data: { phone: '1' } },
-      });
+      // another member's delivery point (issues/099: PUT /api/contacts/2239),
+      // also when an order of hers goes to it (issues/187, review 5)
+      for (const id of [12, 11]) {
+        await expectRefused('api::contact.contact.update', {
+          method: 'PUT',
+          numericId: id,
+          body: { data: { phone: '1' } },
+        });
+      }
       // the form sends her as owner; handing it to someone else is refused
       await expectAllowed('api::contact.contact.update', {
         method: 'PUT',
@@ -1078,7 +1081,6 @@ describe('app permissions (issues/099)', () => {
               { users_permissions_user: { id: ME } },
               { multiowner: true },
               { multidelivery: true },
-              { id: { $in: [8] } },
             ],
           },
         ],
