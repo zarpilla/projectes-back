@@ -779,6 +779,7 @@ describe('app permissions (issues/099)', () => {
         route_rate: null,
         contact: { name: 'Nou' },
         owner: { id: ME },
+        status: 'pending',
       });
     });
 

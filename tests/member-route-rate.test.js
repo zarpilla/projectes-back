@@ -250,6 +250,29 @@ describe("the office's orders get the server's route rate too (issues/186)", () 
     expect(csv).toMatchObject({ route_rate: { id: 42 }, price: null });
   });
 
+  // the user's decision (2026-10-19): every order is created pending, so a
+  // state sent on create no longer skips the check
+  it('creates the order pending and checks its rate, whatever state it is sent with', async () => {
+    const created = await send(
+      'api::order.order.create',
+      {
+        method: 'POST',
+        body: {
+          data: {
+            owner: 300,
+            status: 'processed',
+            route: 14,
+            delivery_type: FRED,
+            pickup: 1,
+            route_rate: 41,
+          },
+        },
+      },
+      OFFICE,
+    );
+    expect(created.data).toMatchObject({ status: 'pending', route_rate: 42, price: null });
+  });
+
   it('checks a pending order whose state changes in the same write', async () => {
     const body = await officePut(24905, { status: 'processed', route_rate: 37, price: 1 });
     expect(body.data).toMatchObject({ status: 'processed', route_rate: 42, price: null });

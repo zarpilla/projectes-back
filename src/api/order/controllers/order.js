@@ -616,7 +616,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   /**
    * Override core create: enforce the delivery date rules + set tracking user.
    * An order sent without a state is pending: with none it counted in «Totes»
-   * and in no state tab (issues/168).
+   * and in no state tab (issues/168). With one too: every order is created
+   * pending (the user's decision, 2026-10-19, issues/186).
    */
   async create(ctx) {
     if (!ctx.request.body._tracking_user && ctx.state.user) {
@@ -625,7 +626,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     const payload = orderPayloadOf(ctx.request.body);
     const refusal = await deliveryDateRefusal(payload.estimated_delivery_date, ctx.state.user);
     if (refusal) return ctx.badRequest(refusal);
-    if (!payload.status) payload.status = 'pending';
+    payload.status = 'pending';
     return super.create(ctx);
   },
 

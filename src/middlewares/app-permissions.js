@@ -347,6 +347,18 @@ async function memberRouteRate(strapi, payload, userId, { order, csv }) {
 }
 
 const ORDER_WRITES = new Set([`${ORDER}.create`, `${ORDER}.update`, `${ORDER}.createCSV`]);
+const ORDER_CREATES = new Set([`${ORDER}.create`, `${ORDER}.createCSV`]);
+
+/**
+ * Every order is created pending, whoever creates it (the user's decision,
+ * 2026-10-19, issues/186): the office's state sent on create skipped the rate
+ * check, and the CSV import sends `CSV`. The collection orders the server
+ * generates don't come through here (order lifecycles).
+ */
+function createdPending(ctx, action) {
+  const payload = action === `${ORDER}.createCSV` ? ctx.request.body || {} : payloadOf(ctx);
+  payload.status = 'pending';
+}
 
 /**
  * The office's orders get the server's rate too (the user's decision,
@@ -374,13 +386,10 @@ async function officeRouteRate(strapi, ctx, action) {
     if (!stored) return;
   }
   if (payload.is_collection_order || stored.is_collection_order) return;
-  // createCSV makes the order pending whatever it is sent with (`CSV`), and an
-  // update is checked when the order is or becomes pending: the state changed
-  // in the same write skipped it (review 5)
-  let statuses = [payload.status || 'pending'];
-  if (csv) statuses = ['pending'];
-  else if (stored.id) statuses = [stored.status, payload.status];
-  if (!statuses.includes('pending')) return;
+  // a new order is always pending (createdPending); an update is checked when
+  // the order is or becomes pending: the state changed in the same write
+  // skipped it (review 5)
+  if (stored.id && ![stored.status, payload.status].includes('pending')) return;
   const effective = { id: stored.id };
   for (const field of RATE_INPUTS) effective[field] = field in payload ? payload[field] : stored[field];
   const owner = 'owner' in payload ? payload.owner : stored.owner;
@@ -1112,6 +1121,7 @@ module.exports = (config, { strapi }) =>
 
     const permissions = await appPermissionsOf(strapi, user.id);
     if (!isAllowed(action, permissions)) throw forbidden();
+    if (ORDER_CREATES.has(action)) createdPending(ctx, action);
     // a member's rate is set by her scope (memberRouteRate)
     if (ORDER_WRITES.has(action) && !isOrdersMember(permissions)) await officeRouteRate(strapi, ctx, action);
     if (permissions.some((p) => FULL_ACCESS.includes(p))) return next();
