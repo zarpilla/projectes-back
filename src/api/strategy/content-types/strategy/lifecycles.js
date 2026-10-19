@@ -22,7 +22,6 @@ module.exports = {
     }
     data.code_name = codeName({ ...current, ...data });
   },
-  codeName,
 };
 
 function codeName({ code, name }) {
