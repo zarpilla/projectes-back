@@ -149,8 +149,7 @@ const MOVES = {
 };
 
 // What a member changes on her own delivery points (ContactsUserForm), and on
-// the shared ones or the ones of other members her orders go to: the address
-// only (issues/164). Discounts, partner data and the office's flags stay with
+// the shared ones: the address only (issues/164). Discounts, partner data and the office's flags stay with
 // the office.
 const SHARED_CONTACT_FIELDS = [
   'address',
@@ -285,7 +284,14 @@ function orderAccess(order, userId, contactIds) {
 async function loadOrder(strapi, where) {
   return strapi.db
     .query(ORDER)
-    .findOne({ where, populate: { owner: { select: ['id'] }, contact: { select: ['id'] } } });
+    .findOne({
+      where,
+      populate: {
+        owner: { select: ['id'] },
+        contact: { select: ['id'] },
+        collection_point: { select: ['id'] },
+      },
+    });
 }
 
 /**
@@ -341,6 +347,18 @@ async function memberRouteRate(strapi, payload, userId, { order, csv }) {
 }
 
 const ORDER_WRITES = new Set([`${ORDER}.create`, `${ORDER}.update`, `${ORDER}.createCSV`]);
+const ORDER_CREATES = new Set([`${ORDER}.create`, `${ORDER}.createCSV`]);
+
+/**
+ * Every order is created pending, whoever creates it (the user's decision,
+ * 2026-10-19, issues/186): the office's state sent on create skipped the rate
+ * check, and the CSV import sends `CSV`. The collection orders the server
+ * generates don't come through here (order lifecycles).
+ */
+function createdPending(ctx, action) {
+  const payload = action === `${ORDER}.createCSV` ? ctx.request.body || {} : payloadOf(ctx);
+  payload.status = 'pending';
+}
 
 /**
  * The office's orders get the server's rate too (the user's decision,
@@ -368,7 +386,10 @@ async function officeRouteRate(strapi, ctx, action) {
     if (!stored) return;
   }
   if (payload.is_collection_order || stored.is_collection_order) return;
-  if ((payload.status || stored.status || 'pending') !== 'pending') return;
+  // a new order is always pending (createdPending); an update is checked when
+  // the order is or becomes pending: the state changed in the same write
+  // skipped it (review 5)
+  if (stored.id && ![stored.status, payload.status].includes('pending')) return;
   const effective = { id: stored.id };
   for (const field of RATE_INPUTS) effective[field] = field in payload ? payload[field] : stored[field];
   const owner = 'owner' in payload ? payload.owner : stored.owner;
@@ -379,26 +400,43 @@ async function officeRouteRate(strapi, ctx, action) {
   payload.price = null;
 }
 
-/**
- * The delivery point of a member's order must be a delivery point (a contact
- * with an owner, any member's) or a contact she sees, and the collection point
- * one of hers: attaching any contact id (the entity's clients, another
- * member's own contact) made it «one her orders go to», readable in full and
- * editable from then on (issues/187). A new point (the CSV import's contact
- * without id) is created as hers.
+/** Whether `sent` names the stored relation `current` (an id or a documentId). */
+const sameRelation = (sent, current) =>
+  Boolean(current) && (sent === current.id || (current.documentId && sent === current.documentId));
+
+/*
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ DECIDED — DO NOT NARROW (the user, 2026-10-19, said more than once,      │
+ * │ issues/187): members (`orders`) SEE EVERY DELIVERY POINT, as on master.  │
+ * │ A delivery point is a contact with an owner, any member's, her own       │
+ * │ contact included. She lists them (`contacts/for-orders`), opens them     │
+ * │ (`GET /contacts/:id`) and sends orders to them. What stays limited is    │
+ * │ EDITING: only hers and the shared ones (issues/164/165), and the rest of │
+ * │ the directory (the entity's clients, contacts without owner).            │
+ * │ Reviews: don't report «a member reads another member's point» as a leak. │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
-async function checkMemberOrderContacts(strapi, payload, userId) {
+const isDeliveryPoint = (contact) => Boolean(contact && contact.owner);
+
+/**
+ * The delivery point of a member's order must be a delivery point (see the
+ * decision above) or a contact she sees, and the collection point one of hers
+ * (issues/187). A new point (the CSV import's contact without id) is created
+ * as hers, and the points her order already has stay (the form sends them
+ * back): the office may have chosen them.
+ */
+async function checkMemberOrderContacts(strapi, payload, userId, order = null) {
   const contactId = relationId(payload.contact);
-  if (contactId !== undefined) {
+  if (contactId !== undefined && !sameRelation(contactId, order && order.contact)) {
     const where = typeof contactId === 'number' ? { id: contactId } : { documentId: contactId };
-    // any delivery point (a contact with an owner) is hers to send to
+    // any delivery point is hers to send to, another member's own contact too
     const point = await strapi.db
       .query(CONTACT)
       .findOne({ where, select: ['id'], populate: { owner: { select: ['id'] } } });
-    if (!point || !point.owner) await loadVisibleContact(strapi, where, userId);
+    if (!isDeliveryPoint(point)) await loadVisibleContact(strapi, where, userId);
   }
   const pointId = relationId(payload.collection_point);
-  if (pointId !== undefined) {
+  if (pointId !== undefined && !sameRelation(pointId, order && order.collection_point)) {
     const own = await strapi.db.query(CONTACT).findMany({
       where: { users_permissions_user: { id: userId } },
       select: ['id'],
@@ -430,7 +468,9 @@ async function memberOrderPayload(
 ) {
   const depositSent = 'deposit_date' in payload;
   // a driver who is a member too sees every point already
-  if (!permissions.includes('orders_delivery')) await checkMemberOrderContacts(strapi, payload, userId);
+  if (!permissions.includes('orders_delivery')) {
+    await checkMemberOrderContacts(strapi, payload, userId, order);
+  }
   omit(payload, OFFICE_ORDER_FIELDS);
   if (depositSent) payload.deposit_user = payload.deposit_date ? userId : null;
   const contactId = idOf(payload.contact);
@@ -440,7 +480,9 @@ async function memberOrderPayload(
       .findOne({ where: { id: contactId }, select: ['id', 'pickup_discount'] });
     payload.contact_pickup_discount = (contact && contact.pickup_discount) || 0;
   }
-  if (creating || PRICE_INPUTS.some((field) => field in payload)) {
+  // a collection order's price is the aggregate of its orders (route-price.js)
+  const collection = Boolean(order && order.is_collection_order);
+  if (creating || (!collection && PRICE_INPUTS.some((field) => field in payload))) {
     payload.price = null;
     await memberRouteRate(strapi, payload, userId, { order, csv });
   }
@@ -452,8 +494,13 @@ async function memberOwnOrderUpdate(strapi, order, payload, userId, permissions 
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
     throw forbidden();
   if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
+  // the collection order of her farm-pickup orders is the server's: she
+  // changed its route (and so its rate and price) or cancelled it (issues/217)
+  if (order.is_collection_order && ![undefined, null, order.status].includes(payload.status)) {
+    throw forbidden();
+  }
   // once the office has the order, the form is read-only for her
-  if (order.status !== 'pending') pick(payload, [...MEMBER_LATE_FIELDS]);
+  if (order.status !== 'pending' || order.is_collection_order) pick(payload, [...MEMBER_LATE_FIELDS]);
   await memberOrderPayload(strapi, payload, userId, { creating: false, order, permissions });
 }
 
@@ -501,7 +548,7 @@ async function scopeOrderCsv(ctx, next, { strapi, userId, permissions }) {
   if (body.owner !== undefined && body.owner !== null && idOf(body.owner) !== userId) throw forbidden();
   // a new point (a contact without id): the office's fields of a contact stay out too
   if (body.contact && typeof body.contact === 'object' && body.contact.id === undefined) {
-    pick(body.contact, MEMBER_NEW_CONTACT_FIELDS);
+    memberNewContact(body.contact, userId);
   }
   await memberOrderPayload(strapi, body, userId, { creating: true, csv: true, permissions });
   // createCSV reads `owner.id`, and gives the same owner to a contact it creates
@@ -632,32 +679,34 @@ async function scopeEmittedInvoiceList(ctx, next, { strapi, userId }) {
   return next();
 }
 
+/**
+ * A member's new point keeps only her fields, and is linked to no user but
+ * her: linked to another member, it became that member's own contact (her
+ * order form, `?socies=1`, the invoicing contact; issues/218).
+ */
+function memberNewContact(contact, userId) {
+  pick(contact, MEMBER_NEW_CONTACT_FIELDS);
+  const user = contact.users_permissions_user;
+  if (user !== undefined && user !== null && idOf(user) !== userId) delete contact.users_permissions_user;
+  return contact;
+}
+
 async function scopeContactCreate(ctx, next, { userId }) {
   const payload = payloadOf(ctx);
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
     throw forbidden();
-  pick(payload, MEMBER_NEW_CONTACT_FIELDS);
+  memberNewContact(payload, userId);
   payload.owner = userId;
   return next();
 }
 
-/** The ids of the contacts her orders go to. */
-async function orderContactIds(strapi, userId) {
-  const orders = await strapi.db.query(ORDER).findMany({
-    where: { owner: { id: userId } },
-    select: ['id'],
-    populate: { contact: { select: ['id'] } },
-  });
-  return [...new Set(orders.map((o) => idOf(o.contact)).filter((id) => id !== undefined && id !== null))];
-}
-
 /**
- * The contacts a member sees on «Punts d'entrega» and in the order form (issues/165):
- * hers (owner or her own contact), the shared ones, and the ones her orders go to.
+ * The contacts a member sees on «Punts d'entrega» (issues/165), as v3 and v5
+ * clauses: hers (owner or her own contact) and the shared ones. The ones her
+ * orders went to counted too, so picking any delivery point for an order made
+ * it readable in full and editable (issues/187, review 5).
  */
-/** The contacts a member sees, as v3 and v5 clauses (issues/165). */
-async function memberContactsClauses(strapi, userId) {
-  const ids = idList(await orderContactIds(strapi, userId));
+function memberContactsClauses(userId) {
   return {
     v3: {
       _or: [
@@ -665,7 +714,6 @@ async function memberContactsClauses(strapi, userId) {
         { 'users_permissions_user.id': userId },
         { 'multiowner_eq': true },
         { 'multidelivery_eq': true },
-        { 'id_in': ids },
       ],
     },
     v5: {
@@ -674,14 +722,13 @@ async function memberContactsClauses(strapi, userId) {
         { users_permissions_user: { id: userId } },
         { multiowner: true },
         { multidelivery: true },
-        { id: { $in: ids } },
       ],
     },
   };
 }
 
-async function scopeContactList(ctx, next, { strapi, userId }) {
-  const { v3, v5 } = await memberContactsClauses(strapi, userId);
+async function scopeContactList(ctx, next, { userId }) {
+  const { v3, v5 } = memberContactsClauses(userId);
   narrowQuery(ctx, v3, v5);
   return next();
 }
@@ -690,7 +737,7 @@ async function scopeContactList(ctx, next, { strapi, userId }) {
  * `contacts/for-orders` (Comandes, the order form) gave a member the whole
  * directory, the entity's clients included (issues/187). She gets the delivery
  * points (contacts with an owner), every member's, as on master: the order form
- * lets her send an order to any point (the user's decision, 2026-10-19); and
+ * lets her send an order to any point (DECIDED, see isDeliveryPoint); and
  * of the `?socies=1` list (her collection points) only her own contact.
  */
 async function scopeContactsForOrders(ctx, next, { userId }) {
@@ -710,27 +757,27 @@ async function loadVisibleContact(strapi, where, userId) {
   });
   if (!contact) return { contact: null };
   const own = idOf(contact.owner) === userId || idOf(contact.users_permissions_user) === userId;
-  const visible =
-    own ||
-    contact.multiowner === true ||
-    contact.multidelivery === true ||
-    (await strapi.db.query(ORDER).count({ where: { owner: { id: userId }, contact: { id: contact.id } } })) >
-      0;
+  // an order to the point doesn't make it hers (issues/187)
+  const visible = own || contact.multiowner === true || contact.multidelivery === true;
   if (!visible) throw forbidden();
   return { contact, own };
 }
 
+/** She opens every delivery point (the decision above), and the contacts she sees. */
 async function scopeContactRow(ctx, next, { strapi, userId }) {
   const where = addressedRow(ctx);
   if (!where) throw forbidden();
-  await loadVisibleContact(strapi, where, userId);
+  const point = await strapi.db
+    .query(CONTACT)
+    .findOne({ where, select: ['id'], populate: { owner: { select: ['id'] } } });
+  if (!isDeliveryPoint(point)) await loadVisibleContact(strapi, where, userId);
   return next();
 }
 
 /**
  * The contacts a member can open on «Punts d'entrega»: hers (owner or her own
- * contact), the shared ones, and the ones her orders go to. Hers she edits but
- * for the office's fields; the others, only their address (issues/164).
+ * contact) and the shared ones. Hers she edits but for the office's fields;
+ * the shared ones, only their address (issues/164).
  */
 async function scopeContactUpdate(ctx, next, { strapi, userId }) {
   const where = addressedRow(ctx);
@@ -1074,6 +1121,7 @@ module.exports = (config, { strapi }) =>
 
     const permissions = await appPermissionsOf(strapi, user.id);
     if (!isAllowed(action, permissions)) throw forbidden();
+    if (ORDER_CREATES.has(action)) createdPending(ctx, action);
     // a member's rate is set by her scope (memberRouteRate)
     if (ORDER_WRITES.has(action) && !isOrdersMember(permissions)) await officeRouteRate(strapi, ctx, action);
     if (permissions.some((p) => FULL_ACCESS.includes(p))) return next();

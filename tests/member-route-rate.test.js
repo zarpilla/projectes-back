@@ -36,6 +36,18 @@ const STORED = {
     collection_point: null,
     route_rate: { id: 42 },
   },
+  // the collection order her farm-pickup order generated (issues/217)
+  24947: {
+    id: 24947,
+    status: 'pending',
+    is_collection_order: true,
+    owner: { id: ME },
+    contact: { id: 30 },
+    route: { id: 14 },
+    delivery_type: { id: NORMAL },
+    pickup: { id: 1 },
+    route_rate: { id: 41 },
+  },
   24906: {
     id: 24906,
     status: 'delivered',
@@ -215,5 +227,80 @@ describe("the office's orders get the server's route rate too (issues/186)", () 
       OFFICE,
     );
     expect(body.data.route_rate).toBe(37);
+  });
+  // review 5: the CSV import sends `status: "CSV"` (createCSV makes it pending
+  // afterwards), and a write that also changed the state skipped the check
+  it('checks the CSV import whatever status it sends', async () => {
+    const csv = await send(
+      'api::order.order.createCSV',
+      {
+        method: 'POST',
+        body: {
+          owner: { id: 300 },
+          status: 'CSV',
+          route: { id: 14 },
+          delivery_type: { id: FRED },
+          pickup: { id: 1 },
+          route_rate: { id: 41 },
+          price: 3,
+        },
+      },
+      OFFICE,
+    );
+    expect(csv).toMatchObject({ route_rate: { id: 42 }, price: null });
+  });
+
+  // the user's decision (2026-10-19): every order is created pending, so a
+  // state sent on create no longer skips the check
+  it('creates the order pending and checks its rate, whatever state it is sent with', async () => {
+    const created = await send(
+      'api::order.order.create',
+      {
+        method: 'POST',
+        body: {
+          data: {
+            owner: 300,
+            status: 'processed',
+            route: 14,
+            delivery_type: FRED,
+            pickup: 1,
+            route_rate: 41,
+          },
+        },
+      },
+      OFFICE,
+    );
+    expect(created.data).toMatchObject({ status: 'pending', route_rate: 42, price: null });
+  });
+
+  it('checks a pending order whose state changes in the same write', async () => {
+    const body = await officePut(24905, { status: 'processed', route_rate: 37, price: 1 });
+    expect(body.data).toMatchObject({ status: 'processed', route_rate: 42, price: null });
+  });
+});
+
+// issues/217 (review 5): on the collection order of her farm-pickup order a
+// member changed the route (rate 38 → 37, 8,73 € → 7,70 €) or cancelled it.
+describe("a member's collection order is the server's (issues/217)", () => {
+  const putCollection = (data) =>
+    send('api::order.order.update', { method: 'PUT', numericId: 24947, body: { data } });
+
+  it('drops the route, delivery type, rate and pickup she sends', async () => {
+    const body = await putCollection({
+      route: 9,
+      delivery_type: FRED,
+      route_rate: 37,
+      pickup: 2,
+      comments: 'x',
+    });
+    expect(body.data).toEqual({});
+  });
+
+  it('refuses cancelling it, and keeps what she marks as picked up', async () => {
+    await expect(putCollection({ status: 'cancelled' })).rejects.toMatchObject({ name: 'ForbiddenError' });
+    expect((await putCollection({ status: 'pending', picked_up: true })).data).toEqual({
+      status: 'pending',
+      picked_up: true,
+    });
   });
 });

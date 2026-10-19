@@ -291,6 +291,29 @@ describe('delivery date rules (issues/168)', () => {
     expect(ctx.request.body.data.status).toBe('pending');
   });
 
+  // the user's decision (2026-10-19, issues/186): every order is created pending
+  it('creates every order as pending, whatever state it is sent with', async () => {
+    const { ctrl } = load({ permissions: ['orders_admin'] });
+    const ctx = ctxFor({ data: { estimated_delivery_date: '2026-10-21', status: 'delivered' } });
+    await ctrl.create(ctx);
+    expect(ctx.request.body.data.status).toBe('pending');
+  });
+
+  // issues/215: a delivery point needs a trade name; the CSV import's new
+  // points take their name when the file gives none
+  it("gives the CSV import's new point its name as trade name when it has none", async () => {
+    const { ctrl } = load({ permissions: ['orders_admin'] });
+    const create = jest.fn(async () => ({ id: 9 }));
+    global.strapi.service = () => ({ create });
+    const ctx = ctxFor({ owner: { id: 100 }, contact: { name: 'Nou punt' } });
+    await ctrl.createCSV(ctx);
+    expect(create.mock.calls[0][0].data).toMatchObject({
+      name: 'Nou punt',
+      trade_name: 'Nou punt',
+      owner: 100,
+    });
+  });
+
   it('refuses moving an order to tomorrow past the cutoff, not saving it with its date', async () => {
     const moved = load({ stored: { id: 1, estimated_delivery_date: '2026-10-22' } });
     const ctx = ctxFor({ data: { estimated_delivery_date: '2026-10-19' } }, { state: { v3: { numericId: 1 } } });
