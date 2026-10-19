@@ -31,6 +31,11 @@
  *    of an order (state, deposit, pickup, transfer, delivery).
  * 6. A member changes only the address and contact fields of her delivery
  *    points, and of the shared ones only the address (issues/164).
+ *    A driver changes a delivery point like the office but for its pickup
+ *    discount and its owner (issues/191). Members and the logistics staff
+ *    without full access write only the description, the state and the replies
+ *    of an incidence: its order and who opened or closed it are the server's
+ *    (issues/190).
  * 7. Saved pivot views are read and changed only for the screens the user's
  *    permissions open (issues/166).
  * 8. Every response is cleaned of the salaries, the identity of the people and
@@ -179,6 +184,11 @@ const MEMBER_NEW_CONTACT_FIELDS = [...MEMBER_CONTACT_FIELDS, 'contact_types'];
 
 // What a worker gets of the contacts (the Dedicació pivot loads the list).
 const CONTACT_NAME_FIELDS = ['id', 'documentId', 'name', 'trade_name'];
+
+// What a member or the logistics staff write on an incidence (issues/190): the
+// incidence stays on its order, and who opened and closed it is recorded by
+// the server (order-incidences.js on create, scopeIncidenceUpdate here).
+const INCIDENCE_FIELDS = ['description', 'state', 'incidence_response'];
 
 // A member deletes an incidence of her order while it is open and less than a
 // day old, like the Incidències screen lets her.
@@ -554,6 +564,36 @@ async function scopeIncidenceRow(ctx, next, { strapi, userId }) {
   const access = orderAccess(order, userId, await memberContactIds(strapi, userId));
   if (!access) throw forbidden();
   if (ctx.method === 'DELETE' && !memberMayDeleteIncidence(incidence, access)) throw forbidden();
+  if (ctx.method === 'PUT') incidencePayload(payloadOf(ctx), incidence, userId);
+  return next();
+}
+
+/**
+ * What an incidence update keeps (issues/190): a member moved the incidence of
+ * her order onto another member's order, and set who opened and closed it.
+ * Closing it is recorded now in the name of whoever closes it, and reopening it
+ * clears that.
+ */
+function incidencePayload(payload, incidence, userId) {
+  pick(payload, INCIDENCE_FIELDS);
+  const { state } = payload;
+  if (state === undefined || state === null || state === incidence.state) return payload;
+  if (state === 'closed') {
+    payload.closed_date = new Date();
+    payload.closed_user = userId;
+  } else if (incidence.state === 'closed') {
+    payload.closed_date = null;
+    payload.closed_user = null;
+  }
+  return payload;
+}
+
+/** The logistics staff without full access: any incidence, only its own fields. */
+async function scopeIncidenceUpdate(ctx, next, { strapi, userId }) {
+  const where = addressedRow(ctx);
+  if (!where) throw forbidden();
+  const incidence = await strapi.db.query(INCIDENCE).findOne({ where, select: ['id', 'state'] });
+  if (incidence) incidencePayload(payloadOf(ctx), incidence, userId);
   return next();
 }
 
@@ -752,6 +792,36 @@ async function scopeDriverOrderUpdate(ctx, next, { strapi, userId, permissions }
     if (status === 'invoiced' || order.status === 'invoiced') throw forbidden();
   }
   ownMoves(payload, userId);
+  return next();
+}
+
+/**
+ * A driver changes a delivery point like the office (the user's decision,
+ * 2026-10-19, issues/191), but not its pickup discount, which feeds the price
+ * of its orders, nor its owner: she could make any point hers. The point form
+ * sends both with the rest, so the discount is dropped and the owner refused
+ * only when it changes.
+ */
+async function scopeDriverContactUpdate(ctx, next, { strapi }) {
+  const where = addressedRow(ctx);
+  if (!where) throw forbidden();
+  const payload = payloadOf(ctx);
+  delete payload.pickup_discount;
+  if ('owner' in payload) {
+    const contact = await strapi.db
+      .query(CONTACT)
+      .findOne({ where, select: ['id'], populate: { owner: { select: ['id', 'documentId'] } } });
+    const sent = relationId(payload.owner);
+    const owner = contact && contact.owner;
+    const same = owner ? [owner.id, owner.documentId].includes(sent) : sent === undefined;
+    if (contact && !same) throw forbidden();
+  }
+  return next();
+}
+
+/** A new point a driver makes starts without pickup discount (issues/191). */
+async function scopeDriverContactCreate(ctx, next) {
+  delete payloadOf(ctx).pickup_discount;
   return next();
 }
 
@@ -963,6 +1033,8 @@ const MEMBER_SCOPES = {
 
 const DRIVER_SCOPES = {
   [`${ORDER}.update`]: scopeDriverOrderUpdate,
+  [`${CONTACT}.update`]: scopeDriverContactUpdate,
+  [`${CONTACT}.create`]: scopeDriverContactCreate,
   [`${ORDER}.create`]: asMember(scopeOrderCreate),
   [`${ORDER}.createCSV`]: asMember(scopeOrderCsv),
   'api::orders-import.orders-import.create': asMember(scopeOrdersImport),
@@ -976,6 +1048,7 @@ const GENERAL_SCOPES = {
   [`${PIVOT_VIEW}.delete`]: scopePivotViewRow,
   [`${PIVOT_VIEW}.create`]: scopePivotViewCreate,
   [`${CONTACT}.basic`]: scopeContactBasic,
+  [`${INCIDENCE}.update`]: scopeIncidenceUpdate,
 };
 
 // the user's own data: nothing to clean
