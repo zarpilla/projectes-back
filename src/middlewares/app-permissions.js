@@ -449,7 +449,9 @@ async function memberOrderPayload(
 ) {
   const depositSent = 'deposit_date' in payload;
   // a driver who is a member too sees every point already
-  if (!permissions.includes('orders_delivery')) await checkMemberOrderContacts(strapi, payload, userId, order);
+  if (!permissions.includes('orders_delivery')) {
+    await checkMemberOrderContacts(strapi, payload, userId, order);
+  }
   omit(payload, OFFICE_ORDER_FIELDS);
   if (depositSent) payload.deposit_user = payload.deposit_date ? userId : null;
   const contactId = idOf(payload.contact);
@@ -459,7 +461,9 @@ async function memberOrderPayload(
       .findOne({ where: { id: contactId }, select: ['id', 'pickup_discount'] });
     payload.contact_pickup_discount = (contact && contact.pickup_discount) || 0;
   }
-  if (creating || PRICE_INPUTS.some((field) => field in payload)) {
+  // a collection order's price is the aggregate of its orders (route-price.js)
+  const collection = Boolean(order && order.is_collection_order);
+  if (creating || (!collection && PRICE_INPUTS.some((field) => field in payload))) {
     payload.price = null;
     await memberRouteRate(strapi, payload, userId, { order, csv });
   }
@@ -471,8 +475,13 @@ async function memberOwnOrderUpdate(strapi, order, payload, userId, permissions 
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
     throw forbidden();
   if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
+  // the collection order of her farm-pickup orders is the server's: she
+  // changed its route (and so its rate and price) or cancelled it (issues/217)
+  if (order.is_collection_order && ![undefined, null, order.status].includes(payload.status)) {
+    throw forbidden();
+  }
   // once the office has the order, the form is read-only for her
-  if (order.status !== 'pending') pick(payload, [...MEMBER_LATE_FIELDS]);
+  if (order.status !== 'pending' || order.is_collection_order) pick(payload, [...MEMBER_LATE_FIELDS]);
   await memberOrderPayload(strapi, payload, userId, { creating: false, order, permissions });
 }
 
