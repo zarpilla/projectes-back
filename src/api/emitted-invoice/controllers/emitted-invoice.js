@@ -241,7 +241,15 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     const invoice = await strapi.db.query(docUid).findOne({
       where: { id },
       // contact_info: the client as saved with the document, which the PDF prints
-      populate: { contact: true, contact_info: true, document_type: true, payment_method: true, lines: true },
+      populate: {
+        contact: true,
+        contact_info: true,
+        document_type: true,
+        payment_method: true,
+        lines: true,
+        // whether it is a rectificative (only emitted invoices have them)
+        ...(docUid === 'api::emitted-invoice.emitted-invoice' ? { serial: true, rectified_invoice: true } : {}),
+      },
     });
     const me = await getMe();
 
@@ -272,7 +280,8 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     }
 
     const showDate = invoice.lines?.find((l) => l.date) !== undefined;
-    const showQuantity = invoice.lines?.find((l) => l.quantity > 1) !== undefined;
+    // any quantity but 1: a rectificative's −3 hid the Q. and Base columns (issues/213)
+    const showQuantity = invoice.lines?.find((l) => l.quantity && l.base && Number(l.quantity) !== 1) !== undefined;
     const showVat = true;
     const showIrpf = invoice.lines?.find((l) => l.irpf > 0) !== undefined;
     const showDiscount = invoice.lines?.find((l) => l.discount > 0) !== undefined;
@@ -377,6 +386,15 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
       legal.push({ value: me.invoice_footer, color: 'secondary' });
     else if (me.quote_footer && doc === 'quote') legal.push({ value: me.quote_footer, color: 'secondary' });
 
+    // A rectificative must say so (RD 1619/2012, art. 15): «Factura» stayed (issues/213)
+    let name =
+      invoice.document_type?.name ||
+      (doc === 'quote' ? (invoice.proforma ? 'Factura Proforma' : 'Pressupost') : 'Factura');
+    const rectificative = invoice.serial?.rectificative || invoice.rectified_invoice;
+    if (docUid === 'api::emitted-invoice.emitted-invoice' && rectificative && !/rectificativa/i.test(name)) {
+      name = `${name} rectificativa`;
+    }
+
     const myInvoice = new MicroInvoice({
       style: {
         header: {
@@ -386,9 +404,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
       },
       data: {
         invoice: {
-          name:
-            invoice.document_type?.name ||
-            (doc === 'quote' ? (invoice.proforma ? 'Factura Proforma' : 'Pressupost') : 'Factura'),
+          name,
           header: invoiceHeader,
           currency: 'EUR',
           customer: [
