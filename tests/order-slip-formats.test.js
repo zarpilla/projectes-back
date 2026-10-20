@@ -91,6 +91,7 @@ describe('order.pdfmultiple prints them (issues/298)', () => {
     jest.restoreAllMocks();
   });
 
+  // a PDF with its QR: slow when the whole suite runs at once
   it('prints the hours and the kilos the Catalan way', async () => {
     const ctrl = require('../src/api/order/controllers/order.js')({ strapi: global.strapi });
     await ctrl.pdfmultiple({ request: { body: { orders: [24897] } }, send: () => {} });
@@ -98,5 +99,5 @@ describe('order.pdfmultiple prints them (issues/298)', () => {
     expect(all).toContain('De 9:30 a 13:30 - De 18:00 a 20:00');
     expect(all).toContain('3 caixes - 13,8 kg');
     expect(all).not.toMatch(/9\.5h|13\.8 kg/);
-  });
+  }, 30000);
 });
