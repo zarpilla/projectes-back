@@ -112,3 +112,32 @@ describe('pending VAT documents of received expenses (issues/229)', () => {
     expect(vat.documents.map((d) => [d.id, d.code])).toEqual([[3, 'D3']]);
   });
 });
+
+// issues/255: «IVA suportat 65.628,21 € · deduïble al 97,96 %» while the
+// balance deducted 63.937,04 € (97,42 %): the % was the plain average of the
+// documents' %, not weighted by their VAT.
+describe('deductible % of the supported VAT (issues/255)', () => {
+  beforeEach(() => {
+    jest.resetModules();
+    stubStrapi({
+      'api::year.year': [
+        { id: 1, year: year - 1, deductible_vat_pct: 50 },
+        { id: 2, year, deductible_vat_pct: 100 },
+      ],
+      'api::received-invoice.received-invoice': [{ ...doc(2, 100), emitted: `${year - 1}-11-10` }],
+      'api::received-expense.received-expense': [doc(3, 10)],
+    });
+  });
+
+  afterEach(() => {
+    delete global.strapi;
+  });
+
+  it('is weighted by VAT, so supported × % = deducted', async () => {
+    const { vat } = await forecast();
+
+    expect(vat.deductible_paid).toBeCloseTo(60);
+    expect(vat.deductible_vat_pct).toBeCloseTo((60 / 110) * 100, 2);
+    expect((vat.paid * vat.deductible_vat_pct) / 100).toBeCloseTo(vat.deductible_paid, 1);
+  });
+});

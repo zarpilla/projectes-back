@@ -1106,7 +1106,13 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       datex: treasuryDisplayDate(t.datef),
     }));
 
-    vat.deductible_vat_pct = (vat.deductible_vat_pct_sum / vat.deductible_vat_pct_n) * 100;
+    // Weighted by VAT, so «suportat × % deduïble» is the VAT deducted; the plain
+    // average of the documents' % said 97,96 % for a 97,42 % deduction (issues/255).
+    vat.deductible_vat_pct = vat.paid
+      ? (vat.deductible_paid / vat.paid) * 100
+      : vat.deductible_vat_pct_n
+        ? (vat.deductible_vat_pct_sum / vat.deductible_vat_pct_n) * 100
+        : 0;
     vat.deductible_vat_pct = parseFloat(vat.deductible_vat_pct.toFixed(2));
 
     vat.documents = vat.documents.sort((a, b) => {
