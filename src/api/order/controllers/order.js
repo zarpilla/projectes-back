@@ -620,6 +620,12 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    */
   async checkMultidelivery(ctx) {
     const { id, date, contactId, ownerId, routeId, status } = ctx.request.body || {};
+    // the other rows of a CSV import not saved yet: to the same point that day,
+    // and on the same route for the same member; once saved they make the
+    // multidelivery and volume discounts the preview has to show (issues/298)
+    const count = (value) => (Number.isInteger(Number(value)) && Number(value) > 0 ? Number(value) : 0);
+    const pendingSameContact = count((ctx.request.body || {}).pendingSameContact);
+    const pendingSameRoute = count((ctx.request.body || {}).pendingSameRoute);
     if (!date || !moment(date).isValid() || !relationGiven(contactId)) {
       return ctx.badRequest("Cal indicar el punt d'entrega i la data.");
     }
@@ -640,16 +646,20 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       (o) => (!id || String(o.id) !== String(id)) && o.status !== 'cancelled',
     );
 
-    const volumeDiscount = await currentOrderVolumeDiscount(id, {
-      route: routeId,
-      owner: ownerId,
-      estimated_delivery_date: date,
-      status: status || 'pending',
-    });
+    const volumeDiscount = await currentOrderVolumeDiscount(
+      id,
+      {
+        route: routeId,
+        owner: ownerId,
+        estimated_delivery_date: date,
+        status: status || 'pending',
+      },
+      pendingSameRoute,
+    );
 
     return {
       multidelivery_discount:
-        others.length > 0 ? ownerFactor * (me.orders_options?.multidelivery_discount || 0) : 0,
+        others.length + pendingSameContact > 0 ? ownerFactor * (me.orders_options?.multidelivery_discount || 0) : 0,
       ...(volumeDiscount === undefined ? {} : { volume_discount: volumeDiscount }),
     };
   },
