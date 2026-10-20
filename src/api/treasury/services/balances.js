@@ -12,18 +12,22 @@
  *
  * A real-balance adjustment sets its row's amount to the difference (as before).
  */
+// Balances to cents: summing floats left saldos like 16976.9743000003 in the
+// Tresoreria export (issues/277).
+const round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+
 const applyRowToBalance = (row, currentAccountBalance) => {
   if (row.is_real_balance_adjustment) {
     const desiredBalance = row.desired_balance;
-    const adjustment = desiredBalance - currentAccountBalance;
+    const adjustment = round2(desiredBalance - currentAccountBalance);
     row.total_amount = adjustment;
     return { accountBalance: desiredBalance, delta: adjustment };
   }
   if (row.is_balance_annotation && row.account_balance !== undefined) {
-    const adjustment = row.account_balance - currentAccountBalance;
+    const adjustment = round2(row.account_balance - currentAccountBalance);
     return { accountBalance: row.account_balance, delta: adjustment };
   }
-  return { accountBalance: currentAccountBalance + row.total_amount, delta: row.total_amount };
+  return { accountBalance: round2(currentAccountBalance + row.total_amount), delta: row.total_amount };
 };
 
 const walkBalances = (rows) => {
@@ -34,7 +38,7 @@ const walkBalances = (rows) => {
     if (balanceByAccount[account] === undefined) balanceByAccount[account] = 0;
     const { accountBalance, delta } = applyRowToBalance(row, balanceByAccount[account]);
     balanceByAccount[account] = accountBalance;
-    subtotal += delta;
+    subtotal = round2(subtotal + delta);
     return { ...row, subtotal, account_subtotal: accountBalance };
   });
 };
@@ -65,4 +69,4 @@ const sortRows = (rows) =>
     )
     .map(({ row }) => row);
 
-module.exports = { applyRowToBalance, walkBalances, sortRows };
+module.exports = { applyRowToBalance, walkBalances, sortRows, round2 };
