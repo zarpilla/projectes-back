@@ -62,12 +62,13 @@ describe('pdf action, lines with a discount', () => {
   it('applies the discount to the line IRPF, like VAT and the subtotal', () => {
     expect(cell(1, 'Descompte')).toBe('6,90 EUR (10%)');
     expect(cell(1, 'IVA')).toBe('13,04 EUR (21%)');
-    expect(cell(1, 'IRPF')).toBe('-9,31 EUR (15%)');
-    expect(cell(1, 'Subtotal')).toBeCloseTo(65.826, 3);
+    // rounded to cents like the stored totals (total_irpf 9.32, issues/243)
+    expect(cell(1, 'IRPF')).toBe('-9,32 EUR (15%)');
+    expect(cell(1, 'Subtotal')).toBe(65.82);
   });
 
   it('leaves lines without discount unchanged', () => {
     expect(cell(0, 'IVA')).toBe('6,39 EUR (21%)');
-    expect(cell(0, 'Subtotal')).toBeCloseTo(36.8445, 4);
+    expect(cell(0, 'Subtotal')).toBe(36.84);
   });
 });

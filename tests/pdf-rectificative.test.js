@@ -64,7 +64,7 @@ describe('pdf of a rectificative (issues/213)', () => {
     const header = invoice.details.header.map((h) => h.value);
     expect(header).toEqual(expect.arrayContaining(['Q.', 'Base']));
     const row = invoice.details.parts[0];
-    expect(row[header.indexOf('Q.')].value).toBe(-3);
+    expect(row[header.indexOf('Q.')].value).toBe('-3');
     expect(row[header.indexOf('Base')].value).toBe(40);
   });
 
