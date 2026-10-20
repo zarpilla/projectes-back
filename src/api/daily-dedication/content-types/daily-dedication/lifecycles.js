@@ -12,9 +12,24 @@ const { relationId } = require('../../../../services/relation-input');
 // answers 400 with the message, which the views already display.
 const { errors: { ApplicationError } } = require('@strapi/utils');
 
+// A period ending before it starts, or with negative hours, was saved (201)
+// and then counted in every hours screen (issues/225).
+function refuseInvalid(data, current = {}) {
+  const from = data.from !== undefined ? data.from : current.from;
+  const to = data.to !== undefined ? data.to : current.to;
+  const hours = data.hours !== undefined ? data.hours : current.hours;
+  if (from && to && String(to) < String(from)) {
+    throw new ApplicationError('daily-dedication ends before it starts');
+  }
+  if (hours !== null && hours !== undefined && hours !== '' && !(Number(hours) >= 0)) {
+    throw new ApplicationError('daily-dedication hours must be 0 or more');
+  }
+}
+
 module.exports = {
   async beforeCreate(event) {
     const data = event.params.data;
+    refuseInvalid(data);
     const dedications = await strapi.db
       .query('api::daily-dedication.daily-dedication')
       .findMany({ where: { users_permissions_user: relationId(data.users_permissions_user) } });
@@ -33,6 +48,12 @@ module.exports = {
   async beforeUpdate(event) {
     const data = event.params.data;
     const id = event.params.where.id;
+    // a partial update keeps the saved dates/hours it does not send
+    const needsCurrent = ['from', 'to', 'hours'].some((k) => data[k] === undefined);
+    const current = needsCurrent
+      ? await strapi.db.query('api::daily-dedication.daily-dedication').findOne({ where: { id } })
+      : null;
+    refuseInvalid(data, current || {});
     const dedications = await strapi.db
       .query('api::daily-dedication.daily-dedication')
       .findMany({ where: { users_permissions_user: relationId(data.users_permissions_user) } });

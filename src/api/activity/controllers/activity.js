@@ -21,6 +21,7 @@ const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { scheduleRefresh } = require('../../project/services/totalsRefreshScheduler');
 const { getMe } = require('../../../services/me-settings');
+const { withBadQueryAs400 } = require('../../../services/query-errors');
 
 module.exports = createCoreController('api::activity.activity', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -37,38 +38,41 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
    */
   async getForCalendar(ctx) {
     const opts = adaptQuery(ctx.query);
-    const activities = await strapi.db.query('api::activity.activity').findMany({
-      where: opts.filters || {},
-      // v3's find() populated every first-level relation. ModalBoxDedication
-      // reopens an entry from this payload and preselects Funció / Tipus
-      // dedicació / Tasca from `activity_type.id`, `dedication_type.id` and
-      // `task.id` — left unpopulated, the saved values looked lost on reopen.
-      populate: {
-        project: true,
-        users_permissions_user: true,
-        activity_type: true,
-        dedication_type: true,
-        task: true,
-      },
-      limit: dbLimit(opts),
-      offset: opts.pagination?.start,
-      orderBy: opts.sort,
-    });
+    // an unknown parameter (`?user=8`) is a 400, not a 500 (issues/225)
+    return withBadQueryAs400(ctx, async () => {
+      const activities = await strapi.db.query('api::activity.activity').findMany({
+        where: opts.filters || {},
+        // v3's find() populated every first-level relation. ModalBoxDedication
+        // reopens an entry from this payload and preselects Funció / Tipus
+        // dedicació / Tasca from `activity_type.id`, `dedication_type.id` and
+        // `task.id` — left unpopulated, the saved values looked lost on reopen.
+        populate: {
+          project: true,
+          users_permissions_user: true,
+          activity_type: true,
+          dedication_type: true,
+          task: true,
+        },
+        limit: dbLimit(opts),
+        offset: opts.pagination?.start,
+        orderBy: opts.sort,
+      });
 
-    return activities.map((entity) => {
-      if (entity.users_permissions_user) {
-        const { id, username, email, ical } = entity.users_permissions_user;
-        entity.users_permissions_user = { id, username, email, ical };
-      }
-      if (entity.project) {
-        // v3 defaulted empty arrays for these heavy relations; keep parity.
-        entity.project.project_phases = entity.project.project_phases || [];
-        entity.project.documents = entity.project.documents || [];
-        entity.project.project_original_phases = entity.project.project_original_phases || [];
-        const { project_phases, project_original_phases, documents, ...projectData } = entity.project;
-        entity.project = projectData;
-      }
-      return entity;
+      return activities.map((entity) => {
+        if (entity.users_permissions_user) {
+          const { id, username, email, ical } = entity.users_permissions_user;
+          entity.users_permissions_user = { id, username, email, ical };
+        }
+        if (entity.project) {
+          // v3 defaulted empty arrays for these heavy relations; keep parity.
+          entity.project.project_phases = entity.project.project_phases || [];
+          entity.project.documents = entity.project.documents || [];
+          entity.project.project_original_phases = entity.project.project_original_phases || [];
+          const { project_phases, project_original_phases, documents, ...projectData } = entity.project;
+          entity.project = projectData;
+        }
+        return entity;
+      });
     });
   },
 
@@ -82,18 +86,20 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
    */
   async totalByDay(ctx) {
     const opts = adaptQuery(ctx.query);
-    const activities = await strapi.db.query('api::activity.activity').findMany({
-      where: opts.filters || {},
-      select: ['id', 'hours', 'date'],
-      limit: dbLimit(opts),
-      offset: opts.pagination?.start,
-      orderBy: opts.sort,
-    });
+    return withBadQueryAs400(ctx, async () => {
+      const activities = await strapi.db.query('api::activity.activity').findMany({
+        where: opts.filters || {},
+        select: ['id', 'hours', 'date'],
+        limit: dbLimit(opts),
+        offset: opts.pagination?.start,
+        orderBy: opts.sort,
+      });
 
-    return _(activities)
-      .groupBy('date')
-      .map((rows, date) => ({ date, hours: _.sumBy(rows, 'hours') }))
-      .value();
+      return _(activities)
+        .groupBy('date')
+        .map((rows, date) => ({ date, hours: _.sumBy(rows, 'hours') }))
+        .value();
+    });
   },
 
   /**

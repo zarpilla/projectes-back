@@ -14,11 +14,11 @@ const moment = require('moment');
 //     their hours are accumulated into `festive` so the tooltip can surface
 //     them as a single "Festius" line instead of inflating Total hores.
 
-// daily-dedication hours resolution: first matching range wins, default 8
-// (matches DedicationGanttChart.vue cellData handling).
+// daily-dedication hours resolution: first matching range wins; no period,
+// no jornada (it defaulted to 8 h, issues/272).
 function dailyHoursForFirstMatch(dailyDedications, dateStr) {
   const dd = periodForDate(dailyDedications, dateStr);
-  return dd ? dd.hours : 8;
+  return dd ? dd.hours : 0;
 }
 
 function periodForDate(dailyDedications, dateStr) {
@@ -37,8 +37,9 @@ function periodForDate(dailyDedications, dateStr) {
 // (DedicationSaldo.vue, front domain/workdayLog.js expectedHours): the
 // period's weekly distribution («Distribució setmanal», hoursperday, Monday
 // first) when it has one, weekends included; otherwise its daily hours from
-// Monday to Friday. Without a period, 8 h on weekdays (issues/238: the flat
-// daily hours were used even with a distribution).
+// Monday to Friday (issues/238: the flat daily hours were used even with a
+// distribution). Without a period, no jornada: 0 h, «s/j» as in Saldo d'hores
+// (it counted 8 h a weekday, issues/272).
 function dayHours(dailyDedications, dateStr, dow) {
   const dd = periodForDate(dailyDedications, dateStr);
   if (dd && dd.hoursperday) {
@@ -46,7 +47,7 @@ function dayHours(dailyDedications, dateStr, dow) {
     return Number.isFinite(value) ? value : 0;
   }
   if (dow === 0 || dow === 6) return 0;
-  return dd ? Number(dd.hours) || 0 : 8;
+  return dd ? Number(dd.hours) || 0 : 0;
 }
 
 // Expected hours for a month period, festive-aware (saldo-equivalent).
