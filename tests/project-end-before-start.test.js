@@ -77,6 +77,19 @@ describe('POST / PUT /projects with the end before the start (issues/212)', () =
     expect(superUpdate).not.toHaveBeenCalled();
   });
 
+  it('checks a single date against the stored one when addressed by documentId', async () => {
+    // PUT /api/projects/<documentId>: numericId(ctx) is the documentId string,
+    // the stored dates must be looked up by documentId (issues/212 follow-up)
+    findOne.mockImplementation(async ({ where }) =>
+      where.documentId === 'abc123def' ? { date_start: '2026-01-01', date_end: '2026-12-31' } : null);
+    const c = ctx({ date_end: '2025-01-01' });
+    c.params.id = 'abc123def';
+    await controller.update(c);
+    expect(findOne).toHaveBeenCalledWith(expect.objectContaining({ where: { documentId: 'abc123def' } }));
+    expect(c.badRequest).toHaveBeenCalledWith(PROJECT_DATES_MESSAGE);
+    expect(superUpdate).not.toHaveBeenCalled();
+  });
+
   it('lets valid dates and saves without dates through', async () => {
     await controller.update(ctx({ date_start: '2026-01-01', date_end: '2026-01-01' }));
     await controller.update(ctx({ name: 'P' }));
