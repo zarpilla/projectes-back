@@ -93,7 +93,12 @@ function capacityForMonth(periodKey, dailyDedications, festivesSet) {
 // Its days follow dayHours (weekly distribution, else Mon-Fri); festive days reduce the
 // count just like in the month view. Returns { expected, festive } — see
 // capacityForMonth for the festive semantics.
-function capacityForWeek(periodKey, dailyDedications, festivesSet) {
+//
+// With `onlyYear`, only the days of that calendar year count: the first and last
+// ISO weeks of a year cross into the next/previous one, whose hours the
+// tables don't load, so the same days are compared (it expected a full week
+// of jornada, 1–2 Jan of the next year included, issues/265).
+function capacityForWeek(periodKey, dailyDedications, festivesSet, onlyYear) {
   const parts = periodKey.split('-W');
   const year = parseInt(parts[0], 10);
   const week = parseInt(parts[1], 10);
@@ -107,6 +112,7 @@ function capacityForWeek(periodKey, dailyDedications, festivesSet) {
   let festive = 0;
   for (let d = 0; d < 7; d++) {
     const day = monday.clone().add(d, 'day');
+    if (onlyYear && day.year() !== onlyYear) continue;
     const dow = day.day();
     const dateStr = day.format('YYYY-MM-DD');
     const dh = dayHours(dailyDedications, dateStr, dow);
@@ -120,7 +126,16 @@ function capacityForWeek(periodKey, dailyDedications, festivesSet) {
   return { expected, festive };
 }
 
+// The column label of a week: "W1 2026", the ISO week's year, so the last
+// week of 2025 (2026-W01) and its first (2025-W01) are no longer both «W1»;
+// the chart drops the year of the main one, as for the months (issues/265).
+function weekLabel(periodKey) {
+  const parts = periodKey.split('-W');
+  return `W${parseInt(parts[1], 10)} ${parseInt(parts[0], 10)}`;
+}
+
 module.exports = {
+  weekLabel,
   dailyHoursForFirstMatch,
   dayHours,
   capacityForMonth,

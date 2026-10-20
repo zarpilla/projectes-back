@@ -3,7 +3,7 @@
 
 const moment = require('moment');
 const _ = require('lodash');
-const { dailyHoursForFirstMatch, capacityForMonth, capacityForWeek } = require('./ganttCapacity');
+const { dailyHoursForFirstMatch, capacityForMonth, capacityForWeek, weekLabel } = require('./ganttCapacity');
 
 // Catalan short month names so the period labels are independent of the
 // process-wide moment locale (the frontend renders these with moment 'ca').
@@ -215,7 +215,7 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
       const week = parseInt(parts[1], 10);
       return {
         key,
-        label: `W${week}`,
+        label: weekLabel(key),
         year: parseInt(parts[0], 10),
         week,
       };
@@ -257,7 +257,7 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
         const capacity =
           safeView === 'month'
             ? capacityForMonth(period.key, leader.daily_dedications, festivesSet)
-            : capacityForWeek(period.key, leader.daily_dedications, festivesSet);
+            : capacityForWeek(period.key, leader.daily_dedications, festivesSet, targetYear);
         const expectedHours = capacity.expected;
         const festiveHours = capacity.festive;
 

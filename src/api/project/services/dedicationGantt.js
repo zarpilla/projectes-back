@@ -3,7 +3,7 @@
 
 const moment = require('moment');
 const _ = require('lodash');
-const { capacityForMonth, capacityForWeek } = require('./ganttCapacity');
+const { capacityForMonth, capacityForWeek, weekLabel } = require('./ganttCapacity');
 const { calculateEstimatedTotals } = require('./projectFinancials');
 
 // Catalan short month names so the period labels are independent of the
@@ -279,7 +279,7 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
       const week = parseInt(parts[1], 10);
       return {
         key,
-        label: `W${week}`,
+        label: weekLabel(key),
         year: parseInt(parts[0], 10),
         week,
       };
@@ -324,7 +324,7 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
         const capacity =
           view === 'month'
             ? capacityForMonth(period.key, leader.daily_dedications, festivesSet)
-            : capacityForWeek(period.key, leader.daily_dedications, festivesSet);
+            : capacityForWeek(period.key, leader.daily_dedications, festivesSet, targetYear);
         const expectedHours = capacity.expected;
         const festiveHours = capacity.festive;
 
