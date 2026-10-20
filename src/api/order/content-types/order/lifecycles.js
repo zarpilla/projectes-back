@@ -10,6 +10,7 @@
 
 const _ = require('lodash');
 const moment = require('moment');
+const { toQueryDay } = require('../../../../services/date-fields');
 const { relationId } = require('../../../../services/relation-input');
 const {
   calculatePriceFromRouteRate,
@@ -53,8 +54,8 @@ const extractId = (value) => {
 };
 const normalizeOrderDate = (value) => {
   if (!value) return null;
-  const textValue = String(value);
-  return textValue.includes('T') ? textValue.split('T')[0] : textValue;
+  // the Madrid day, not the UTC one the first 10 characters give (issues/233)
+  return toQueryDay(value);
 };
 
 // --- VOLUME DISCOUNT LOGIC ---
@@ -187,7 +188,9 @@ const findWithCollectionRelations = (id) =>
 
 const checkMultidelivery = async (id, date, contactId, currentStatus) => {
   const ordersOfDateAndContact = await strapi.db.query('api::order.order').findMany({
-    where: { estimated_delivery_date: moment(date).format('YYYY-MM-DD'), contact: contactId },
+    where: { estimated_delivery_date: toQueryDay(date), contact: contactId },
+    // whether a sibling is on an invoice (issues/233)
+    populate: { emitted_invoice: { select: ['id'] } },
   });
 
   const others = ordersOfDateAndContact.filter(
@@ -594,7 +597,7 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
 
     // Use date from frontend if provided
     if (orderData.collection_pickup_date) {
-      collectionPickupDate = moment(orderData.collection_pickup_date).format('YYYY-MM-DD');
+      collectionPickupDate = toQueryDay(orderData.collection_pickup_date);
       estimatedDeliveryDate = collectionPickupDate;
     } else {
       // Fallback priority when collection_pickup_date is missing:
@@ -603,11 +606,11 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
       // 2) existing linked collection order date
       // 3) route next-day calculation (last resort)
       if (orderData.collection_pickup_date) {
-        collectionPickupDate = moment(orderData.collection_pickup_date).format('YYYY-MM-DD');
+        collectionPickupDate = toQueryDay(orderData.collection_pickup_date);
       }
 
       if (orderData.estimated_delivery_date) {
-        estimatedDeliveryDate = moment(orderData.estimated_delivery_date).format('YYYY-MM-DD');
+        estimatedDeliveryDate = toQueryDay(orderData.estimated_delivery_date);
       }
 
       if (!estimatedDeliveryDate) {
@@ -619,15 +622,11 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
             .findOne({ where: { id: existingCollectionOrderId } });
 
           if (existingCollectionOrder && existingCollectionOrder.collection_pickup_date) {
-            collectionPickupDate = moment(existingCollectionOrder.collection_pickup_date).format(
-              'YYYY-MM-DD',
-            );
+            collectionPickupDate = toQueryDay(existingCollectionOrder.collection_pickup_date);
           }
 
           if (existingCollectionOrder && existingCollectionOrder.estimated_delivery_date) {
-            estimatedDeliveryDate = moment(existingCollectionOrder.estimated_delivery_date).format(
-              'YYYY-MM-DD',
-            );
+            estimatedDeliveryDate = toQueryDay(existingCollectionOrder.estimated_delivery_date);
           }
         }
       }
@@ -645,10 +644,10 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
     route = await calculateRouteForCollectionPoint(collectionPointContact);
     if (route) {
       if (orderData.collection_pickup_date) {
-        collectionPickupDate = moment(orderData.collection_pickup_date).format('YYYY-MM-DD');
+        collectionPickupDate = toQueryDay(orderData.collection_pickup_date);
         estimatedDeliveryDate = collectionPickupDate;
       } else if (orderData.estimated_delivery_date) {
-        estimatedDeliveryDate = moment(orderData.estimated_delivery_date).format('YYYY-MM-DD');
+        estimatedDeliveryDate = toQueryDay(orderData.estimated_delivery_date);
         collectionPickupDate = estimatedDeliveryDate;
       } else {
         estimatedDeliveryDate = await calculateEstimatedDeliveryDate(route);
@@ -1048,13 +1047,27 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   await strapi.db.query('api::order.order').update({ where: { id: collectionOrderId }, data: updateData });
 };
 
-/**
- * Calculate route rate for collection order (excluding "Pickup" rates)
- */
+// A sibling that is invoiced, delivered or already on an invoice keeps the
+// discount it was charged with: repricing it left the order disagreeing with
+// its invoice line (issues/233). It still counts towards the group.
+const FROZEN_DISCOUNT_STATUSES = ['invoiced', 'delivered'];
+const repriceable = (orders) =>
+  orders.filter((o) => !FROZEN_DISCOUNT_STATUSES.includes(o.status) && !relationId(o.emitted_invoice));
+
+const removeMultideliveryDiscountFromOrders = async (orders) => {
+  for await (const order of repriceable(orders)) {
+    if (order.multidelivery_discount > 0) {
+      await strapi
+        .query('api::order.order')
+        .update({ where: { id: order.id }, data: { multidelivery_discount: 0, _internal: true } });
+    }
+  }
+};
+
 const updateMultideliveryDiscountForOrders = async (orders, me, ownerFactor = 1) => {
   const discountToApply = ownerFactor * (me.orders_options?.multidelivery_discount || 0);
 
-  for await (const order of orders) {
+  for await (const order of repriceable(orders)) {
     if (order.multidelivery_discount !== discountToApply) {
       await strapi.db.query('api::order.order').update({
         where: { id: order.id },
@@ -1178,13 +1191,7 @@ const processMultideliveryDiscountForOtherOrders = async (orderId, currentData, 
     await updateMultideliveryDiscountForOrders(others, me, ownerFactor);
   } else if (!multidelivery && others.length > 0) {
     // If no longer multidelivery, remove discount from others in current group
-    for await (const order of others) {
-      if (order.multidelivery_discount > 0) {
-        await strapi
-          .query('api::order.order')
-          .update({ where: { id: order.id }, data: { multidelivery_discount: 0, _internal: true } });
-      }
-    }
+    await removeMultideliveryDiscountFromOrders(others);
   }
 
   // For updates, handle changes in estimated_delivery_date, contact, or status
@@ -1218,13 +1225,7 @@ const processMultideliveryDiscountForOtherOrders = async (orderId, currentData, 
 
           if (!stillHasMultidelivery) {
             // Remove multidelivery discount from remaining orders
-            for await (const order of previousGroup.others) {
-              if (order.multidelivery_discount > 0) {
-                await strapi
-                  .query('api::order.order')
-                  .update({ where: { id: order.id }, data: { multidelivery_discount: 0, _internal: true } });
-              }
-            }
+            await removeMultideliveryDiscountFromOrders(previousGroup.others);
           } else {
             // Previous group still has multidelivery, make sure they have the discount
             await updateMultideliveryDiscountForOrders(previousGroup.others, me, ownerFactor);
@@ -1245,13 +1246,7 @@ const processMultideliveryDiscountForOtherOrders = async (orderId, currentData, 
 
           if (!stillHasMultidelivery) {
             // Remove multidelivery discount from remaining orders
-            for await (const order of remainingGroup.others) {
-              if (order.multidelivery_discount > 0) {
-                await strapi
-                  .query('api::order.order')
-                  .update({ where: { id: order.id }, data: { multidelivery_discount: 0, _internal: true } });
-              }
-            }
+            await removeMultideliveryDiscountFromOrders(remainingGroup.others);
           }
         }
       }

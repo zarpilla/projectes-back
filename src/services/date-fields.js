@@ -11,6 +11,8 @@
  * covers the document service, raw strapi.db.query writes (updatePhases) and
  * component rows alike.
  */
+const moment = require('moment');
+
 const DATE_TZ = process.env.APP_TZ || 'Europe/Madrid';
 const DAY_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -22,6 +24,19 @@ function toLocalDay(value) {
   if (Number.isNaN(d.getTime())) return value;
   // sv-SE formats as YYYY-MM-DD
   return d.toLocaleDateString('sv-SE', { timeZone: DATE_TZ });
+}
+
+/**
+ * The calendar day a query on a `date` attribute should match: the same day
+ * the normalizer above stores, whatever the server's timezone. The order
+ * discounts read it with moment(date), i.e. in the server's local time, so on
+ * a UTC container the form's "2026-09-30T22:00:00.000Z" matched the 29th
+ * (issues/233). Values it can't read keep moment's answer, as before.
+ */
+function toQueryDay(value) {
+  const day = toLocalDay(value);
+  if (typeof day === 'string' && DAY_ONLY.test(day)) return day;
+  return moment(value).format('YYYY-MM-DD');
 }
 
 function normalizeDates(data, attributes) {
@@ -45,4 +60,4 @@ function registerDateFieldNormalizer() {
   });
 }
 
-module.exports = { registerDateFieldNormalizer, toLocalDay };
+module.exports = { registerDateFieldNormalizer, toLocalDay, toQueryDay };
