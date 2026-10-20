@@ -59,17 +59,23 @@ const getProjectDefaultYear = (project) => {
  */
 const UNDATED_YEAR = '9999';
 
-const parseRowDate = (date) => (date ? moment(date, 'YYYY-MM-DD') : null);
-
 // Without this, an undated line was bucketed under moment's "Invalid date".
+// Same result as parsing with moment(date, 'YYYY-MM-DD'), without moment
+// (issues/309): dayNumber and dayInfo are defined further down.
+const rowDay = (date) => {
+  if (!date) return null;
+  const n = dayNumber(date);
+  return Number.isNaN(n) ? null : dayInfo(n);
+};
+
 const rowYear = (date) => {
-  const m = parseRowDate(date);
-  return m && m.isValid() ? m.format('YYYY') : UNDATED_YEAR;
+  const d = rowDay(date);
+  return d ? d.year : UNDATED_YEAR;
 };
 
 const rowMonth = (date) => {
-  const m = parseRowDate(date);
-  return m && m.isValid() ? m.format('MM') : '12';
+  const d = rowDay(date);
+  return d ? d.str.substring(5, 7) : '12';
 };
 
 /**
@@ -154,6 +160,80 @@ const lineExportFields = (line, type, amount) => {
   };
 };
 
+/*
+ * Calendar days as integers (days since 1970-01-01) for the per-day planned
+ * hours (issues/309). The engine built and formatted several moment objects per
+ * planned day of every project: most of the time of Informes › Ingressos/
+ * Despeses. Same days and weekdays as moment(date, 'YYYY-MM-DD') + add(i, 'days').
+ */
+const DAY_MS = 86400000;
+const pad2 = (n) => (n < 10 ? `0${n}` : String(n));
+
+/** Day number of a 'YYYY-MM-DD' date (or Date); NaN when moment finds it invalid. */
+const dayNumber = (value) => {
+  if (value instanceof Date) {
+    return Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()) / DAY_MS;
+  }
+  const m = typeof value === 'string' && /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (m) {
+    const t = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+    const d = new Date(t);
+    // 2026-02-30 is invalid for moment, not 2 March
+    if (d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3]) return t / DAY_MS;
+  }
+  const mm = moment(value, 'YYYY-MM-DD');
+  return mm.isValid() ? Date.UTC(mm.year(), mm.month(), mm.date()) / DAY_MS : NaN;
+};
+
+const daysBetween = (from, to) => to - from;
+
+const dayInfoCache = new Map();
+/** { str: 'YYYY-MM-DD', year: 'YYYY', dow: 0 (Sunday) – 6 } of a day number. */
+const dayInfo = (n) => {
+  let info = dayInfoCache.get(n);
+  if (!info) {
+    const d = new Date(n * DAY_MS);
+    const year = String(d.getUTCFullYear()).padStart(4, '0');
+    info = { str: `${year}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`, year, dow: d.getUTCDay() };
+    dayInfoCache.set(n, info);
+  }
+  return info;
+};
+
+// Built once per festives / dedications list, not once per project and phase
+// tree: a request hands the same lists to every project (issues/309).
+const festiveLookups = new WeakMap();
+const dedicationLookups = new WeakMap();
+
+const calendarLookups = (festives, dailyDedications) => {
+  let festive = festiveLookups.get(festives);
+  if (!festive || festive.length !== festives.length) {
+    const general = new Set();
+    const personal = new Set();
+    festives.forEach((f) => {
+      if (f.users_permissions_user) personal.add(`${f.users_permissions_user.id}_${f.date}`);
+      else general.add(f.date);
+    });
+    festive = { length: festives.length, on: (userId, day) => personal.has(`${userId}_${day}`) || general.has(day) };
+    festiveLookups.set(festives, festive);
+  }
+
+  let dedications = dedicationLookups.get(dailyDedications);
+  if (!dedications || dedications.length !== dailyDedications.length) {
+    const byUser = new Map();
+    dailyDedications.forEach((d) => {
+      const userId = d.users_permissions_user ? d.users_permissions_user.id : null;
+      if (!userId) return;
+      if (!byUser.has(userId)) byUser.set(userId, []);
+      byUser.get(userId).push(d);
+    });
+    dedications = { length: dailyDedications.length, byUser };
+    dedicationLookups.set(dailyDedications, dedications);
+  }
+
+  return { festiveOn: festive.on, dedicationsByUser: dedications.byUser };
+};
+
 /**
  * Walk a project's phase tree (either current `project_phases` or the
  * locked `project_original_phases`) to compute daily/yearly totals.
@@ -169,6 +249,7 @@ const calculateEstimatedTotals = async (
   dailyDedications,
   festives,
   real, // or estimated
+  opts, // { lean: true } → `day` as 'YYYY-MM-DD' and no totalsByYear (issues/309)
 ) => {
   var total_estimated_hours = 0;
   var total_incomes = 0;
@@ -182,52 +263,12 @@ const calculateEstimatedTotals = async (
 
   const totalsByDay = [];
   const rowsByYear = [];
+  const lean = !!(opts && opts.lean);
+  // the per-day row's `day`: a 'YYYY-MM-DD' string in lean mode, else a moment
+  const dayValue = lean ? (d) => d.str : (d) => moment(d.str, 'YYYY-MM-DD');
+  const pushYear = lean ? () => {} : (row) => rowsByYear.push(row);
 
-  // Pre-create Maps for O(1) lookups instead of O(n) array.find()
-  const festivesByDate = new Map();
-  const festivesByUserAndDate = new Map();
-  festives.forEach((f) => {
-    const key = f.date;
-    if (!festivesByDate.has(key)) {
-      festivesByDate.set(key, []);
-    }
-    festivesByDate.get(key).push(f);
-
-    if (f.users_permissions_user) {
-      const userKey = `${f.users_permissions_user.id}_${f.date}`;
-      festivesByUserAndDate.set(userKey, f);
-    }
-  });
-
-  // Pre-create Map for daily dedications lookup
-  const dedicationsByUser = new Map();
-  dailyDedications.forEach((d) => {
-    const userId = d.users_permissions_user ? d.users_permissions_user.id : null;
-    if (!userId) return;
-    if (!dedicationsByUser.has(userId)) {
-      dedicationsByUser.set(userId, []);
-    }
-    dedicationsByUser.get(userId).push(d);
-  });
-
-  // Cache moment objects to avoid recreating them
-  const momentCache = new Map();
-  const getMoment = (dateStr) => {
-    if (!momentCache.has(dateStr)) {
-      momentCache.set(dateStr, moment(dateStr, 'YYYY-MM-DD'));
-    }
-    return momentCache.get(dateStr);
-  };
-
-  // Cache formatted dates to avoid repeated formatting
-  const formatCache = new Map();
-  const getFormattedDate = (momentObj, format) => {
-    const key = `${momentObj.format('YYYY-MM-DD')}_${format}`;
-    if (!formatCache.has(key)) {
-      formatCache.set(key, momentObj.format(format));
-    }
-    return formatCache.get(key);
-  };
+  const { festiveOn, dedicationsByUser } = calendarLookups(festives, dailyDedications);
 
   if (phases && phases.length) {
     const projectDefaultYear = getProjectDefaultYear(data);
@@ -245,7 +286,7 @@ const calculateEstimatedTotals = async (
             lineTotal(subphase);
 
           const ey = getEstimateYear(subphase, projectDefaultYear);
-          rowsByYear.push({ year: ey, total_incomes: subphase.total_amount });
+          pushYear({ year: ey, total_incomes: subphase.total_amount });
 
           if (subphase.estimated_hours) {
             for (var k = 0; k < subphase.estimated_hours.length; k++) {
@@ -255,94 +296,36 @@ const calculateEstimatedTotals = async (
                 let mdiff = 1;
                 const userId = hours.users_permissions_user.id;
                 const userDedications = dedicationsByUser.get(userId) || [];
+                const isWorkingDay = (d) => !(d.dow === 0 || d.dow === 6) && !festiveOn(userId, d.str);
 
-                if (hours.quantity_type && hours.quantity_type === 'month') {
-                  const fromMoment = getMoment(hours.from);
-                  const toMoment = getMoment(hours.to);
-                  mdiff = Math.round(moment.duration(toMoment.diff(fromMoment)).asDays());
-
-                  for (let i = 0; i < mdiff; i++) {
-                    const day = fromMoment.clone().add(i, 'days');
-                    const dayStr = getFormattedDate(day, 'YYYY-MM-DD');
-
-                    const userFestiveKey = `${userId}_${dayStr}`;
-                    const festive = festivesByUserAndDate.has(userFestiveKey)
-                      ? festivesByUserAndDate.get(userFestiveKey)
-                      : (festivesByDate.get(dayStr) || []).find((f) => !f.users_permissions_user);
-
-                    if (![0, 6].includes(day.day()) && !festive) {
-                      const q = hours.quantity / 5 / 4.3;
-                      subphase_estimated_hours += q;
-                      total_estimated_hours += q;
-
-                      const dd = userDedications.find((d) => d.from <= dayStr && d.to >= dayStr);
-                      const costByHour = dd && dd.costByHour ? dd.costByHour : 0;
-                      hours.total_amount += q * costByHour;
-                      total_estimated_hours_price += q * costByHour;
-
-                      totalsByDay.push({
-                        day,
-                        q,
-                        costByHour,
-                        userId: userId,
-                        project: data.id,
-                        project_name: data.name,
-                      });
-
-                      const yearStr = getFormattedDate(day, 'YYYY');
-                      rowsByYear.push({
-                        year: yearStr,
-                        total_estimated_hours: q,
-                      });
-                      rowsByYear.push({
-                        year: yearStr,
-                        total_estimated_hours_price: q * costByHour,
-                      });
-                    }
-                  }
-                } else if (hours.quantity_type && hours.quantity_type === 'week') {
-                  const fromMoment = getMoment(hours.from);
-                  const toMoment = getMoment(hours.to);
-                  mdiff = Math.round(moment.duration(toMoment.diff(fromMoment)).asDays());
+                if (hours.quantity_type && (hours.quantity_type === 'month' || hours.quantity_type === 'week')) {
+                  const from = dayNumber(hours.from);
+                  mdiff = daysBetween(from, dayNumber(hours.to));
+                  const q = hours.quantity_type === 'month' ? hours.quantity / 5 / 4.3 : hours.quantity / 5;
 
                   for (let i = 0; i < mdiff; i++) {
-                    const day = fromMoment.clone().add(i, 'days');
-                    const dayStr = getFormattedDate(day, 'YYYY-MM-DD');
+                    const day = dayInfo(from + i);
+                    if (!isWorkingDay(day)) continue;
 
-                    const userFestiveKey = `${userId}_${dayStr}`;
-                    const festive = festivesByUserAndDate.has(userFestiveKey)
-                      ? festivesByUserAndDate.get(userFestiveKey)
-                      : (festivesByDate.get(dayStr) || []).find((f) => !f.users_permissions_user);
+                    subphase_estimated_hours += q;
+                    total_estimated_hours += q;
 
-                    if (![0, 6].includes(day.day()) && !festive) {
-                      const q = hours.quantity / 5;
-                      subphase_estimated_hours += q;
-                      total_estimated_hours += q;
+                    const dd = userDedications.find((d) => d.from <= day.str && d.to >= day.str);
+                    const costByHour = dd && dd.costByHour ? dd.costByHour : 0;
+                    hours.total_amount += q * costByHour;
+                    total_estimated_hours_price += q * costByHour;
 
-                      const dd = userDedications.find((d) => d.from <= dayStr && d.to >= dayStr);
-                      const costByHour = dd && dd.costByHour ? dd.costByHour : 0;
-                      hours.total_amount += q * costByHour;
-                      total_estimated_hours_price += q * costByHour;
+                    totalsByDay.push({
+                      day: dayValue(day),
+                      q,
+                      costByHour,
+                      userId: userId,
+                      project: data.id,
+                      project_name: data.name,
+                    });
 
-                      totalsByDay.push({
-                        day,
-                        q,
-                        costByHour,
-                        userId: userId,
-                        project: data.id,
-                        project_name: data.name,
-                      });
-
-                      const yearStr = getFormattedDate(day, 'YYYY');
-                      rowsByYear.push({
-                        year: yearStr,
-                        total_estimated_hours: q,
-                      });
-                      rowsByYear.push({
-                        year: yearStr,
-                        total_estimated_hours_price: q * costByHour,
-                      });
-                    }
+                    pushYear({ year: day.year, total_estimated_hours: q });
+                    pushYear({ year: day.year, total_estimated_hours_price: q * costByHour });
                   }
                 } else {
                   subphase_estimated_hours += hours.quantity * mdiff;
@@ -360,27 +343,21 @@ const calculateEstimatedTotals = async (
                   // range under ~15 days produced no rows and its hours were
                   // lost from the stored totals). A range with no working day
                   // falls back to its calendar days, a reversed one to `from`.
-                  const fromMoment = getMoment(hours.from);
-                  const toMoment = getMoment(hours.to);
-                  const span = Math.max(0, Math.round(moment.duration(toMoment.diff(fromMoment)).asDays())) + 1;
+                  const from = dayNumber(hours.from);
+                  const span = Math.max(0, daysBetween(from, dayNumber(hours.to))) + 1;
                   const allDays = [];
                   const workingDays = [];
                   for (let i = 0; i < span; i++) {
-                    const day = fromMoment.clone().add(i, 'days');
+                    const day = dayInfo(from + i);
                     allDays.push(day);
-                    const dayStr = getFormattedDate(day, 'YYYY-MM-DD');
-                    const userFestiveKey = `${userId}_${dayStr}`;
-                    const festive = festivesByUserAndDate.has(userFestiveKey)
-                      ? festivesByUserAndDate.get(userFestiveKey)
-                      : (festivesByDate.get(dayStr) || []).find((f) => !f.users_permissions_user);
-                    if (![0, 6].includes(day.day()) && !festive) workingDays.push(day);
+                    if (isWorkingDay(day)) workingDays.push(day);
                   }
                   const days = workingDays.length ? workingDays : allDays;
                   const q = (hours.quantity ? hours.quantity : 0) / days.length;
 
                   for (const day of days) {
                     totalsByDay.push({
-                      day: day,
+                      day: dayValue(day),
                       q,
                       costByHour,
                       userId: userId,
@@ -388,15 +365,8 @@ const calculateEstimatedTotals = async (
                       project_name: data.name,
                     });
 
-                    const yearStr = getFormattedDate(day, 'YYYY');
-                    rowsByYear.push({
-                      year: yearStr,
-                      total_estimated_hours: q,
-                    });
-                    rowsByYear.push({
-                      year: yearStr,
-                      total_estimated_hours_price: q * costByHour,
-                    });
+                    pushYear({ year: day.year, total_estimated_hours: q });
+                    pushYear({ year: day.year, total_estimated_hours_price: q * costByHour });
                   }
                 }
               }
@@ -411,7 +381,7 @@ const calculateEstimatedTotals = async (
                 subphase.income ? subphase.income : subphase.expense ? subphase.expense : subphase.invoice,
               );
 
-              rowsByYear.push({
+              pushYear({
                 year: realYear,
                 total_real_incomes:
                   lineTotal(subphase),
@@ -433,7 +403,7 @@ const calculateEstimatedTotals = async (
           total_expenses_vat += expense.total_expenses_vat;
 
           const ey = getEstimateYear(expense, projectDefaultYear);
-          rowsByYear.push({
+          pushYear({
             year: ey,
             total_expenses: expense.total_amount,
             total_expenses_vat: expense.total_expenses_vat,
@@ -446,7 +416,7 @@ const calculateEstimatedTotals = async (
             if (real) {
               const realYear = getRealYear(expense.invoice ? expense.invoice : expense.expense);
 
-              rowsByYear.push({
+              pushYear({
                 year: realYear,
                 total_real_expenses:
                   lineTotal(expense),
@@ -464,7 +434,8 @@ const calculateEstimatedTotals = async (
     }
   }
 
-  const totalsByYear = _(rowsByYear)
+  // not computed in lean mode (nothing reads it there)
+  const totalsByYear = lean ? [] : _(rowsByYear)
     .groupBy('year')
     .map((rows, year) => ({
       year: year,
@@ -809,6 +780,27 @@ const groupTotalsByYearMonth = (rows) =>
     .value();
 
 /**
+ * groupTotalsByYearMonth for lean per-day rows (`day` as 'YYYY-MM-DD'):
+ * same groups in the same order, same sums added in the same order, without
+ * parsing every day twice with moment (issues/309).
+ */
+const groupLeanTotalsByYearMonth = (rows) => {
+  const groups = new Map();
+  for (const r of rows) {
+    const key = r.day.substring(0, 7);
+    let g = groups.get(key);
+    if (!g) {
+      g = { year: parseInt(r.day.substring(0, 4), 10), month: parseInt(r.day.substring(5, 7), 10), cost: undefined, q: undefined };
+      groups.set(key, g);
+    }
+    const cost = r.q * r.costByHour;
+    g.cost = g.cost === undefined ? cost : g.cost + cost;
+    g.q = g.q === undefined ? r.q : g.q + r.q;
+  }
+  return [...groups.values()];
+};
+
+/**
  * Planned hours of one project by person and month, for the "Prev./Real"
  * pivot (issues/067). Built from the same per-day rows as the project's stored
  * `total_estimated_hours` (working days, festives, only lines with a person),
@@ -829,10 +821,11 @@ const buildPlannedHoursByMonth = async (p, dailyDedications, festives, today = m
       dailyDedications,
       festives,
       real,
+      { lean: true },
     );
     for (const t of totalsByDay) {
-      const year = t.day.format('YYYY');
-      const month = t.day.format('MM');
+      const year = t.day.substring(0, 4);
+      const month = t.day.substring(5, 7);
       const key = `${year}.${month}.${t.userId}`;
       if (!byKey.has(key)) {
         byKey.set(key, {
@@ -846,7 +839,7 @@ const buildPlannedHoursByMonth = async (p, dailyDedications, festives, today = m
       }
       const row = byKey.get(key);
       row[field] += t.q;
-      if (field === 'estimated_hours' && t.day.format('YYYY-MM-DD') <= todayStr) {
+      if (field === 'estimated_hours' && t.day <= todayStr) {
         row.estimated_hours_today += t.q;
       }
     }
@@ -866,6 +859,8 @@ const pushHoursRows = async (out, p, projectInfo, ctx) => {
     p.project_original_phases,
     ctx.dailyDedications,
     ctx.festives,
+    undefined,
+    { lean: true },
   );
 
   // Hores previstes come from the current plan (project_phases) — same
@@ -876,10 +871,11 @@ const pushHoursRows = async (out, p, projectInfo, ctx) => {
     ctx.dailyDedications,
     ctx.festives,
     true,
+    { lean: true },
   );
 
-  const groupedOriginalHours = JSON.parse(JSON.stringify(groupTotalsByYearMonth(originalTotalsByDay)));
-  const groupedEstimatedHours = JSON.parse(JSON.stringify(groupTotalsByYearMonth(estimatedTotalsByDay)));
+  const groupedOriginalHours = groupLeanTotalsByYearMonth(originalTotalsByDay);
+  const groupedEstimatedHours = groupLeanTotalsByYearMonth(estimatedTotalsByDay);
 
   for (let j = 0; j < groupedOriginalHours.length; j++) {
     const g = groupedOriginalHours[j];
@@ -1448,6 +1444,9 @@ module.exports = {
   makeGetDeductibleRatioForDate,
   deductibleVatPctForYear,
   groupTotalsByYearMonth,
+  groupLeanTotalsByYearMonth,
+  dayNumber,
+  dayInfo,
   buildPlannedHoursByMonth,
   // Stored-totals migration (step 1 — not yet wired into lifecycles):
   STORED_TOTAL_FIELDS,

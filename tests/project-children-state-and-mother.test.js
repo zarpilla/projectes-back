@@ -37,6 +37,10 @@ describe('project children state and «Mare» dimension (issues/282)', () => {
 
   beforeEach(() => {
     jest.resetModules();
+    // the executed hours are summed by the database (issues/309)
+    jest.doMock('../src/api/project/services/economic-detail-activities', () => ({
+      loadActivitiesByProjectMonth: async () => new Map(),
+    }));
     jest.doMock('@strapi/strapi', () => ({
       factories: { createCoreController: (uid, build) => (args) => build(args) },
     }));

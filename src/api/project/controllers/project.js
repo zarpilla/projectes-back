@@ -16,7 +16,7 @@ const { getDailyDedications, getFestives } = require('../services/projectCache')
 const { getMe } = require('../../../services/me-settings');
 const { fiscalYearStartMonth } = require('../../../services/fiscal-year');
 const { documentsOfProject, mergeDocuments, refreshLineWarnings } = require('../../../services/refresh-line-warnings');
-const { activitiesByProjectMonth } = require('../services/economic-detail-activities');
+const { loadActivitiesByProjectMonth } = require('../services/economic-detail-activities');
 const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDocuments');
 const { lineTotal, invalidLineValueMessage } = require('../../../services/budget-line');
 const { touchesDates, projectDatesError } = require('../../../services/project-dates');
@@ -234,47 +234,38 @@ const PHASE_ENTITY_UIDS = {
 
 // What the economic detail reads of each project: everything buildProjectRows
 // (projectFinancials.js) turns into rows, the same as the form's RESUM FINANCER.
+// Only the fields the rows use (issues/309): the activities are summed by the
+// database (loadActivitiesByProjectMonth), the linked documents give only their
+// dates and VAT, the planned hours only their person's id. Loading all of it
+// made the report the slowest call of the app.
+const ECONOMIC_DETAIL_DOCUMENT = { select: ['id', 'emitted', 'paid_date', 'total_vat'] };
+const ECONOMIC_DETAIL_PHASES = {
+  populate: {
+    incomes: {
+      populate: {
+        estimated_hours: { populate: { users_permissions_user: { select: ['id'] } } },
+        income_type: true,
+        invoice: ECONOMIC_DETAIL_DOCUMENT,
+        income: ECONOMIC_DETAIL_DOCUMENT,
+      },
+    },
+    expenses: {
+      populate: { expense_type: true, invoice: ECONOMIC_DETAIL_DOCUMENT, expense: ECONOMIC_DETAIL_DOCUMENT },
+    },
+  },
+};
 const ECONOMIC_DETAIL_POPULATE = {
   project_state: true,
-  activities: true,
   project_scope: true,
   project_likelihood: true,
   project_type: true,
-  leader: true,
+  leader: { select: ['id', 'username'] },
   // the «Mare» dimension carries the mother's name, not the project's (issues/282)
-  mother: true,
+  mother: { select: ['id', 'name'] },
   // the yearly adjustments of the form's PERIODIFICACIÓ card (issues/171)
   periodification: true,
-  project_phases: {
-    populate: {
-      incomes: {
-        populate: {
-          estimated_hours: { populate: { users_permissions_user: true } },
-          income_type: true,
-          invoice: true,
-          income: true,
-        },
-      },
-      expenses: {
-        populate: { expense_type: true, invoice: true, expense: true },
-      },
-    },
-  },
-  project_original_phases: {
-    populate: {
-      incomes: {
-        populate: {
-          estimated_hours: { populate: { users_permissions_user: true } },
-          income_type: true,
-          invoice: true,
-          income: true,
-        },
-      },
-      expenses: {
-        populate: { expense_type: true, invoice: true, expense: true },
-      },
-    },
-  },
+  project_phases: ECONOMIC_DETAIL_PHASES,
+  project_original_phases: ECONOMIC_DETAIL_PHASES,
 };
 
 // State filter of projects/economic-detail (Ingressos/Despeses, Preu hora).
@@ -940,8 +931,9 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
 
     let response;
 
-    // executed hours per project and month (issues/060)
-    const activitiesByProject = activitiesByProjectMonth(projects);
+    // executed hours per project and month (issues/060), summed by the
+    // database (issues/309)
+    const activitiesByProject = await loadActivitiesByProjectMonth(projects.map((p) => p.id));
 
     const me = await getMe();
     const fallback_deductible_vat_pct =
@@ -967,8 +959,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     // the pivot view cannot drift from the form's RESUM FINANCER.
     const projectResponses = await Promise.all(projects.map((p) => buildProjectRows(p, financialsCtx)));
 
-    // Flatten all project responses into a single array
-    response = _.flatten(projectResponses);
+    // Flatten all project responses into a single array. The rows' `document`
+    // (the whole linked invoice) is left out: the reports drop it on arrival
+    // and it was a third of the response (issues/309).
+    response = [];
+    for (const rows of projectResponses) {
+      for (const { document: _document, ...row } of rows) response.push(row);
+    }
 
     if (year) {
       response = response.filter((r) => r.year === year);

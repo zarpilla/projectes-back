@@ -59,6 +59,14 @@ const getValidationKey = (entityType, entityId, subType = null) => {
 const { walkBalances, sortRows, round2 } = require('../services/balances');
 const { treasuryDisplayDate } = require('../services/display-date');
 
+// A project as the treasury screens list it (issues/309).
+const forecastProjectOption = (p) => ({
+  id: p.id,
+  name: p.name,
+  project_state: p.project_state ? { id: p.project_state.id, name: p.project_state.name } : null,
+  mother: p.mother ? { id: p.mother.id, name: p.mother.name } : null,
+});
+
 module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
   // and flat field operators to native v5 params before core handling.
@@ -1162,7 +1170,11 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
     return {
       treasury: filteredTreasuryDataX,
-      projects,
+      // Only what the screens read (issues/309): the project search of
+      // Tresoreria and the project list of «Afegir moviment»
+      // (TreasuryAnnotationInput: id, name, state, mother). The whole projects
+      // with every budget line were 7 of the 11 MB of the response.
+      projects: projects.map(forecastProjectOption),
       vat,
       vat_expected,
       vat_expected_by_quarter,
