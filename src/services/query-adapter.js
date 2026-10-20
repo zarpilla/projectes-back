@@ -315,6 +315,19 @@ function dbLimit(opts) {
 }
 
 /**
+ * v3's `_limit=0` returned no rows. db.query treats `limit: 0` as "no limit"
+ * (it only applies a truthy limit), so `dbLimit` cannot express it and the
+ * custom list endpoints returned EVERY row (issues/260). Those endpoints check
+ * this first and answer [] without querying.
+ *
+ * @param {object} opts the object returned by adaptQuery
+ * @returns {boolean}
+ */
+function wantsNoRows(opts) {
+  return !!(opts && opts.pagination && opts.pagination.limit === 0);
+}
+
+/**
  * Converts an `adaptQuery` RESULT into the arguments `strapi.db.query().findMany()`
  * expects. The two shapes are NOT interchangeable, and the difference is not
  * cosmetic:
@@ -466,6 +479,7 @@ module.exports = {
   adaptQuery,
   adaptCtxQuery,
   dbLimit,
+  wantsNoRows,
   restPagination,
   sortEntryToString,
   expandPopulate,

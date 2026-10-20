@@ -6,7 +6,7 @@
  * Custom endpoints: findBasic, upload (proxy to the Z.ai invoice-parser service).
  */
 const { createCoreController } = require('@strapi/strapi').factories;
-const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
+const { adaptCtxQuery, dbLimit, wantsNoRows } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { proxyUpload } = require('../../../services/invoice-parser-proxy');
 
@@ -21,6 +21,8 @@ module.exports = createCoreController('api::received-invoice.received-invoice', 
 
   async findBasic(ctx) {
     const opts = adaptQuery(ctx.query);
+    // issues/260: `_limit=0` = no rows, as in v3 (db.query ignores limit 0)
+    if (wantsNoRows(opts)) return [];
     return strapi.db.query('api::received-invoice.received-invoice').findMany({
       where: opts.filters || {},
       // issues/013: v3 auto-populated components; v5 does not. The lists read

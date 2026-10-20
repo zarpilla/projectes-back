@@ -17,7 +17,7 @@ const sharp = require('sharp');
 const MicroInvoice = require('../../../../utils/microinvoice');
 const { resolvePdfLogo } = require('../../../services/pdf-logo');
 const { createCoreController } = require('@strapi/strapi').factories;
-const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
+const { adaptCtxQuery, dbLimit, wantsNoRows } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { rawExecute } = require('../../../services/raw-sql');
 const { getMe } = require('../../../services/me-settings');
@@ -223,6 +223,8 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
 
   async findBasic(ctx) {
     const opts = adaptQuery(ctx.query);
+    // issues/260: `_limit=0` = no rows, as in v3 (db.query ignores limit 0)
+    if (wantsNoRows(opts)) return [];
     return strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
       where: opts.filters || {},
       // issues/013: v3 auto-populated components; v5 does not. The lists read
