@@ -165,18 +165,22 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       }
     }
 
-    const projects = filterProjects(allProjects, {
+    const projectsInFilter = filterProjects(allProjects, {
       states: selectedStates,
       types: parseIdList(ctx.query.project_types),
       likelihoods: parseIdList(ctx.query.project_likelihoods),
     });
+    // A trashed project plans nothing: its budget lines are neither expected
+    // payments, nor «IVA previst», nor Previsió econòmica (issues/236). The
+    // documents already paid or charged on it are real movements and stay.
+    const projects = projectsInFilter.filter((p) => p.trashed !== true);
 
     // Set of project ids that pass the filter, used to also scope the realized
     // rows (emitted/received invoices & incomes/expenses, treasury operations).
     // A realized document is kept only if at least one of its linked projects
     // (single `.project` or many `.projects`) is in this set. Documents with no
     // project link are kept (they are not project-scoped data).
-    const allowedProjectIds = new Set(projects.map((p) => p.id));
+    const allowedProjectIds = new Set(projectsInFilter.map((p) => p.id));
     const projectInFilter = (doc) => {
       const ids = [];
       if (doc.project && doc.project.id) ids.push(doc.project.id);
@@ -1157,7 +1161,10 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
   // project states; the report filters them) and the invoiced base per month
   // over the last 12 months.
   async invoicingForecast(ctx) {
-    const projects = await strapi.db.query('api::project.project').findMany({ populate: PROJECT_POPULATE });
+    // without the trashed projects (issues/236)
+    const projects = (await strapi.db.query('api::project.project').findMany({ populate: PROJECT_POPULATE })).filter(
+      (p) => p.trashed !== true,
+    );
     const from = moment().subtract(12, 'months').startOf('month').format('YYYY-MM-DD');
     const invoices = await strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
       select: ['id', 'emitted', 'total_base'],

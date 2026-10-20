@@ -298,6 +298,11 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     if (ctx.state.v3DefaultPopulate) {
       ctx.query = { ...ctx.query, populate: firstLevelPopulateWithout(DEFAULT_POPULATE_SKIPS) };
     }
+    // Without the trashed projects unless the caller filters on them: Projectes
+    // mare, Estratègies and Intercooperació listed and counted them (issues/236)
+    if (ctx.query.published_at_null === undefined && !JSON.stringify(ctx.query).includes('trashed')) {
+      ctx.query = { ...ctx.query, published_at_null: false };
+    }
     adaptCtxQuery(ctx);
     const response = await super.find(ctx);
     const rows = response?.data;
