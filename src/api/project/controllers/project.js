@@ -19,6 +19,7 @@ const { documentsOfProject, mergeDocuments, refreshLineWarnings } = require('../
 const { activitiesByProjectMonth } = require('../services/economic-detail-activities');
 const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDocuments');
 const { lineTotal, invalidLineValueMessage } = require('../../../services/budget-line');
+const { touchesDates, projectDatesError } = require('../../../services/project-dates');
 const {
   buildProjectRows,
   aggregateRowsByYear,
@@ -1546,6 +1547,9 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     for (const key of ['project_phases', 'project_original_phases']) {
       stripDirty(data[key]);
     }
+    // End before start is refused (issues/212)
+    const datesError = projectDatesError(data);
+    if (datesError) return ctx.badRequest(datesError);
     return super.create(ctx);
   },
 
@@ -1582,6 +1586,16 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     for (const section of sections) {
       const message = data[section.flag] ? invalidLineValueMessage(data[section.phases]) : null;
       if (message) return ctx.badRequest(message);
+    }
+
+    // End before start is refused; a request with one of the dates is checked
+    // against the stored other one (issues/212)
+    if (touchesDates(data)) {
+      const stored = 'date_start' in data && 'date_end' in data
+        ? {}
+        : await strapi.db.query('api::project.project').findOne({ where: { id }, select: ['date_start', 'date_end'] });
+      const datesError = projectDatesError(data, stored);
+      if (datesError) return ctx.badRequest(datesError);
     }
 
     // One transaction for the phase writes and the core update: if the update
