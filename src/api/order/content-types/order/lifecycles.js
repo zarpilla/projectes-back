@@ -30,6 +30,9 @@ const { getMe } = require('../../../../services/me-settings');
 // final. Named once so the four call sites cannot drift apart.
 const CLOSED_STATUSES = ['cancelled', 'invoiced'];
 
+// The statuses of an order that is not delivered yet (issues/266).
+const PRE_DELIVERY_STATUSES = ['pending', 'deposited', 'processed', 'distributing', 'lastmile'];
+
 const extractId = (value) => {
   if (value === null || value === undefined) {
     return null;
@@ -1307,6 +1310,11 @@ module.exports = {
 
     if (data.status === 'delivered' && !data.delivery_date) {
       data.delivery_date = data.estimated_delivery_date ? data.estimated_delivery_date : new Date();
+    }
+    // An order set back before delivery is not delivered any more: its
+    // delivery date went on showing it as delivered (issues/266).
+    if (PRE_DELIVERY_STATUSES.includes(data.status)) {
+      data.delivery_date = null;
     }
 
     if (data.status === 'lastmile') {
