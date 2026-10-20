@@ -306,7 +306,8 @@ describe('emitted-invoice beforeDelete order reset', () => {
     await lifecycles.beforeDelete({ params: { where: { id: 55 } } });
 
     const update = sql.find((s) => s.query.startsWith('UPDATE orders SET'));
-    expect(update.query).toContain("status = 'delivered'");
+    // only the orders still invoiced go back to delivered (issues/288)
+    expect(update.query).toContain("CASE WHEN status = 'invoiced' THEN 'delivered' ELSE status END");
     expect(update.query).toContain('emitted_invoice_datetime = NULL');
     expect(update.bindings).toEqual([1, 2]);
     expect(sql.some((s) => s.query.startsWith('DELETE FROM orders_emitted_invoice_lnk'))).toBe(true);

@@ -246,9 +246,12 @@ module.exports = {
       // Clear emitted_invoice_datetime too: it was set when the draft was
       // created, and leaving it behind made reverted orders look invoiced
       // while sitting in 'delivered'.
+      // Only an order still invoiced goes back to Lliurada: one cancelled or
+      // moved off Facturada after the draft keeps its state, or deleting the
+      // draft would put it back in «Per facturar» (issues/288).
       await rawExecute(
         strapi,
-        `UPDATE orders SET status = 'delivered', emitted_invoice_datetime = NULL, updated_at = NOW() WHERE id IN (${placeholders})`,
+        `UPDATE orders SET status = CASE WHEN status = 'invoiced' THEN 'delivered' ELSE status END, emitted_invoice_datetime = NULL, updated_at = NOW() WHERE id IN (${placeholders})`,
         orderIds,
       );
       await rawExecute(
@@ -262,7 +265,7 @@ module.exports = {
         orders.map((o) => ({
           row: { id: o.id },
           changes: [
-            { field: 'status', from: o.status, to: 'delivered' },
+            ...(o.status === 'invoiced' ? [{ field: 'status', from: o.status, to: 'delivered' }] : []),
             { field: 'emitted_invoice', from: invoice, to: null },
             { field: 'emitted_invoice_datetime', from: o.emitted_invoice_datetime, to: null },
           ],
