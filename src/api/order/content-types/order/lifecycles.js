@@ -547,6 +547,43 @@ const transferFieldsChanged = (data, previousOrder) => {
   );
 };
 
+// What the transfer recompute writes (calculateOrderTransferData)
+const TRANSFER_COMPUTED_FIELDS = [
+  'transfer',
+  'transfer_pickup_origin',
+  'transfer_pickup_destination',
+  'transfer_route',
+  'transfer_route_date',
+];
+const TRANSFER_RELATIONS = ['transfer_pickup_origin', 'transfer_pickup_destination', 'transfer_route'];
+
+/**
+ * Drop the transfer fields a save sends with another value than the stored
+ * one. The order form recomputed the transfer when it loaded an order and
+ * sent it back with a save without changes, so a processed or invoiced order
+ * became a transfer dated in the past (issues/296).
+ */
+const keepStoredTransfer = async (data, orderId) => {
+  const sent = TRANSFER_COMPUTED_FIELDS.filter((field) => data[field] !== undefined);
+  if (!sent.length) return;
+  const stored =
+    (await strapi.db.query('api::order.order').findOne({
+      where: { id: orderId },
+      populate: Object.fromEntries(TRANSFER_RELATIONS.map((field) => [field, { select: ['id'] }])),
+    })) || {};
+  const same = (field) => {
+    if (field === 'transfer') return Boolean(data.transfer) === Boolean(stored.transfer);
+    if (field === 'transfer_route_date') {
+      return normalizeOrderDate(data[field]) === normalizeOrderDate(stored[field]);
+    }
+    return (extractId(data[field]) || null) === (extractId(stored[field]) || null);
+  };
+  const dropped = sent.filter((field) => !same(field));
+  if (!dropped.length) return;
+  strapi.log.warn(`order ${orderId}: transfer kept, sent ${dropped.join(', ')} dropped`);
+  for (const field of dropped) delete data[field];
+};
+
 /**
  * Process collection order: find or create a collection order for the collection point
  * NOTE: This function should NEVER be called for orders where is_collection_order=true
@@ -1463,6 +1500,18 @@ module.exports = {
     // "changed": a save without changes turned old orders into transfers
     // dated in the past. A delivered, invoiced or cancelled order is past its
     // transfer and is never recomputed (issues/296).
+    // The transfer fields sent with it are dropped when they differ from the
+    // stored ones: a delivered, invoiced or cancelled order keeps its
+    // transfer, and an open one changes it only by a recompute here or a
+    // manual edit (the form recomputed it on load, issues/296).
+    if (!data.is_collection_order && !previousOrder.is_collection_order) {
+      const frozen = TRANSFER_FROZEN_STATUSES.includes(mergedData.status);
+      const isManuallySet =
+        data.manual_transfer_route === true || previousOrder.manual_transfer_route === true;
+      if (frozen || (!isManuallySet && !transferFieldsChanged(data, previousOrder))) {
+        await keepStoredTransfer(data, params.id);
+      }
+    }
     if (
       !data.is_collection_order &&
       !previousOrder.is_collection_order &&
@@ -1623,9 +1672,12 @@ module.exports = {
     if (currentOrder) {
       // Ensure transfer route is calculated for orders that need transfer
       // This handles cases where orders were updated to need transfer but don't have the route yet
+      // A delivered, invoiced or cancelled order is past its transfer: no
+      // route nor date is filled in for it (issues/296).
       if (
         currentOrder.transfer &&
         !currentOrder.is_collection_order &&
+        !TRANSFER_FROZEN_STATUSES.includes(currentOrder.status) &&
         (!currentOrder.transfer_route || !currentOrder.transfer_route_date)
       ) {
         const transferRouteInfo = await calculateTransferRoute(

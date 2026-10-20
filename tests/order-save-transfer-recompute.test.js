@@ -12,6 +12,7 @@
  */
 
 let ROWS;
+let UPDATES;
 
 function stubStrapi() {
   const query = jest.fn((uid) => ({
@@ -27,7 +28,10 @@ function stubStrapi() {
       // no route travels to town 3: a transfer is needed
       return [];
     }),
-    update: jest.fn(async () => null),
+    update: jest.fn(async (args) => {
+      UPDATES.push({ uid, ...args });
+      return null;
+    }),
     count: jest.fn(async () => 0),
   }));
   global.strapi = { log: { info: jest.fn(), warn: jest.fn(), error: jest.fn() }, db: { query }, query };
@@ -71,6 +75,7 @@ function load() {
 
 const save = async (row, data) => {
   ROWS = { [row.id]: row };
+  UPDATES = [];
   const lifecycles = load();
   const event = { params: { where: { id: row.id }, data }, state: {} };
   await lifecycles.beforeUpdate(event);
@@ -111,5 +116,63 @@ describe('the transfer recompute of an order save (issues/296)', () => {
     const row = stored('pending', { manual_transfer_route: true });
     const data = await save(row, formSave(row));
     expect(data.transfer).toBe(true);
+  });
+
+  // Follow-up (verification of 296, 2026-10-20): the form recomputed the
+  // transfer when it loaded processed 24871 and invoiced 15068 and sent
+  // `transfer: true` + origin pickup 3 with a save without changes; the API
+  // stored them and afterUpdate filled in transfer route 25 and a past date.
+  const loadedTransfer = { transfer: true, transfer_pickup_origin: 3, transfer_pickup_destination: null };
+
+  it('keeps the stored transfer of an open order when a save without changes sends another', async () => {
+    const row = stored('processed');
+    const data = await save(row, formSave(row, loadedTransfer));
+    expect(data).not.toHaveProperty('transfer');
+    expect(data).not.toHaveProperty('transfer_pickup_origin');
+    // the same value as stored goes through
+    expect(data.transfer_pickup_destination).toBeNull();
+  });
+
+  it('keeps the stored transfer of a delivered, invoiced or cancelled order whatever changes', async () => {
+    for (const status of ['delivered', 'invoiced', 'cancelled']) {
+      const row = stored(status);
+      const data = await save(row, formSave(row, { ...loadedTransfer, route: 26, transfer_route: 16 }));
+      expect(data).not.toHaveProperty('transfer');
+      expect(data).not.toHaveProperty('transfer_pickup_origin');
+      expect(data).not.toHaveProperty('transfer_route');
+    }
+  });
+
+  it('keeps a manual transfer edit of an open order', async () => {
+    const row = stored('pending', { transfer: true, transfer_route: { id: 16 } });
+    const data = await save(row, formSave(row, { manual_transfer_route: true, transfer_route: 17 }));
+    expect(data.transfer_route).toBe(17);
+  });
+
+  it('does not fill in a transfer route or date for an invoiced order after the save', async () => {
+    const row = stored('invoiced', { transfer: true, transfer_route: null, transfer_route_date: null });
+    ROWS = { [row.id]: row };
+    UPDATES = [];
+    const lifecycles = load();
+    await lifecycles.afterUpdate({
+      params: { where: { id: row.id }, data: { status: 'invoiced' } },
+      state: { previousOrderData: row },
+      result: row,
+    });
+    expect(UPDATES.filter((u) => u.uid === 'api::order.order' && u.data && 'transfer_route' in u.data)).toEqual([]);
+  });
+
+  it('still fills them in for an open transfer order', async () => {
+    const row = stored('pending', { transfer: true, transfer_route: null, transfer_route_date: null });
+    ROWS = { [row.id]: row };
+    UPDATES = [];
+    const lifecycles = load();
+    await lifecycles.afterUpdate({
+      params: { where: { id: row.id }, data: { status: 'pending' } },
+      state: { previousOrderData: row },
+      result: row,
+    });
+    const fill = UPDATES.find((u) => u.uid === 'api::order.order' && u.data && 'transfer_route' in u.data);
+    expect(fill.data.transfer_route).toBe(16);
   });
 });
