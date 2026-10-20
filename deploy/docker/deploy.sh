@@ -80,8 +80,8 @@ healthy() {  # tenant color
   local port; port=$(slot_port "$1" "$2"); local waited=0 code=000
   while [ $waited -lt $HEALTH_TIMEOUT ]; do
     sleep 3; waited=$((waited + 3))
-    code=$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$port/api/logos?_limit=1" || true)
-    [ "$code" = 200 ] && { echo "    $1-$2 healthy after ${waited}s (port $port)"; return 0; }
+    code=$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$port/_health" || true)
+    [ "$code" = 204 ] && { echo "    $1-$2 healthy after ${waited}s (port $port)"; return 0; }
   done
   echo "!!  $1-$2 not healthy after ${HEALTH_TIMEOUT}s (HTTP $code, port $port)"; return 1
 }

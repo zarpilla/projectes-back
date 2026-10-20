@@ -19,9 +19,9 @@ declare -A PORT; ALL=()
 while read -r name port _; do [[ -z "$name" || "$name" == \#* ]] && continue; PORT[$name]=$port; ALL+=("$name"); done < tenants.conf
 if [ $# -gt 0 ]; then ORDER=("$@"); else ORDER=(); [ -n "${PORT[$CANARY]:-}" ] && ORDER+=("$CANARY"); for t in "${ALL[@]}"; do [ "$t" = "$CANARY" ] || ORDER+=("$t"); done; fi
 
-up() {  # port timeout -> waits for HTTP 200 on 127.0.0.1:port
+up() {  # port timeout -> waits for HTTP 204 from /_health on 127.0.0.1:port
   local i; for i in $(seq 1 "$2"); do
-    [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$1/api/logos?_limit=1" || true)" = 200 ] && return 0; sleep 1
+    [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$1/_health" || true)" = 204 ] && return 0; sleep 1
   done; return 1
 }
 wait_cron_window() {

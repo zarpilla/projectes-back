@@ -26,7 +26,7 @@ A push to `main` runs the tests, pushes the image, then SSHes to the VPS and run
 
 For each tenant, `deploy.sh`:
 1. starts the new build in the idle slot;
-2. waits until it answers `/api/logos`;
+2. waits until it answers `/_health` (204; Strapi's own probe, no database read);
 3. switches Caddy to it with a graceful reload;
 4. lets the old slot drain for 10 s, then stops it.
 

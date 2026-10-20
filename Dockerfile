@@ -31,6 +31,6 @@ USER node
 VOLUME /opt/app/public/uploads
 EXPOSE 1337
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||1337)+'/api/logos?_limit=1').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||1337)+'/_health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 # Strapi directly (not through npm), so it gets SIGTERM and shuts down cleanly.
 CMD ["node", "node_modules/@strapi/strapi/bin/strapi.js", "start"]

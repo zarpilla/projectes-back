@@ -194,10 +194,10 @@ else
   BACK_TAG=$BACK_TAG docker compose up -d "$NAME-blue" 2>&1 | grep -vE '^\s*$|obsolete' || true
   info "waiting for the first boot (creates the tables, then seeds them)..."
   waited=0 code=000
-  until [ "$code" = 200 ]; do
+  until [ "$code" = 204 ]; do
     [ $waited -lt "$HEALTH_TIMEOUT" ] || die "$NAME-blue not answering after ${HEALTH_TIMEOUT}s. See: docker compose logs $NAME-blue   (rerun this script once fixed)"
     sleep 5; waited=$((waited + 5))
-    code=$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$SLOT_PORT/api/logos" || true)
+    code=$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$SLOT_PORT/_health" || true)
   done
   info "answering after ${waited}s"
   echo blue > "state/$NAME"

@@ -3,6 +3,7 @@
 const { importSeedPermissions, importSeedRows } = require('./services/bootstrap-permissions');
 const { runStartupScript } = require('./services/startup-scripts');
 const { registerRolePermissionsInvalidation } = require('./services/role-permissions-cache');
+const { registerLogosCacheInvalidation } = require('./services/logos-cache');
 const { registerUserDeleteGuard } = require('./services/user-delete-guard');
 const { seedNewDatabase } = require('./services/seed-new-database');
 const { recalcZeroDocumentTotals } = require('./services/recalc-zero-document-totals');
@@ -71,6 +72,8 @@ module.exports = {
   async bootstrap({ strapi }) {
     registerDateFieldNormalizer();
     registerRolePermissionsInvalidation();
+    // GET /api/logos is served from memory until a logo is written (issues/308)
+    registerLogosCacheInvalidation();
     // users with hours, payrolls or work periods can't be deleted (issues/050)
     registerUserDeleteGuard();
     // the orders' writes behind the document service go in their history (issues/119)

@@ -330,15 +330,15 @@ echo "==> 12. health check"
 # was merely still starting, which reads as a failed cutover. Poll instead.
 STATUS="000"
 for i in $(seq 1 60); do
-  STATUS="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$PORT/api/logos?_limit=1" || true)"
-  case "$STATUS" in 200|403) break ;; esac
+  STATUS="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$PORT/_health" || true)"
+  case "$STATUS" in 204) break ;; esac
   # A crash loop is worth failing fast on: pm2 keeps restarting it, so uptime
   # never grows and there is nothing to wait for.
   if ! pm2 pid "$V5_NAME" >/dev/null 2>&1; then break; fi
   sleep 5
 done
 pm2 ls | grep -E "$V3_NAME|$V5_NAME" || true
-if [ "$STATUS" = "200" ] || [ "$STATUS" = "403" ]; then
+if [ "$STATUS" = "204" ]; then
   trap - ERR   # v5 is up; stop guarding
 
   # ── 13. frontend ──────────────────────────────────────────────────────────
