@@ -35,6 +35,7 @@ const { getMe, frontUrlOf } = require('../../../services/me-settings');
 const { numericId } = require('../../../middlewares/v3-compat');
 const { processIncidences } = require('../services/order-incidences');
 const { depositRefusal, transferRefusal } = require('../services/deposit-guard');
+const { timeSlotText, loadText } = require('../services/slip-text');
 const { addContactSnapshot } = require('../services/contact-snapshot');
 const changeLog = require('../../../services/change-log');
 const { orderTotals, TOTALS_SELECT } = require('../services/order-totals');
@@ -487,16 +488,15 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
           : '';
       more += order.contact_legal_form?.name ? order.contact_legal_form.name + ' - ' : '';
       if (order.fragile) more += 'Fràgil - ';
+      // «De 9:30 a 13:30», not «De 9.5h a 13.5h» (issues/298)
       if (order.contact_time_slot_1_ini && order.contact_time_slot_1_end) {
-        more += `De ${order.contact_time_slot_1_ini}h a ${order.contact_time_slot_1_end}h - `;
+        more += `${timeSlotText(order.contact_time_slot_1_ini, order.contact_time_slot_1_end)} - `;
       }
       if (order.contact_time_slot_2_ini && order.contact_time_slot_2_end) {
-        more += `De ${order.contact_time_slot_2_ini}h a ${order.contact_time_slot_2_end}h`;
+        more += timeSlotText(order.contact_time_slot_2_ini, order.contact_time_slot_2_end);
       }
       if (more.endsWith(' - ')) more = more.substring(0, more.length - 3);
       order.comments = more + '\n' + (order.comments || '');
-
-      const concept = `${order.route?.name?.trim() || ''}${order.estimated_delivery_date ? ' - ' + order.estimated_delivery_date : ''} - ${order.pickup?.name || ''} ${order.refrigerated ? 'Refrigerada' : ''} - ${order.units} ${order.units > 1 ? 'caixes' : 'caixa'} - ${order.kilograms} kg`;
 
       const legal = [];
       const parts = [];
@@ -566,7 +566,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
               {
                 label: '',
                 value: [
-                  `${order.units} ${order.units > 1 ? 'caixes' : 'caixa'} - ${order.kilograms} kg${order.refrigerated ? ' - Refrigerada' : ''}`,
+                  `${loadText(order)}${order.refrigerated ? ' - Refrigerada' : ''}`,
                 ],
                 fontSize: 16,
               },
