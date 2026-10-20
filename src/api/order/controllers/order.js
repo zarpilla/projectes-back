@@ -551,9 +551,11 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       },
     });
 
-    const others = id
-      ? ordersOfDateAndContact.filter((o) => String(o.id) !== String(id) && o.status !== 'cancelled')
-      : ordersOfDateAndContact;
+    // a cancelled order never counts, for a new order either: the preview
+    // promised a discount the save then dropped (issues/235)
+    const others = ordersOfDateAndContact.filter(
+      (o) => (!id || String(o.id) !== String(id)) && o.status !== 'cancelled',
+    );
 
     const volumeDiscount = await currentOrderVolumeDiscount(id, {
       route: routeId,
