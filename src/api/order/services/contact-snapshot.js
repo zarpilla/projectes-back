@@ -1,4 +1,5 @@
 'use strict';
+/* global strapi */
 
 /**
  * An order keeps a copy of its delivery point in its contact_* fields (the

@@ -1,4 +1,5 @@
 'use strict';
+/* global strapi */
 
 /**
  * strategy lifecycles (v5). Ported from v3 api/strategy/models/strategy.js.

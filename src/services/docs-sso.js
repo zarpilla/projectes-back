@@ -40,6 +40,7 @@ function docsConfig(env = process.env, meName = '') {
 // An app route ("/project/642"), or undefined when it isn't one.
 function cleanRoute(route) {
   const r = String(route || '').trim();
+  // eslint-disable-next-line no-control-regex -- control characters are what it refuses
   if (!r.startsWith('/') || r.startsWith('//') || r.length > 300 || /[\u0000-\u001f\s]/.test(r)) return undefined;
   return r;
 }

@@ -114,6 +114,7 @@ function decryptSecret(value) {
     throw new Error(
       'Cannot decrypt stored secret — was SECRETS_KEY (or APP_KEYS, if the key is derived) changed? ' +
         'The value has to be entered again.',
+      { cause: error },
     );
   }
 }
