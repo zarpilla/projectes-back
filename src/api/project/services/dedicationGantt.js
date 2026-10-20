@@ -147,10 +147,13 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
     .query('plugin::users-permissions.user')
     .findMany({ populate: { daily_dedications: true, permissions: true } });
 
-  // 3) Festives of the target year (a calendar year: it took every festive
-  //    from the year onward), with festive_type and user.
+  // 3) Festives, with festive_type and user. All of them, as phases-both
+  //    does: a «Total» line is spread over the working days of its whole
+  //    range (issues/259), so a line crossing the year end needs the other
+  //    year's festives too, or they count as working days and the chosen
+  //    year gets fewer hours than every other screen (issues/289). The
+  //    capacity only looks at the chosen year's days (issues/265).
   const festives = await strapi.db.query('api::festive.festive').findMany({
-    where: { date: { $gte: `${targetYear}-01-01`, $lte: `${targetYear}-12-31` } },
     populate: { festive_type: true, users_permissions_user: true },
   });
 
