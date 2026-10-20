@@ -17,4 +17,10 @@ describe('order invoice line concept (issues/111)', () => {
     expect(orderLineConcept({ id: 7, estimated_delivery_date: null, route: null }))
       .toBe('Comanda | 0007');
   });
+
+  // issues/298 (review 9): «Comanda 05/10/2026 | 24652 | …» for a collection order
+  it('marks a collection order with -R', () => {
+    expect(orderLineConcept({ id: 24652, is_collection_order: true, estimated_delivery_date: '2026-10-05', route: { name: 'R1' } }))
+      .toBe('Comanda 05/10/2026 | 24652-R | R1');
+  });
 });
