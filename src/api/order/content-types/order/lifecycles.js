@@ -20,6 +20,7 @@ const {
 const { loadRouteClosures, nextRouteDay, routeRunsOn } = require('../../services/route-days');
 const { checkVolumeDiscount, currentOrderVolumeDiscount } = require('../../services/volume-discount');
 const { getMe } = require('../../../../services/me-settings');
+const { errors: { ApplicationError } } = require('@strapi/utils');
 
 /**
  * Safely extract ID from a value that could be a number, string, or object with an id property
@@ -59,6 +60,20 @@ const normalizeOrderDate = (value) => {
   if (!value) return null;
   // the Madrid day, not the UTC one the first 10 characters give (issues/233)
   return toQueryDay(value);
+};
+
+// A farm pickup can't be planned for a day already gone, whoever saves it:
+// order 25432 was saved on 2026-10-19 with its pickup on the 13th and got a
+// collection order for that day (issues/302). On update only a moved date is
+// checked, so an order whose pickup has passed still saves as it is.
+const refusePastPickupDate = (data, previousOrder = null) => {
+  if (data._internal || !data.collection_pickup_date) return;
+  if (data.is_collection_order || (previousOrder && previousOrder.is_collection_order)) return;
+  const day = normalizeOrderDate(data.collection_pickup_date);
+  if (previousOrder && normalizeOrderDate(previousOrder.collection_pickup_date) === day) return;
+  if (day < toQueryDay(new Date())) {
+    throw new ApplicationError(`La data de recollida (${moment(day).format('DD/MM/YYYY')}) ja ha passat`);
+  }
 };
 
 // A sibling that is invoiced, delivered or already on an invoice keeps the
@@ -1414,6 +1429,7 @@ const keepInvoicedPrice = (data, previousOrder) => {
 module.exports = {
   async beforeCreate(event) {
     const data = event.params.data;
+    refusePastPickupDate(data);
     // Set route_date to current date if not provided
     if (!data.route_date) {
       data.route_date = new Date();
@@ -1453,6 +1469,8 @@ module.exports = {
 
     // Store previous order data for afterUpdate
     event.state.previousOrderData = previousOrder;
+
+    refusePastPickupDate(data, previousOrder);
 
     keepInvoicedPrice(data, previousOrder);
 
