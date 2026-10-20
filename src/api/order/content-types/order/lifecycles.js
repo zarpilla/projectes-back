@@ -524,6 +524,29 @@ const calculateOrderTransferData = async (orderData) => {
   }
 };
 
+// An order in one of these statuses keeps its transfer fields (issues/296).
+const TRANSFER_FROZEN_STATUSES = ['delivered', 'invoiced', 'cancelled'];
+
+/**
+ * Whether an update really changes what the transfer is computed from: the
+ * pickup, the route, the collection point or the dates. A field sent with
+ * its stored value is no change (issues/296).
+ */
+const transferFieldsChanged = (data, previousOrder) => {
+  const prev = previousOrder || {};
+  const relationChanged = (field) =>
+    data[field] !== undefined && extractId(data[field]) !== extractId(prev[field]);
+  const dayChanged = (field) =>
+    data[field] !== undefined && normalizeOrderDate(data[field]) !== normalizeOrderDate(prev[field]);
+  return (
+    relationChanged('pickup') ||
+    relationChanged('route') ||
+    relationChanged('collection_point') ||
+    dayChanged('estimated_delivery_date') ||
+    dayChanged('collection_pickup_date')
+  );
+};
+
 /**
  * Process collection order: find or create a collection order for the collection point
  * NOTE: This function should NEVER be called for orders where is_collection_order=true
@@ -1381,13 +1404,17 @@ module.exports = {
     };
 
     // Calculate and set transfer route data for normal orders if relevant fields changed
-    // Skip if user has manually set the transfer route (manual_transfer_route flag)
-    if (!data.is_collection_order && !previousOrder.is_collection_order) {
-      const relevantFieldsChanged =
-        data.pickup !== undefined ||
-        data.route !== undefined ||
-        data.estimated_delivery_date !== undefined ||
-        data.collection_pickup_date !== undefined;
+    // Skip if user has manually set the transfer route (manual_transfer_route flag).
+    // The form sends pickup, route and date on every save, so "sent" is not
+    // "changed": a save without changes turned old orders into transfers
+    // dated in the past. A delivered, invoiced or cancelled order is past its
+    // transfer and is never recomputed (issues/296).
+    if (
+      !data.is_collection_order &&
+      !previousOrder.is_collection_order &&
+      !TRANSFER_FROZEN_STATUSES.includes(mergedData.status)
+    ) {
+      const relevantFieldsChanged = transferFieldsChanged(data, previousOrder);
 
       const isManuallySet =
         data.manual_transfer_route === true || previousOrder.manual_transfer_route === true;
@@ -1398,8 +1425,9 @@ module.exports = {
         Object.assign(data, transferData);
       }
 
-      // If manual flag is explicitly set to false, allow recalculation
-      if (data.manual_transfer_route === false) {
+      // If the manual flag is switched off, allow recalculation (the form
+      // always sends it false)
+      if (data.manual_transfer_route === false && previousOrder.manual_transfer_route === true) {
         const transferData = await calculateOrderTransferData(mergedData);
         Object.assign(data, transferData);
       }
