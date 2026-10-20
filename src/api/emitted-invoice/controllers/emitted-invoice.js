@@ -43,6 +43,20 @@ const formatCurrency = (val) => {
     .replace(/;/g, '.');
 };
 
+// Quantities and percentages with a Catalan decimal comma: «1,5», «12,5%» (issues/243).
+const formatNumber = (val) => String(Number(val) || 0).replace('.', ',');
+
+// Line amounts rounded to cents as the totals (computeLineTotals) round them,
+// so the lines and the discount add up to the totals printed (issues/243).
+const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
+const lineAmounts = (line) => {
+  const gross = round2(line.quantity * line.base);
+  const base = round2(line.quantity * line.base * (1 - (line.discount || 0) / 100));
+  const vat = round2((base * (line.vat || 0)) / 100);
+  const irpf = round2((base * (line.irpf || 0)) / 100);
+  return { gross, discount: round2(gross - base), base, vat, irpf, total: round2(base + vat - irpf) };
+};
+
 const getEntityInfo = async (entityUid) => {
   const documents = await strapi.db.query(entityUid).findMany({
     where: { vat_paid_date: { $null: true } },
@@ -327,50 +341,39 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
       if (line.comments) concept += '\n\n' + line.comments;
       part.push({ value: concept, width: conceptWidth * cr });
       if (showDate) part.push({ value: line.date, width: 0.12 * cr });
-      if (showQuantity) part.push({ value: line.quantity, width: 0.07 * cr });
+      const amounts = lineAmounts(line);
+      if (showQuantity) part.push({ value: formatNumber(line.quantity), width: 0.07 * cr });
       if (showQuantity) part.push({ value: line.base, width: 0.09 * cr, price: true });
-      part.push({ value: line.quantity * line.base, price: true, width: 0.18 * cr });
+      part.push({ value: amounts.gross, price: true, width: 0.18 * cr });
       if (showDiscount)
         part.push({
-          value: `${formatCurrency((line.quantity * line.base * line.discount) / 100)} ${euro} (${line.discount}%)`,
+          value: `${formatCurrency(amounts.discount)} ${euro} (${formatNumber(line.discount)}%)`,
           width: 0.1 * cr,
         });
       if (showVat)
         part.push({
           value:
-            line.vat > 0
-              ? `${formatCurrency((line.quantity * line.base * (1 - line.discount / 100) * line.vat) / 100)} ${euro} (${line.vat}%)`
-              : `0 ${euro} (0%)`,
+            line.vat > 0 ? `${formatCurrency(amounts.vat)} ${euro} (${formatNumber(line.vat)}%)` : `0 ${euro} (0%)`,
           width: 0.1 * cr,
         });
       if (showIrpf)
         part.push({
-          value: `${formatCurrency((-1 * line.quantity * line.base * (1 - line.discount / 100) * line.irpf) / 100)} ${euro} (${line.irpf}%)`,
+          value: `${formatCurrency(-1 * amounts.irpf)} ${euro} (${formatNumber(line.irpf)}%)`,
           width: 0.1 * cr,
         });
-      part.push({
-        value:
-          line.quantity * line.base * (1 - line.discount / 100) -
-          (line.quantity * line.base * (1 - line.discount / 100) * line.irpf) / 100 +
-          (line.quantity * line.base * (1 - line.discount / 100) * line.vat) / 100,
-        price: true,
-        width: 0.1 * cr,
-      });
+      part.push({ value: amounts.total, price: true, width: 0.1 * cr });
       parts.push(part);
     }
 
     const total = [];
     if (invoice.lines?.some((l) => l.discount > 0)) {
-      total.push({
-        label: 'Base sense descompte',
-        value: invoice.lines.reduce((s, l) => s + l.quantity * l.base, 0),
-        price: true,
-      });
-      total.push({
-        label: 'Descompte',
-        value: invoice.lines.reduce((s, l) => s + (l.quantity * l.base * l.discount) / 100, 0),
-        price: true,
-      });
+      // As the form: the discount is what takes the base without discount down
+      // to the (rounded) taxable base (issues/243).
+      const withoutDiscount = round2(
+        invoice.lines.filter((l) => l.quantity && l.base).reduce((s, l) => s + lineAmounts(l).gross, 0),
+      );
+      total.push({ label: 'Base sense descompte', value: withoutDiscount, price: true });
+      total.push({ label: 'Descompte', value: round2(withoutDiscount - (invoice.total_base || 0)), price: true });
     }
     total.push({ label: 'Base imposable', value: invoice.total_base, price: true });
     if (showVat) total.push({ label: 'IVA', value: invoice.total_vat, price: true });

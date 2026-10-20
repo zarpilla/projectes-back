@@ -56,7 +56,7 @@ const getValidationKey = (entityType, entityId, subType = null) => {
 };
 
 // running balances per account and in total
-const { walkBalances } = require('../services/balances');
+const { walkBalances, sortRows } = require('../services/balances');
 const { treasuryDisplayDate } = require('../services/display-date');
 
 module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => ({
@@ -792,7 +792,10 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           total_amount: -1 * e.total_irpf,
           date: moment(e.emitted, 'YYYY-MM-DD').endOf('quarter').add(20, 'day'),
           date_error: e.emitted === null,
-          paid: false,
+          // Executed once its date has passed, as for received invoices (issues/242).
+          paid:
+            moment(e.emitted, 'YYYY-MM-DD').endOf('quarter').add(20, 'day').format('YYYY-MM-DD') <
+            moment().format('YYYY-MM-DD'),
           contact: e.contact && e.contact.name ? e.contact.name : '-',
           to: `/document/${e.id}/received-expenses`,
           bank_account: me.bank_account_irpf && me.bank_account_irpf.name ? me.bank_account_irpf.name : null,
@@ -1099,7 +1102,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       return { ...t, datef: t.date.format('YYYYMMDD') };
     });
 
-    const treasuryData = _.sortBy(treasury2, 'datef');
+    const treasuryData = sortRows(treasury2);
 
     // running balance per bank account and in total (services/balances)
     const treasuryDataX = walkBalances(treasuryData).map((t) => ({
@@ -1107,7 +1110,13 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       datex: treasuryDisplayDate(t.datef),
     }));
 
-    vat.deductible_vat_pct = (vat.deductible_vat_pct_sum / vat.deductible_vat_pct_n) * 100;
+    // Weighted by VAT, so «suportat × % deduïble» is the VAT deducted; the plain
+    // average of the documents' % said 97,96 % for a 97,42 % deduction (issues/255).
+    vat.deductible_vat_pct = vat.paid
+      ? (vat.deductible_paid / vat.paid) * 100
+      : vat.deductible_vat_pct_n
+        ? (vat.deductible_vat_pct_sum / vat.deductible_vat_pct_n) * 100
+        : 0;
     vat.deductible_vat_pct = parseFloat(vat.deductible_vat_pct.toFixed(2));
 
     vat.documents = vat.documents.sort((a, b) => {
