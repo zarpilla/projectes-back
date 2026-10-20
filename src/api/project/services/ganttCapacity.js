@@ -17,15 +17,36 @@ const moment = require('moment');
 // daily-dedication hours resolution: first matching range wins, default 8
 // (matches DedicationGanttChart.vue cellData handling).
 function dailyHoursForFirstMatch(dailyDedications, dateStr) {
+  const dd = periodForDate(dailyDedications, dateStr);
+  return dd ? dd.hours : 8;
+}
+
+function periodForDate(dailyDedications, dateStr) {
   if (dailyDedications) {
     for (let j = 0; j < dailyDedications.length; j++) {
       const dd = dailyDedications[j];
       if (dd.from <= dateStr && dd.to >= dateStr) {
-        return dd.hours;
+        return dd;
       }
     }
   }
-  return 8;
+  return null;
+}
+
+// Hours a person is expected to work on one day, by the rule of Saldo d'hores
+// (DedicationSaldo.vue, front domain/workdayLog.js expectedHours): the
+// period's weekly distribution («Distribució setmanal», hoursperday, Monday
+// first) when it has one, weekends included; otherwise its daily hours from
+// Monday to Friday. Without a period, 8 h on weekdays (issues/238: the flat
+// daily hours were used even with a distribution).
+function dayHours(dailyDedications, dateStr, dow) {
+  const dd = periodForDate(dailyDedications, dateStr);
+  if (dd && dd.hoursperday) {
+    const value = parseFloat(String(dd.hoursperday).split(',')[dow === 0 ? 6 : dow - 1]);
+    return Number.isFinite(value) ? value : 0;
+  }
+  if (dow === 0 || dow === 6) return 0;
+  return dd ? Number(dd.hours) || 0 : 8;
 }
 
 // Expected hours for a month period, festive-aware (saldo-equivalent).
@@ -53,10 +74,10 @@ function capacityForMonth(periodKey, dailyDedications, festivesSet) {
   for (let i = 0; i < totalDays; i++) {
     const day = start.clone().add(i, 'day');
     const dow = day.day();
-    // Weekend -> 0 expected (matches saldo `day !== 0 && day !== 6` guard).
-    if (dow === 0 || dow === 6) continue;
     const dateStr = day.format('YYYY-MM-DD');
-    const dh = dailyHoursForFirstMatch(dailyDedications, dateStr);
+    // Weekends -> 0 unless the weekly distribution says otherwise (saldo rule).
+    const dh = dayHours(dailyDedications, dateStr, dow);
+    if (!dh) continue;
     // Festive (global or user-specific) -> 0 expected, but its hours count
     // toward the festive total so the tooltip can show holiday capacity.
     if (festivesSet && festivesSet.has(dateStr)) {
@@ -69,7 +90,7 @@ function capacityForMonth(periodKey, dailyDedications, festivesSet) {
 }
 
 // Expected hours for an ISO-week period, festive-aware (saldo-equivalent).
-// A week is taken as 5 working days (Mon-Fri); festive weekdays reduce the
+// Its days follow dayHours (weekly distribution, else Mon-Fri); festive days reduce the
 // count just like in the month view. Returns { expected, festive } — see
 // capacityForMonth for the festive semantics.
 function capacityForWeek(periodKey, dailyDedications, festivesSet) {
@@ -87,9 +108,9 @@ function capacityForWeek(periodKey, dailyDedications, festivesSet) {
   for (let d = 0; d < 7; d++) {
     const day = monday.clone().add(d, 'day');
     const dow = day.day();
-    if (dow === 0 || dow === 6) continue;
     const dateStr = day.format('YYYY-MM-DD');
-    const dh = dailyHoursForFirstMatch(dailyDedications, dateStr);
+    const dh = dayHours(dailyDedications, dateStr, dow);
+    if (!dh) continue;
     if (festivesSet && festivesSet.has(dateStr)) {
       festive += dh;
       continue;
@@ -101,6 +122,7 @@ function capacityForWeek(periodKey, dailyDedications, festivesSet) {
 
 module.exports = {
   dailyHoursForFirstMatch,
+  dayHours,
   capacityForMonth,
   capacityForWeek,
 };
