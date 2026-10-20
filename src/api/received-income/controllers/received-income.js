@@ -4,7 +4,7 @@
  * received-income controller (v5). Ported from v3 api/received-income/controllers.
  */
 const { createCoreController } = require('@strapi/strapi').factories;
-const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
+const { adaptCtxQuery, dbLimit, wantsNoRows } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 
 module.exports = createCoreController('api::received-income.received-income', ({ strapi }) => ({
@@ -21,6 +21,8 @@ module.exports = createCoreController('api::received-income.received-income', ({
    */
   async findBasic(ctx) {
     const opts = adaptQuery(ctx.query);
+    // issues/260: `_limit=0` = no rows, as in v3 (db.query ignores limit 0)
+    if (wantsNoRows(opts)) return [];
     return strapi.db.query('api::received-income.received-income').findMany({
       where: opts.filters || {},
       // issues/013: v3 auto-populated components; v5 does not. The lists read
