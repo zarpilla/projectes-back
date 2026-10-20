@@ -636,9 +636,11 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
     const collectionPointChanged = extractId(previousOrderData.collection_point) !== collectionPointId;
     const routeChanged =
       extractId(previousOrderData.collection_pickup_route) !== extractId(orderData.collection_pickup_route);
-    const dateChanged =
-      normalizeOrderDate(previousOrderData.collection_pickup_date) !==
-      normalizeOrderDate(orderData.collection_pickup_date);
+    // the pickup day: its own, or the delivery day of an order without one
+    // (the -R is grouped by it below); moving the delivery date of such an
+    // order left it in the -R of the old day (issues/292)
+    const pickupDay = (o) => normalizeOrderDate(o.collection_pickup_date || o.estimated_delivery_date);
+    const dateChanged = pickupDay(previousOrderData) !== pickupDay(orderData);
 
     if (existingCollectionOrder) {
       // If the collection order is cancelled, we need to create/find a new one
@@ -1422,6 +1424,19 @@ const keepInvoicedPrice = (data, previousOrder) => {
 };
 
 /**
+ * A collection order (-R) follows the orders it collects: its boxes, kilos,
+ * refrigeration, delivery type, rate and price are their aggregate
+ * (updateCollectionOrderAggregates), not edited by hand (the user's decision,
+ * 2026-10-20, issues/292). A save from the app drops them; the generated
+ * updates (`_internal`) never come through here.
+ */
+const COLLECTION_FOLLOWED_FIELDS = ['units', 'kilograms', 'refrigerated', 'delivery_type', 'route_rate', 'price'];
+const keepCollectionAggregates = (data, previousOrder) => {
+  if (!previousOrder || previousOrder.is_collection_order !== true) return;
+  for (const field of COLLECTION_FOLLOWED_FIELDS) delete data[field];
+};
+
+/**
  * Read the documentation (https://strapi.io/documentation/developer-docs/latest/concepts/models.html#lifecycle-hooks)
  * to customize this model
  */
@@ -1473,6 +1488,7 @@ module.exports = {
     refusePastPickupDate(data, previousOrder);
 
     keepInvoicedPrice(data, previousOrder);
+    keepCollectionAggregates(data, previousOrder);
 
     await enforceCollectionOrderFields(data, previousOrder);
 
@@ -1659,23 +1675,23 @@ module.exports = {
         await processCollectionOrder(params.id, currentOrder, previousOrder);
       }
 
-      // If this order has a collection_order, update its aggregates
-      if (currentOrder.collection_order) {
-        const collectionOrderId =
-          typeof currentOrder.collection_order === 'object'
-            ? currentOrder.collection_order.id
-            : currentOrder.collection_order;
-        await updateCollectionOrderAggregates(collectionOrderId);
+      // The collection order it is in now (read again: processCollectionOrder
+      // above may have moved it to the -R of another day) recomputes its
+      // aggregates, and so does the one it left: an order moved to another
+      // day leaves its -R for the one of that day, and the old one is
+      // cancelled when no active order is left in it (issues/292).
+      const linkedNow = currentOrder.is_collection_order
+        ? null
+        : extractId(((await findWithCollectionRelations(params.id)) || {}).collection_order);
+      if (linkedNow) {
+        await updateCollectionOrderAggregates(linkedNow);
         // Check if collection order should be auto-deposited
-        await checkAndUpdateCollectionOrderStatus(collectionOrderId);
+        await checkAndUpdateCollectionOrderStatus(linkedNow);
       }
 
-      // Check if collection_order was removed
-      if (previousOrder && previousOrder.collection_order && !currentOrder.collection_order) {
-        const oldCollectionOrderId =
-          typeof previousOrder.collection_order === 'object'
-            ? previousOrder.collection_order.id
-            : previousOrder.collection_order;
+      // Check if collection_order was removed or changed
+      const oldCollectionOrderId = previousOrder ? extractId(previousOrder.collection_order) : null;
+      if (oldCollectionOrderId && oldCollectionOrderId !== linkedNow) {
         await updateCollectionOrderAggregates(oldCollectionOrderId);
         // Check if collection order should be auto-deposited
         await checkAndUpdateCollectionOrderStatus(oldCollectionOrderId);
