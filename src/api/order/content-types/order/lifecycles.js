@@ -772,7 +772,7 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
 
   // Only a pending collection order takes new orders: a processed, lastmile or
   // delivered one has been picked up already, and the order got into a pickup
-  // already done (issues/303). An order already in one stays there unless its
+  // already done (issues/304). An order already in one stays there unless its
   // point, route or day changes (the early return above).
   // v3 flat operators (`status_nin`) and query params (`_sort`) are not
   // understood by v5's db.query: they were passed through verbatim as column
@@ -1493,8 +1493,14 @@ module.exports = {
 
     await enforceCollectionOrderFields(data, previousOrder);
 
+    // a delivered order keeps the delivery date it already had: a bulk change
+    // of an invoiced order back to Lliurada sends only the status and got
+    // today's date (issues/304)
     if (data.status === 'delivered' && !data.delivery_date) {
-      data.delivery_date = data.estimated_delivery_date ? data.estimated_delivery_date : new Date();
+      data.delivery_date =
+        (previousOrder && previousOrder.delivery_date) ||
+        data.estimated_delivery_date ||
+        new Date();
     }
     // An order set back before delivery is not delivered any more: its
     // delivery date went on showing it as delivered (issues/266).

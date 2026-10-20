@@ -89,3 +89,25 @@ describe('delivery date of an order set back (issues/266)', () => {
     expect((await update(1, { comments: 'x' })).delivery_date).toBeUndefined();
   });
 });
+
+// issues/304 (verification of 293, 2026-10-20): a bulk change of an invoiced
+// order back to Lliurada sends only the status, and the order got today as
+// its delivery date instead of keeping the real one
+describe('delivery date of an order set back to delivered (issues/304)', () => {
+  beforeEach(() => {
+    ROWS = {
+      1: { id: 1, status: 'invoiced', delivery_date: '2026-09-30', estimated_delivery_date: '2026-09-29', price: 5 },
+      2: { id: 2, status: 'processed', delivery_date: null, estimated_delivery_date: '2026-10-21', price: 5 },
+    };
+  });
+
+  it('keeps the stored delivery date', async () => {
+    const data = await update(1, { status: 'delivered' });
+    expect(data.delivery_date).toBe('2026-09-30');
+  });
+
+  it('still fills it in (today) when the order had none', async () => {
+    const data = await update(2, { status: 'delivered' });
+    expect(data.delivery_date).toBeInstanceOf(Date);
+  });
+});
