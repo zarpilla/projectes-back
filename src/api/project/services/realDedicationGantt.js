@@ -224,6 +224,34 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
   // 5) Precompute every cell (hours / percentage / cssClass / tooltip) so the
   //    client only renders. Mirrors DedicationGanttChart.vue cellData.
   const cells = {};
+  // Per-leader festive set = global festives ∪ this user's festives.
+  // Built lazily once per leader and cached on the leader object.
+  const festivesOf = (leader) => {
+    let festivesSet = leader._festivesSet;
+    if (!festivesSet) {
+      festivesSet = new Set(globalFestiveDates);
+      const userFestiveDates = festivesByUserId[leader.id];
+      if (userFestiveDates) {
+        userFestiveDates.forEach((d) => festivesSet.add(d));
+      }
+      leader._festivesSet = festivesSet;
+    }
+    return festivesSet;
+  };
+  // Expected hours for a period, festive-aware (matches /dedicacio-saldo):
+  // weekends and festive days contribute 0; each other weekday contributes
+  // the user's daily-dedication hours.
+  const capacityOf = (leader, period) =>
+    safeView === 'month'
+      ? capacityForMonth(period.key, leader.daily_dedications, festivesOf(leader))
+      : capacityForWeek(period.key, leader.daily_dedications, festivesOf(leader), targetYear);
+  // the period being worked now, to leave the ones to come empty
+  const now = moment();
+  const currentKey =
+    safeView === 'month'
+      ? now.format('YYYY-MM')
+      : `${now.isoWeekYear()}-W${String(now.isoWeek()).padStart(2, '0')}`;
+
   visibleLeaders.forEach((leader) => {
     cells[leader.id] = {};
     const b = bucket[leader.id];
@@ -239,25 +267,7 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
       if (entry) {
         hours = entry.total.toFixed(2);
 
-        // Expected hours for this period, festive-aware (matches
-        // /dedicacio-saldo): weekends and festive days contribute 0; each
-        // other weekday contributes the user's daily-dedication hours.
-        const userFestiveDates = festivesByUserId[leader.id];
-        // Per-leader festive set = global festives ∪ this user's festives.
-        // Built lazily once per leader and cached on the leader object.
-        let festivesSet = leader._festivesSet;
-        if (!festivesSet) {
-          festivesSet = new Set(globalFestiveDates);
-          if (userFestiveDates) {
-            userFestiveDates.forEach((d) => festivesSet.add(d));
-          }
-          leader._festivesSet = festivesSet;
-        }
-
-        const capacity =
-          safeView === 'month'
-            ? capacityForMonth(period.key, leader.daily_dedications, festivesSet)
-            : capacityForWeek(period.key, leader.daily_dedications, festivesSet, targetYear);
+        const capacity = capacityOf(leader, period);
         const expectedHours = capacity.expected;
         const festiveHours = capacity.festive;
 
@@ -313,6 +323,26 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
           diff,
         };
         return;
+      }
+
+      // No hours in a period (already begun) with a working day: 0 % of its
+      // hours, not «Sense dedicació» (issues/300)
+      if (period.key <= currentKey) {
+        const capacity = capacityOf(leader, period);
+        if (capacity.expected > 0) {
+          cells[leader.id][period.key] = {
+            hours,
+            percentage,
+            cssClass: 'dedication-low',
+            tooltip: `Hores període: ${capacity.expected.toFixed(2)}h\nFalten: ${capacity.expected.toFixed(2)}h`,
+            breakdown: [],
+            expected: capacity.expected,
+            festive: capacity.festive,
+            noSchedule: false,
+            diff: capacity.expected,
+          };
+          return;
+        }
       }
 
       cells[leader.id][period.key] = { hours, percentage, cssClass, tooltip };
