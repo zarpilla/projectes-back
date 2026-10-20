@@ -42,7 +42,7 @@ done < tenants.conf
 ONLY=("${ARGS[@]:1}")
 for t in "${ONLY[@]}"; do [ -n "${PORT[$t]:-}" ] || { echo "Unknown tenant: $t"; exit 2; }; done
 
-declare -A PINNED
+declare -A PINNED=()  # =(): an empty one is "unbound" under set -u in bash 5.1
 if [ -f pinned.conf ]; then
   while read -r name tag _; do
     [[ -z "$name" || "$name" == \#* ]] && continue
