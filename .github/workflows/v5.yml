@@ -8,16 +8,11 @@ name: Build and Publish Backend Docker image (v5)
 #
 # The v3 backend (zarpilla/projectes) is a different repository, so this needs
 # no branch of its own: `main` here IS v5.
-#
-# The `redesign` branch (paired with the front's `redesign`) is tested and
-# published as esstrapis-back:redesign and redesign-<sha>, to try on a single
-# installation; it is never deployed.
 
 on:
   push:
     branches:
       - main
-      - redesign
     # Server scripts and docs don't change the image: no build, no deploy.
     paths-ignore:
       - 'deploy/**'
@@ -66,7 +61,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     env:
-      IMAGE_TAG: ${{ github.ref == 'refs/heads/redesign' && 'redesign' || 'v5' }}
+      IMAGE_TAG: v5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -90,8 +85,7 @@ jobs:
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           # Same pairing as the frontend: `v5` is what deployments follow, and
-          # the sha-pinned tag is what a single tenant rolls back to. On the
-          # redesign branch: `redesign` and `redesign-<sha>` instead.
+          # the sha-pinned tag is what a single tenant rolls back to.
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/esstrapis-back:${{ env.IMAGE_TAG }}
             ${{ secrets.DOCKERHUB_USERNAME }}/esstrapis-back:${{ env.IMAGE_TAG }}-${{ github.sha }}
