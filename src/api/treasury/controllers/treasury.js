@@ -56,7 +56,7 @@ const getValidationKey = (entityType, entityId, subType = null) => {
 };
 
 // running balances per account and in total
-const { walkBalances } = require('../services/balances');
+const { walkBalances, sortRows } = require('../services/balances');
 const { treasuryDisplayDate } = require('../services/display-date');
 
 module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => ({
@@ -1098,7 +1098,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       return { ...t, datef: t.date.format('YYYYMMDD') };
     });
 
-    const treasuryData = _.sortBy(treasury2, 'datef');
+    const treasuryData = sortRows(treasury2);
 
     // running balance per bank account and in total (services/balances)
     const treasuryDataX = walkBalances(treasuryData).map((t) => ({

@@ -39,4 +39,30 @@ const walkBalances = (rows) => {
   });
 };
 
-module.exports = { applyRowToBalance, walkBalances };
+/**
+ * Rows by date. Within a day the noted balances come first, then the "Inici Any"
+ * / "Avui" markers, then the movements: a marker is the balance at the start of
+ * its day. The forecast project rows were pushed before "Avui", so a forecast
+ * dated today counted in the «Saldo avui» seed and again in «Des d'avui»: the two
+ * Tresoreria modes ended the year 22,61 € apart on La Diligència (issues/252).
+ */
+const dayRank = (row) =>
+  row.is_balance_annotation || row.is_real_balance_adjustment
+    ? 0
+    : row.type === 'Inici Any' || row.type === 'Avui'
+      ? 1
+      : 2;
+
+const sortRows = (rows) =>
+  rows
+    .map((row, i) => ({ row, i }))
+    .sort((a, b) =>
+      a.row.datef < b.row.datef
+        ? -1
+        : a.row.datef > b.row.datef
+          ? 1
+          : dayRank(a.row) - dayRank(b.row) || a.i - b.i,
+    )
+    .map(({ row }) => row);
+
+module.exports = { applyRowToBalance, walkBalances, sortRows };
