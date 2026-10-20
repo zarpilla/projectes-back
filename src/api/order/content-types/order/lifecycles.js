@@ -1318,6 +1318,23 @@ const processMultideliveryDiscountForOtherOrders = async (orderId, currentData, 
 };
 
 /**
+ * An order that is and stays invoiced keeps the price it was invoiced with:
+ * a price sent with it is dropped, not refused, since the order form and the
+ * list's quick edit send the price with every save (issues/287). Taking the
+ * order out of «Facturada» in the same save lets the price through.
+ */
+const keepInvoicedPrice = (data, previousOrder) => {
+  if (!previousOrder || previousOrder.status !== 'invoiced') return;
+  if (data.status !== undefined && data.status !== 'invoiced') return;
+  if (!('price' in data)) return;
+  const sent = data.price === null || data.price === undefined || data.price === '' ? null : Number(data.price);
+  const kept = previousOrder.price === null || previousOrder.price === undefined ? null : Number(previousOrder.price);
+  if (sent === kept) return;
+  strapi.log.warn(`order ${previousOrder.id}: invoiced, price ${kept} kept (sent ${data.price})`);
+  delete data.price;
+};
+
+/**
  * Read the documentation (https://strapi.io/documentation/developer-docs/latest/concepts/models.html#lifecycle-hooks)
  * to customize this model
  */
@@ -1364,6 +1381,8 @@ module.exports = {
 
     // Store previous order data for afterUpdate
     event.state.previousOrderData = previousOrder;
+
+    keepInvoicedPrice(data, previousOrder);
 
     await enforceCollectionOrderFields(data, previousOrder);
 
