@@ -43,6 +43,17 @@ const formatCurrency = (val) => {
     .replace(/;/g, '.');
 };
 
+// Unit price: up to the 4 decimals the lines keep, at least 2 (33,3333 · 12,50)
+// with thousands dots; it was always printed with 2 (issues/243, issues/270).
+const formatUnitPrice = (val) => {
+  const number = Number(val) || 0;
+  if (!number) return '-';
+  let [integer, decimals] = Math.abs(number).toFixed(4).split('.');
+  decimals = decimals.replace(/0+$/, '').padEnd(2, '0');
+  integer = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${number < 0 ? '-' : ''}${integer},${decimals}`;
+};
+
 // Quantities and percentages with a Catalan decimal comma: «1,5», «12,5%» (issues/243).
 const formatNumber = (val) => String(Number(val) || 0).replace('.', ',');
 
@@ -343,7 +354,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
       if (showDate) part.push({ value: line.date, width: 0.12 * cr });
       const amounts = lineAmounts(line);
       if (showQuantity) part.push({ value: formatNumber(line.quantity), width: 0.07 * cr });
-      if (showQuantity) part.push({ value: line.base, width: 0.09 * cr, price: true });
+      if (showQuantity) part.push({ value: formatUnitPrice(line.base), width: 0.09 * cr, price: true });
       part.push({ value: amounts.gross, price: true, width: 0.18 * cr });
       if (showDiscount)
         part.push({
