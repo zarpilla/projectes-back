@@ -9,13 +9,13 @@
  * saved order 9,56 €, issues/227). How it combines with the other discounts
  * is final-price.js (issues/057), untouched here.
  */
-const moment = require('moment');
+const { toQueryDay } = require('../../../services/date-fields');
 const { relationId } = require('../../../services/relation-input');
 
 const checkVolumeDiscount = async (id, date, routeId, ownerId, currentStatus) => {
   // Find all orders for the same route, date, and owner (excluding cancelled and this order)
   const ordersOfDateRouteOwner = await strapi.db.query('api::order.order').findMany({
-    where: { estimated_delivery_date: moment(date).format('YYYY-MM-DD'), route: routeId, owner: ownerId },
+    where: { estimated_delivery_date: toQueryDay(date), route: routeId, owner: ownerId },
   });
 
   const others = ordersOfDateRouteOwner.filter(

@@ -15,6 +15,7 @@ const fs = require('fs');
 const { resolvePdfLogo } = require('../../../services/pdf-logo');
 const crypto = require('crypto');
 const moment = require('moment');
+const { toQueryDay } = require('../../../services/date-fields');
 const { orderLineConcept, invoiceConcept } = require('../services/invoice-line-concept');
 const sharp = require('sharp');
 const QRCode = require('qrcode');
@@ -545,14 +546,16 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
     const ordersOfDateAndContact = await strapi.db.query('api::order.order').findMany({
       where: {
-        estimated_delivery_date: moment(date).format('YYYY-MM-DD'),
+        estimated_delivery_date: toQueryDay(date),
         contact: contactId,
       },
     });
 
-    const others = id
-      ? ordersOfDateAndContact.filter((o) => String(o.id) !== String(id) && o.status !== 'cancelled')
-      : ordersOfDateAndContact;
+    // a cancelled order never counts, for a new order either: the preview
+    // promised a discount the save then dropped (issues/235)
+    const others = ordersOfDateAndContact.filter(
+      (o) => (!id || String(o.id) !== String(id)) && o.status !== 'cancelled',
+    );
 
     const volumeDiscount = await currentOrderVolumeDiscount(id, {
       route: routeId,
