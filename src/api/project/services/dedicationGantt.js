@@ -4,7 +4,26 @@
 const moment = require('moment');
 const _ = require('lodash');
 const { capacityForMonth, capacityForWeek, weekLabel } = require('./ganttCapacity');
-const { calculateEstimatedTotals } = require('./projectFinancials');
+const { calculateEstimatedTotals, dayNumber, dayInfo } = require('./projectFinancials');
+
+const DAY_MS = 86400000;
+
+// ISO week and its year of a day number, as moment's isoWeek() and
+// isoWeekYear() (issues/309: they were computed with moment for every planned
+// day): the week of the Thursday of the day's Monday–Sunday week.
+const isoWeekCache = new Map();
+function isoWeekOf(n) {
+  let w = isoWeekCache.get(n);
+  if (!w) {
+    const dow = dayInfo(n).dow || 7;
+    const thursday = n + 4 - dow;
+    const year = new Date(thursday * DAY_MS).getUTCFullYear();
+    const week = Math.floor((thursday - Date.UTC(year, 0, 1) / DAY_MS) / 7) + 1;
+    w = { year, week };
+    isoWeekCache.set(n, w);
+  }
+  return w;
+}
 
 // Catalan short month names so the period labels are independent of the
 // process-wide moment locale (the frontend renders these with moment 'ca').
@@ -30,9 +49,9 @@ function periodKeyFromDate(dateStr, view) {
   if (view === 'month') {
     return dateStr.length >= 7 ? dateStr.substring(0, 7) : dateStr;
   }
-  const m = moment(dateStr, 'YYYY-MM-DD');
-  const year = m.isoWeekYear();
-  const week = m.isoWeek();
+  const n = dayNumber(dateStr);
+  if (Number.isNaN(n)) return 'NaN-WNaN';
+  const { year, week } = isoWeekOf(n);
   return `${year}-W${String(week).padStart(2, '0')}`;
 }
 
@@ -70,6 +89,8 @@ async function plannedHoursRows(p, phases, targetYear, dailyDedications, festive
     dailyDedications,
     festives,
     false,
+    // days as 'YYYY-MM-DD', no moment per planned day (issues/309)
+    { lean: true },
   );
 
   // Most relations are not populated here, so the remaining hour/total
@@ -88,19 +109,21 @@ async function plannedHoursRows(p, phases, targetYear, dailyDedications, festive
     dedication_type: '-',
   };
 
+  const yearStr = String(targetYear).padStart(4, '0');
   for (let i = 0; i < totalsByDay.length; i++) {
     const t = totalsByDay[i];
-    if (!t.q || t.day.year() !== targetYear) continue;
+    if (!t.q || t.day.substring(0, 4) !== yearStr) continue;
+    const n = dayNumber(t.day);
     dedications.push(
       Object.assign({}, projectBase, {
         estimated_hours: t.q,
         user_id: t.userId,
         username: usernameById[t.userId] || '-',
-        from: t.day.format('YYYY-MM-DD'),
-        to: t.day.clone().add(1, 'day').format('YYYY-MM-DD'),
-        week: t.day.isoWeek(),
-        month: t.day.format('MM'),
-        year: t.day.year(),
+        from: t.day,
+        to: dayInfo(n + 1).str,
+        week: isoWeekOf(n).week,
+        month: t.day.substring(5, 7),
+        year: targetYear,
       }),
     );
   }
@@ -109,7 +132,10 @@ async function plannedHoursRows(p, phases, targetYear, dailyDedications, festive
 // Builds the fully aggregated dedication Gantt table server-side, replacing
 // the per-day expansion + re-aggregation previously done in
 // DedicationGantt.vue / DedicationGanttChart.vue.
-async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', year, view = 'month' }) {
+// `rows: false` leaves out the per-day rows (`dedications`), only needed by
+// the Excel export: 12 of the 12.2 MB of the response on resilience
+// (issues/309). The screen asks for them when «Exporta» is clicked.
+async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', year, view = 'month', rows = true }) {
   const targetYear = year || parseInt(moment().format('YYYY'), 10);
   const phaseType = hoursType === 'previstes' ? 'project_phases' : 'project_original_phases';
 
@@ -394,8 +420,8 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
     leaders,
     periods,
     cells,
-    dedications: _.sortBy(dedications, ['year', 'month', 'project_name']),
+    dedications: rows ? _.sortBy(dedications, ['year', 'month', 'project_name']) : [],
   };
 }
 
-module.exports = { buildDedicationGantt };
+module.exports = { buildDedicationGantt, periodKeyFromDate, isoWeekOf };

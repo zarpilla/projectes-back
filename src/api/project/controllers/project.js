@@ -778,6 +778,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   //   hoursType=previstes|original      (default previstes)
   //   year=2026                         (default current year)
   //   view=month|week                   (default month)
+  //   rows=false                        without the per-day Excel rows
   async findDedications(ctx) {
     const { buildDedicationGantt } = require('../services/dedicationGantt');
 
@@ -803,6 +804,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       hoursType,
       year,
       view,
+      rows: ctx.query.rows !== 'false',
     });
   },
 

@@ -23,6 +23,10 @@ const CASES = (year) => [
   ['economic-detail-year', 'api::project.project', 'findWithEconomicDetail', { _limit: '-1', _where: { year_eq: year } }],
   // the call of Informes › Ingressos/Despeses that took 40 s on resilience
   ['economic-detail-states', 'api::project.project', 'findWithEconomicDetail', { _limit: '-1', _where: { project_state_in: '1,2,3,5,6,7,8,0', year_eq: year } }],
+  // Informes › Dedicació gantt, 10 s on resilience
+  ['dedications-month', 'api::project.project', 'findDedications', { _where: { project_state_in: '1,2,3,5,6,7' }, hoursType: 'previstes', year, view: 'month' }],
+  ['dedications-week', 'api::project.project', 'findDedications', { _where: { project_state_in: '1,2,3,5,6,7' }, hoursType: 'previstes', year, view: 'week' }],
+  ['dedications-month-norows', 'api::project.project', 'findDedications', { _where: { project_state_in: '1,2,3,5,6,7' }, hoursType: 'previstes', year, view: 'month', rows: 'false' }],
   ['forecast-year', 'api::treasury.treasury', 'forecast', { _limit: '-1', year, periodification: 'prevista' }],
   ['forecast-real', 'api::treasury.treasury', 'forecast', { _limit: '-1', year, periodification: 'real' }],
 ];
