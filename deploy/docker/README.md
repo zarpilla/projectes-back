@@ -41,6 +41,17 @@ Cron jobs take a MySQL lock per tenant database (`src/services/cron-lock.js`), s
 docker compose logs -f demo-$(cat state/demo)
 ```
 
+### Redesign builds on some tenants
+
+A push to the `redesign` branch publishes `esstrapis-back:redesign-<sha>` and never deploys. Put it on chosen tenants by hand, always together with their front (`esstrapis-front:redesign-<sha>`): a redesign front against a main backend, or the reverse, breaks.
+
+```bash
+./deploy.sh redesign-<sha> ladili_test webcoop   # pins them: written to pinned.conf
+./deploy.sh v5-<sha> webcoop                     # back to main: unpins it
+```
+
+A deploy without a tenant list (what CI runs) skips the tenants in `pinned.conf`. A redesign build needs a tenant list, and the canary `buida` can't take it. Going back to main is not free: its schema sync may drop the columns only the redesign has, with their data.
+
 The scripts on the server are copies of `deploy/docker/`. After changing them here, copy them to `/var/www/esstrapis-back`. Pushes that only touch `deploy/`, `docs/` or Markdown files don't build or deploy.
 
 Secrets in GitHub: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`. Add required reviewers to the `production` environment to approve each deploy by hand.
