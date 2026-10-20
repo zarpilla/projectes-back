@@ -35,6 +35,23 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # The read cache's change detection is also tested against a real MySQL
+    # (tests/read-cache-mysql.test.js, issues/307): the same major version as
+    # the VPS. The other tests don't use it.
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      READ_CACHE_TEST_MYSQL: mysql://root:ci@127.0.0.1:3306
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7

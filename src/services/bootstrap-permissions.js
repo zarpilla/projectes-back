@@ -128,6 +128,8 @@ async function importSeedPermissions() {
     // (v3's `<type>.count` actions have no v5 equivalent — the frontend's
     // `/count` calls are served from the list endpoint's meta.pagination.total.)
     config: ['find'],
+    // issues/307: the read cache's stats and «Buida la memòria cau» (isAdmin on the routes)
+    'read-cache': ['stats', 'clear'],
     diet: ['find', 'findOne'],
     'emitted-grant': ['find', 'findOne'],
     'home-menu': ['find'],

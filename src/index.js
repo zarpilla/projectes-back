@@ -2,7 +2,7 @@
 
 const { importSeedPermissions, importSeedRows } = require('./services/bootstrap-permissions');
 const { runStartupScript } = require('./services/startup-scripts');
-const { registerRolePermissionsInvalidation } = require('./services/role-permissions-cache');
+const { registerRolePermissionsInvalidation, clearRolePermissionsCache } = require('./services/role-permissions-cache');
 const { registerLogosCacheInvalidation } = require('./services/logos-cache');
 const { registerUserDeleteGuard } = require('./services/user-delete-guard');
 const { seedNewDatabase } = require('./services/seed-new-database');
@@ -41,6 +41,8 @@ const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } 
 const { ensureChangeLogIndex } = require('./services/ensure-change-log-index');
 const { lockIssuedInvoiceComponents } = require('./services/lock-issued-invoices');
 const { registerAppPermissions } = require('./services/register-app-permissions');
+const { registerReadCacheRoutes } = require('./services/read-cache/routes');
+const { initReadCache } = require('./services/read-cache');
 
 module.exports = {
   /**
@@ -54,6 +56,9 @@ module.exports = {
     strapi.documents.use(lockIssuedInvoiceComponents);
     // The app permissions are enforced on every content-API route (issues/099).
     strapi.log.info(`[app-permissions] enforced on ${registerAppPermissions(strapi)} routes`);
+    // The master tables' GET routes are answered from the read cache, after the
+    // app permissions (issues/307). Must come after registerAppPermissions.
+    strapi.log.info(`[read-cache] on ${registerReadCacheRoutes(strapi)} routes`);
   },
 
   /**
@@ -175,5 +180,10 @@ module.exports = {
         strapi.log.error(`[bootstrap] startup script ${name} failed: ${error && error.message}`);
       }
     }
+
+    // Last: the read cache turns itself on only if change detection works
+    // (issues/307). The roles' permissions kept in memory follow the same
+    // detection, so a permission changed by SQL is seen too.
+    await initReadCache(strapi, { onPermissionsChange: clearRolePermissionsCache });
   },
 };

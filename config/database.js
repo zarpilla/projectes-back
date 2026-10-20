@@ -2,6 +2,7 @@
 
 const path = require('path');
 const { isDatabaseClientKind } = require('@strapi/database');
+const { afterCreate: watchStatements } = require('../src/services/read-cache/mysql-hook');
 
 module.exports = ({ env }) => {
   const client = env('DATABASE_CLIENT', 'sqlite');
@@ -29,7 +30,13 @@ module.exports = ({ env }) => {
           rejectUnauthorized: env.bool('DATABASE_SSL_REJECT_UNAUTHORIZED', true),
         },
       },
-      pool: { min: env.int('DATABASE_POOL_MIN', 2), max: env.int('DATABASE_POOL_MAX', 10) },
+      pool: {
+        min: env.int('DATABASE_POOL_MIN', 2),
+        max: env.int('DATABASE_POOL_MAX', 10),
+        // every statement of every connection is reported to the read cache's
+        // change detection (issues/307, src/services/read-cache)
+        ...(env('READ_CACHE') === 'false' ? {} : { afterCreate: watchStatements }),
+      },
     },
     postgres: {
       client: 'postgres',
