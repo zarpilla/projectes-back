@@ -1098,38 +1098,29 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     return ctx.badRequest('provide ?id=, ?ids= or ?all=true');
   },
 
+  /**
+   * Planned hours by day of the projects (Justificacions «Previstes»). They
+   * come from the current estimate (`project_phases`, «Previsió»), like the
+   * project's «Hores previstes», not from the original budget (issues/283,
+   * user decision 2026-10-20).
+   */
   async findEstimatedTotalsByDay(ctx) {
     ctx.query.published_at_null = false;
     const { year, ...query } = ctx.query;
 
     const promises = [];
-    if (query._q) {
-      promises.push(
-        strapi.db
-          .query('api::project.project')
-          .findMany(
-            v3FindArgs(query, [
-            'project_original_phases',
-            'project_original_phases.incomes',
-            'project_original_phases.incomes.estimated_hours',
-            'project_original_phases.incomes.estimated_hours.users_permissions_user',
-            ]),
-          ),
-      );
-    } else {
-      promises.push(
-        strapi.db
-          .query('api::project.project')
-          .findMany(
-            v3FindArgs(query, [
-            'project_original_phases',
-            'project_original_phases.incomes',
-            'project_original_phases.incomes.estimated_hours',
-            'project_original_phases.incomes.estimated_hours.users_permissions_user',
-            ]),
-          ),
-      );
-    }
+    promises.push(
+      strapi.db
+        .query('api::project.project')
+        .findMany(
+          v3FindArgs(query, [
+            'project_phases',
+            'project_phases.incomes',
+            'project_phases.incomes.estimated_hours',
+            'project_phases.incomes.estimated_hours.users_permissions_user',
+          ]),
+        ),
+    );
 
     promises.push(
       strapi.db
@@ -1148,11 +1139,13 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
 
     const totals = [];
     for await (const p of projects) {
+      // Same arguments as the stored «Hores previstes» (pushHoursRows).
       const { totalsByDay } = await calculateEstimatedTotals(
         { id: p.id, name: p.name },
-        p.project_original_phases,
+        p.project_phases,
         dailyDedications,
         festives,
+        true,
       );
       totals.push(...totalsByDay.map((t) => ({ ...t, day: t.day.format('YYYY-MM-DD') })));
     }
