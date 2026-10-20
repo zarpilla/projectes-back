@@ -340,7 +340,10 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
       detailsHeader.push({ value: 'Q.', width: 0.07 * cr });
       detailsHeader.push({ value: 'Base', width: 0.09 * cr });
     }
-    detailsHeader.push({ value: 'Base imposable', width: 0.18 * cr });
+    // With a discount column the line amount is before the discount (q x price),
+    // as «Base sense descompte» in the totals; only without one is it the line's
+    // taxable base (issues/299).
+    detailsHeader.push({ value: showDiscount ? 'Import brut' : 'Base imposable', width: 0.18 * cr });
     if (showDiscount) detailsHeader.push({ value: 'Descompte', width: 0.1 * cr });
     if (showVat) detailsHeader.push({ value: 'IVA', width: 0.1 * cr });
     if (showIrpf) detailsHeader.push({ value: 'IRPF', width: 0.1 * cr });
