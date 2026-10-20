@@ -28,6 +28,7 @@ const { clearQuotePreviewLinks } = require('./services/clear-quote-preview-links
 const { padFourDigitPostcodes } = require('./services/pad-four-digit-postcodes');
 const { refreshUndatedOriginalTotals } = require('./services/refresh-undated-original-totals');
 const { widenBudgetLineDecimals } = require('./services/widen-budget-line-decimals');
+const { widenDocumentLineDecimals } = require('./services/widen-document-line-decimals');
 const { repairBudgetLineTotals } = require('./services/repair-budget-line-totals');
 const { fillDeliveryPointTradeNames } = require('./services/fill-delivery-point-trade-names');
 const { clearDanglingMotherLinks } = require('./services/clear-dangling-mother-links');
@@ -151,6 +152,8 @@ module.exports = {
       ['refreshUndatedOriginalTotals', refreshUndatedOriginalTotals, { runOnce: true }],
       // issues/194: budget lines keep 4 decimals in quantity and price (before the repair below).
       ['widenBudgetLineDecimals', widenBudgetLineDecimals, { runOnce: false }],
+      // issues/270: document lines keep 4 decimals in the unit price.
+      ['widenDocumentLineDecimals', widenDocumentLineDecimals, { runOnce: false }],
       // issues/194: lines whose stored total ≠ quantity × price.
       ['repairBudgetLineTotals', repairBudgetLineTotals, { runOnce: true }],
       // issues/215: delivery points saved without «Nom comercial» take their name.

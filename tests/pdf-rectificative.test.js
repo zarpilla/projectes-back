@@ -65,7 +65,7 @@ describe('pdf of a rectificative (issues/213)', () => {
     expect(header).toEqual(expect.arrayContaining(['Q.', 'Base']));
     const row = invoice.details.parts[0];
     expect(row[header.indexOf('Q.')].value).toBe('-3');
-    expect(row[header.indexOf('Base')].value).toBe(40);
+    expect(row[header.indexOf('Base')].value).toBe('40,00'); // 4-decimal unit price format (issues/270)
   });
 
   it('still hides them when every quantity is 1', async () => {

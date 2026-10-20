@@ -276,6 +276,20 @@ module.exports = {
           .query('api::phase-income.phase-income')
           .deleteMany({ where: { invoice: { id: invoice.id } } });
       }
+    } else if (invoice && invoice.id) {
+      // Any other draft: the budget lines it was associated with go back to
+      // not invoiced. They stayed ticked (paid) with no document, so they
+      // dropped out of the treasury forecast (issues/271). A line that also
+      // has a received income keeps that document and its tick.
+      const lines = await strapi.db
+        .query('api::phase-income.phase-income')
+        .findMany({ where: { invoice: { id: invoice.id } }, populate: { income: true } });
+      for (const line of lines || []) {
+        await strapi.db.query('api::phase-income.phase-income').update({
+          where: { id: line.id },
+          data: line.income ? { invoice: null } : { paid: false, invoice: null },
+        });
+      }
     }
     scheduleFromEntityProjects(invoice);
   },

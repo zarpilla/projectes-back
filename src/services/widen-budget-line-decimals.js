@@ -18,28 +18,34 @@ const { BUDGET_LINE_SCALE } = require('./budget-line');
 const UIDS = ['api::phase-income.phase-income', 'api::phase-expense.phase-expense'];
 const COLUMNS = ['quantity', 'amount'];
 
+/**
+ * Widens `column` of `tableName` to DECIMAL(14,scale) when it keeps fewer
+ * decimals; a missing table or column is skipped. Returns whether it altered it.
+ */
+async function widenDecimalColumn(tableName, column, scale, label) {
+  const rows = await rawExecute(
+    strapi,
+    `SELECT NUMERIC_SCALE AS scale FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`,
+    [tableName, column],
+  );
+  if (!Array.isArray(rows) || !rows.length || Number(rows[0].scale) >= scale) return false;
+  await rawExecute(strapi, `ALTER TABLE \`${tableName}\` MODIFY \`${column}\` DECIMAL(14,${scale}) NULL`, []);
+  strapi.log.info(`[${label}] ${tableName}.${column} → DECIMAL(14,${scale})`);
+  return true;
+}
+
+const isMysql = () => ((strapi.db.dialect && strapi.db.dialect.client) || '') === 'mysql';
+
 async function widenBudgetLineDecimals() {
-  const client = (strapi.db.dialect && strapi.db.dialect.client) || '';
-  if (client !== 'mysql') return;
+  if (!isMysql()) return;
 
   for (const uid of UIDS) {
     const { tableName } = strapi.db.metadata.get(uid);
     for (const column of COLUMNS) {
-      const rows = await rawExecute(
-        strapi,
-        `SELECT NUMERIC_SCALE AS scale FROM information_schema.COLUMNS
-          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`,
-        [tableName, column],
-      );
-      if (!Array.isArray(rows) || !rows.length || Number(rows[0].scale) >= BUDGET_LINE_SCALE) continue;
-      await rawExecute(
-        strapi,
-        `ALTER TABLE \`${tableName}\` MODIFY \`${column}\` DECIMAL(14,${BUDGET_LINE_SCALE}) NULL`,
-        [],
-      );
-      strapi.log.info(`[widenBudgetLineDecimals] ${tableName}.${column} → DECIMAL(14,${BUDGET_LINE_SCALE})`);
+      await widenDecimalColumn(tableName, column, BUDGET_LINE_SCALE, 'widenBudgetLineDecimals');
     }
   }
 }
 
-module.exports = { widenBudgetLineDecimals };
+module.exports = { widenBudgetLineDecimals, widenDecimalColumn, isMysql };
