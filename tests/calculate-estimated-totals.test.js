@@ -123,29 +123,63 @@ describe('planned hours', () => {
     expect(unpriced.total_estimated_hours_price).toBe(0);
   });
 
-  it('takes a total amount as it is, priced at its first day and split evenly by month', async () => {
-    // 1 November 2025 to 1 February 2026: three months, two of them in 2025
-    const hours = { from: '2025-11-01', to: '2026-02-01', quantity: 30, users_permissions_user: USER };
+  it('takes a total amount as it is, priced at its first day and split evenly over its working days', async () => {
+    // Monday 22 December 2025 to Friday 9 January 2026, both included: 15
+    // weekdays, 25 and 26 December and 1 January are festive, so 12 count,
+    // 6 in 2025 and 6 in 2026: 2 h each.
+    const hours = { from: '2025-12-22', to: '2026-01-09', quantity: 24, users_permissions_user: USER };
     const dedications = [
       { users_permissions_user: USER, from: '2025-01-01', to: '2025-12-31', costByHour: 10 },
     ];
-    const result = await calculateEstimatedTotals(project(), phaseWithHours(hours), dedications, [], false);
+    const festives = [{ date: '2025-12-25' }, { date: '2025-12-26' }, { date: '2026-01-01' }];
+    const result = await calculateEstimatedTotals(project(), phaseWithHours(hours), dedications, festives, false);
 
-    expect(result.total_estimated_hours).toBe(30);
-    expect(result.total_estimated_hours_price).toBe(300);
-    expect(result.totalsByDay.map((d) => [d.day.format('YYYY-MM'), d.q])).toEqual([
-      ['2025-11', 10],
-      ['2025-12', 10],
-      ['2026-01', 10],
+    expect(result.total_estimated_hours).toBe(24);
+    expect(result.total_estimated_hours_price).toBe(240);
+    const days = result.totalsByDay.map((d) => d.day.format('YYYY-MM-DD'));
+    expect(days).toEqual([
+      '2025-12-22', '2025-12-23', '2025-12-24', '2025-12-29', '2025-12-30', '2025-12-31',
+      '2026-01-02', '2026-01-05', '2026-01-06', '2026-01-07', '2026-01-08', '2026-01-09',
     ]);
-    expect(byYear(result)['2025']).toMatchObject({
-      total_estimated_hours: 20,
-      total_estimated_hours_price: 200,
-    });
-    expect(byYear(result)['2026']).toMatchObject({
-      total_estimated_hours: 10,
-      total_estimated_hours_price: 100,
-    });
+    expect(result.totalsByDay.every((d) => d.q === 2 && d.costByHour === 10)).toBe(true);
+    expect(byYear(result)['2025']).toMatchObject({ total_estimated_hours: 12, total_estimated_hours_price: 120 });
+    expect(byYear(result)['2026']).toMatchObject({ total_estimated_hours: 12, total_estimated_hours_price: 120 });
+  });
+
+  it('keeps a short total amount in the per-day rows (issues/259)', async () => {
+    // Review 8 (2026-10-20), Arran de Terra «Jordania»: two 56 h «Total» lines
+    // for 10–16 Nov 2025 produced no per-day rows (the range rounded to 0
+    // months), so 112 h and their cost vanished from the stored totals.
+    const hours = { from: '2026-11-09', to: '2026-11-15', quantity: 56, users_permissions_user: USER };
+    const result = await calculateEstimatedTotals(project(), phaseWithHours(hours), DEDICATIONS, [], false);
+
+    expect(result.totalsByDay).toHaveLength(5); // Monday to Friday
+    expect(result.totalsByDay.reduce((sum, d) => sum + d.q, 0)).toBe(56);
+    expect(byYear(result)['2026']).toMatchObject({ total_estimated_hours: 56, total_estimated_hours_price: 1120 });
+  });
+
+  it('keeps a one-day total and a weekend-only total in the per-day rows (issues/259)', async () => {
+    const oneDay = await calculateEstimatedTotals(
+      project(),
+      phaseWithHours({ from: '2026-03-04', to: '2026-03-04', quantity: 6, users_permissions_user: USER }),
+      DEDICATIONS,
+      [],
+      false,
+    );
+    expect(oneDay.totalsByDay.map((d) => [d.day.format('YYYY-MM-DD'), d.q])).toEqual([['2026-03-04', 6]]);
+
+    // Saturday and Sunday: no working day, the calendar days take the hours
+    const weekend = await calculateEstimatedTotals(
+      project(),
+      phaseWithHours({ from: '2026-03-07', to: '2026-03-08', quantity: 6, users_permissions_user: USER }),
+      DEDICATIONS,
+      [],
+      false,
+    );
+    expect(weekend.totalsByDay.map((d) => [d.day.format('YYYY-MM-DD'), d.q])).toEqual([
+      ['2026-03-07', 3],
+      ['2026-03-08', 3],
+    ]);
   });
 
   it('ignores hours without dates or without a person', async () => {

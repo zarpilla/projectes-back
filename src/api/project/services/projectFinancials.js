@@ -354,16 +354,34 @@ const calculateEstimatedTotals = async (
                   hours.total_amount = (hours.quantity ? hours.quantity : 0) * mdiff * costByHour;
                   total_estimated_hours_price += (hours.quantity ? hours.quantity : 0) * mdiff * costByHour;
 
+                  // issues/259: a «Total» amount is spread evenly over the
+                  // working days of its range, from and to included, whatever
+                  // its length (it used to be split by whole months, so a
+                  // range under ~15 days produced no rows and its hours were
+                  // lost from the stored totals). A range with no working day
+                  // falls back to its calendar days, a reversed one to `from`.
                   const fromMoment = getMoment(hours.from);
                   const toMoment = getMoment(hours.to);
-                  mdiff = Math.round(moment.duration(toMoment.diff(fromMoment)).asMonths());
+                  const span = Math.max(0, Math.round(moment.duration(toMoment.diff(fromMoment)).asDays())) + 1;
+                  const allDays = [];
+                  const workingDays = [];
+                  for (let i = 0; i < span; i++) {
+                    const day = fromMoment.clone().add(i, 'days');
+                    allDays.push(day);
+                    const dayStr = getFormattedDate(day, 'YYYY-MM-DD');
+                    const userFestiveKey = `${userId}_${dayStr}`;
+                    const festive = festivesByUserAndDate.has(userFestiveKey)
+                      ? festivesByUserAndDate.get(userFestiveKey)
+                      : (festivesByDate.get(dayStr) || []).find((f) => !f.users_permissions_user);
+                    if (![0, 6].includes(day.day()) && !festive) workingDays.push(day);
+                  }
+                  const days = workingDays.length ? workingDays : allDays;
+                  const q = (hours.quantity ? hours.quantity : 0) / days.length;
 
-                  for (let i = 0; i < mdiff; i++) {
-                    const day = fromMoment.clone().add(i, 'month');
-
+                  for (const day of days) {
                     totalsByDay.push({
                       day: day,
-                      q: hours.quantity / mdiff,
+                      q,
                       costByHour,
                       userId: userId,
                       project: data.id,
@@ -373,11 +391,11 @@ const calculateEstimatedTotals = async (
                     const yearStr = getFormattedDate(day, 'YYYY');
                     rowsByYear.push({
                       year: yearStr,
-                      total_estimated_hours: hours.quantity / mdiff,
+                      total_estimated_hours: q,
                     });
                     rowsByYear.push({
                       year: yearStr,
-                      total_estimated_hours_price: (hours.quantity / mdiff) * costByHour,
+                      total_estimated_hours_price: q * costByHour,
                     });
                   }
                 }

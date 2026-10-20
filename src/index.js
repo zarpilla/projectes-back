@@ -32,6 +32,7 @@ const { repairBudgetLineTotals } = require('./services/repair-budget-line-totals
 const { fillDeliveryPointTradeNames } = require('./services/fill-delivery-point-trade-names');
 const { clearDanglingMotherLinks } = require('./services/clear-dangling-mother-links');
 const { removeUntypedProjectComponentLinks } = require('./services/remove-untyped-project-component-links');
+const { refreshTotalHoursTotals } = require('./services/refresh-total-hours-totals');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
@@ -158,6 +159,8 @@ module.exports = {
       ['clearDanglingMotherLinks', clearDanglingMotherLinks, { runOnce: true }],
       // issues/232: project saves linked the periodification / grant rows again without a component_type.
       ['removeUntypedProjectComponentLinks', removeUntypedProjectComponentLinks, { runOnce: true }],
+      // issues/259: «Total» planned hours under ~15 days were missing from the stored totals.
+      ['refreshTotalHoursTotals', refreshTotalHoursTotals, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
