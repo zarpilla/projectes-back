@@ -33,4 +33,41 @@ async function depositRefusal(orderId, payload) {
   return `La comanda ${id} està ${label}: no es pot canviar la data del dipòsit`;
 }
 
-module.exports = { depositRefusal, NOT_DEPOSITABLE };
+/**
+ * Whether a transfer can be started or ended on an order (issues/222). The
+ * «Transferències» scanner, Operacions and the order screens set
+ * `transfer_start_date` / `transfer_end_date`; a cancelled or invoiced order
+ * is out of the logistics, so the API refuses both moves, and refuses moving
+ * their dates, like the deposit. A delivered order keeps them: a transfer left
+ * open can still be closed. Clearing a move, or saving an order with the dates
+ * it already has, is left alone.
+ */
+const NOT_TRANSFERABLE = {
+  invoiced: 'facturada',
+  cancelled: 'anul·lada',
+};
+
+const TRANSFER_MOVES = {
+  transfer_start_date: 'iniciar la transferència',
+  transfer_end_date: 'finalitzar la transferència',
+};
+
+/** The reason the update can't move the transfer of the order, or null when it can. */
+async function transferRefusal(orderId, payload) {
+  if (!payload || orderId === undefined || orderId === null) return null;
+  const sent = Object.keys(TRANSFER_MOVES).filter((field) => payload[field]);
+  if (!sent.length) return null;
+  const id = Number(orderId);
+  if (!Number.isInteger(id)) return null;
+  const order = await strapi.db
+    .query('api::order.order')
+    .findOne({ where: { id }, select: ['id', 'status', ...Object.keys(TRANSFER_MOVES)] });
+  if (!order) return null;
+  const label = NOT_TRANSFERABLE[order.status];
+  if (!label) return null;
+  const moved = sent.find((field) => !order[field] || !sameInstant(order[field], payload[field]));
+  if (!moved) return null;
+  return `La comanda ${id} està ${label}: no es pot ${TRANSFER_MOVES[moved]}`;
+}
+
+module.exports = { depositRefusal, transferRefusal, NOT_DEPOSITABLE, NOT_TRANSFERABLE };

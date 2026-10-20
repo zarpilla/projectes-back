@@ -34,7 +34,7 @@ const { rawExecute } = require('../../../services/raw-sql');
 const { getMe, frontUrlOf } = require('../../../services/me-settings');
 const { numericId } = require('../../../middlewares/v3-compat');
 const { processIncidences } = require('../services/order-incidences');
-const { depositRefusal } = require('../services/deposit-guard');
+const { depositRefusal, transferRefusal } = require('../services/deposit-guard');
 const { addContactSnapshot } = require('../services/contact-snapshot');
 const changeLog = require('../../../services/change-log');
 const { orderTotals, TOTALS_SELECT } = require('../services/order-totals');
@@ -756,6 +756,9 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     // a delivered, invoiced or cancelled order can't be deposited (issues/149)
     const refusal = await depositRefusal(numericId(ctx), payload);
     if (refusal) return ctx.badRequest(refusal);
+    // nor can a cancelled or invoiced one start or end a transfer (issues/222)
+    const transferRefused = await transferRefusal(numericId(ctx), payload);
+    if (transferRefused) return ctx.badRequest(transferRefused);
 
     // moving the delivery date follows the same rules as a new order (issues/168)
     if (payload.estimated_delivery_date) {
