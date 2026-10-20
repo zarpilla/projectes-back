@@ -11,6 +11,7 @@
 const moment = require('moment');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { monthSalary } = require('../../../services/payroll-salary');
 
 // A relation field may come back as a populated object { id }, a raw id, or null.
 // Normalize to a comparable string.
@@ -39,6 +40,11 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
     const months = await strapi.db.query('api::month.month').findMany({});
     const years = await strapi.db.query('api::year.year').findMany({});
     const users = await strapi.db.query('plugin::users-permissions.user').findMany({});
+    // the holidays split a month where the period changes, as in Bestretes (issues/290)
+    const yearFestives = await strapi.db.query('api::festive.festive').findMany({
+      where: { date: { $gte: `${year}-01-01`, $lte: `${year}-12-31` } },
+      populate: { users_permissions_user: true },
+    });
 
     const userPayrollsInfo = [];
 
@@ -55,6 +61,10 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
         where: { users_permissions_user: user.id },
         populate: { year: true, month: true, users_permissions_user: true },
       });
+
+      const festives = (yearFestives || []).filter(
+        (f) => !f.users_permissions_user || idOf(f.users_permissions_user) === String(user.id),
+      );
 
       if (dedications && dedications.length) {
         for (let m = 1; m <= 12; m++) {
@@ -88,7 +98,12 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
               continue;
             }
 
-            const total = (dedication.hours / 8) * dedication.monthly_salary;
+            // the same amount as Bestretes «Crea»: weekly hours / 40 of each
+            // working day's period salary, so a weekly distribution pays its
+            // share of a full week and a month where the period changes is
+            // split by days (it took the month-end period's hours / 8,
+            // issues/290). Rounded to cents as the front posts it.
+            const total = Number(monthSalary(year, m, dedications, festives).toFixed(2));
 
             const payroll = {
               month: month.id,
