@@ -165,11 +165,12 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       }
     }
 
-    const projectsInFilter = filterProjects(allProjects, {
+    const projectFilters = {
       states: selectedStates,
       types: parseIdList(ctx.query.project_types),
       likelihoods: parseIdList(ctx.query.project_likelihoods),
-    });
+    };
+    const projectsInFilter = filterProjects(allProjects, projectFilters);
     // A trashed project plans nothing: its budget lines are neither expected
     // payments, nor «IVA previst», nor Previsió econòmica (issues/236). The
     // documents already paid or charged on it are real movements and stay.
@@ -180,7 +181,10 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     // A realized document is kept only if at least one of its linked projects
     // (single `.project` or many `.projects`) is in this set. Documents with no
     // project link are kept (they are not project-scoped data).
-    const allowedProjectIds = new Set(projectsInFilter.map((p) => p.id));
+    // Mother projects count here: a document booked directly on a mother is a
+    // real movement, so it belongs in IVA and Tresoreria (issues/268). Only the
+    // PLAN above leaves mothers out («mother = children only», issues/169).
+    const allowedProjectIds = new Set(filterProjects(allProjectsRaw, projectFilters).map((p) => p.id));
     const projectInFilter = (doc) => {
       const ids = [];
       if (doc.project && doc.project.id) ids.push(doc.project.id);
