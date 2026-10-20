@@ -61,10 +61,18 @@ const normalizeOrderDate = (value) => {
   return toQueryDay(value);
 };
 
+// A sibling that is invoiced, delivered or already on an invoice keeps the
+// discount it was charged with: repricing it left the order disagreeing with
+// its invoice line (issues/233). It still counts towards the group. The same
+// holds for the volume discount (issues/286).
+const FROZEN_DISCOUNT_STATUSES = ['invoiced', 'delivered'];
+const repriceable = (orders) =>
+  orders.filter((o) => !FROZEN_DISCOUNT_STATUSES.includes(o.status) && !relationId(o.emitted_invoice));
+
 // --- VOLUME DISCOUNT LOGIC ---
 // checkVolumeDiscount: services/volume-discount.js (the order form previews it, issues/227)
 const updateVolumeDiscountForOrders = async (orders, discount) => {
-  for await (const order of orders) {
+  for await (const order of repriceable(orders)) {
     if (order.volume_discount !== discount) {
       await strapi
         .query('api::order.order')
@@ -101,7 +109,7 @@ const processVolumeDiscountForOtherOrders = async (orderId, currentData, previou
     await updateVolumeDiscountForOrders(others, discount);
   } else if (!eligible && others.length > 0) {
     // Remove discount from others if not eligible
-    for await (const order of others) {
+    for await (const order of repriceable(others)) {
       if (order.volume_discount > 0) {
         await strapi
           .query('api::order.order')
@@ -137,7 +145,7 @@ const processVolumeDiscountForOtherOrders = async (orderId, currentData, previou
             count < prevRoute.volume_discount_number_of_orders
           ) {
             // Remove discount from previous group
-            for await (const order of prevGroup.others) {
+            for await (const order of repriceable(prevGroup.others)) {
               if (order.volume_discount > 0) {
                 await strapi
                   .query('api::order.order')
@@ -1084,13 +1092,6 @@ const syncCollectionPickup = async (collectionOrderId, previousOrder) => {
     });
   }
 };
-
-// A sibling that is invoiced, delivered or already on an invoice keeps the
-// discount it was charged with: repricing it left the order disagreeing with
-// its invoice line (issues/233). It still counts towards the group.
-const FROZEN_DISCOUNT_STATUSES = ['invoiced', 'delivered'];
-const repriceable = (orders) =>
-  orders.filter((o) => !FROZEN_DISCOUNT_STATUSES.includes(o.status) && !relationId(o.emitted_invoice));
 
 const removeMultideliveryDiscountFromOrders = async (orders) => {
   for await (const order of repriceable(orders)) {
