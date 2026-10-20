@@ -964,6 +964,27 @@ const checkAndUpdateCollectionOrderStatus = async (collectionOrderId) => {
 };
 
 /**
+ * The delivery type of a collection order (-R) that matches what it collects
+ * (`refrigerated`: any of its orders is): its own when it matches, else the
+ * newest of its orders' that does, else the first delivery type that does
+ * (issues/292).
+ */
+const collectionDeliveryTypeId = async (collectionOrder, relatedOrders, refrigerated) => {
+  const isCold = (type) => Boolean(type && type.refrigerated);
+  const current = collectionOrder.delivery_type;
+  if (current && typeof current === 'object' && isCold(current) === refrigerated) return current.id;
+  const child = [...relatedOrders]
+    .sort((a, b) => b.id - a.id)
+    .find((o) => o.delivery_type && typeof o.delivery_type === 'object' && isCold(o.delivery_type) === refrigerated);
+  if (child) return child.delivery_type.id;
+  const types = await strapi.db
+    .query('api::delivery-type.delivery-type')
+    .findMany({ select: ['id', 'refrigerated'], orderBy: { id: 'asc' } });
+  const type = (types || []).find((t) => isCold(t) === refrigerated);
+  return type ? type.id : extractId(current);
+};
+
+/**
  * Update collection order with aggregated data from its collection_orders
  */
 const updateCollectionOrderAggregates = async (collectionOrderId) => {
@@ -976,7 +997,7 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   // — which is why these collection orders ended up with price NULL.
   const collectionOrder = await strapi.db.query('api::order.order').findOne({
     where: { id: collectionOrderId },
-    populate: { contact: true, route: true, delivery_type: true },
+    populate: { contact: true, route: true, delivery_type: true, emitted_invoice: { select: ['id'] } },
   });
 
   if (!collectionOrder) {
@@ -1009,6 +1030,7 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   // Get all related orders (exclude cancelled and invoiced orders from aggregation)
   const relatedOrders = await strapi.db.query('api::order.order').findMany({
     where: { collection_order: collectionOrderId, status: { $notIn: CLOSED_STATUSES } },
+    populate: { delivery_type: { select: ['id', 'refrigerated'] } },
   });
 
   // If no related orders and status is pending, deposited, or processed, reset aggregates to 0
@@ -1059,8 +1081,17 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   // Concatenate comments with newlines
   // const concatenatedComments = commentsArray.join('\n');
 
+  // The -R is priced at the rate of what it collects: refrigerated when any
+  // of its orders is. Its delivery type was copied from the newest order
+  // only, so a refrigerated collection got the normal rate and vice versa
+  // (issues/292). One that is delivered or on an invoice keeps its type.
+  let deliveryTypeId = extractId(collectionOrder.delivery_type);
+  if (repriceable([collectionOrder]).length) {
+    deliveryTypeId = await collectionDeliveryTypeId(collectionOrder, relatedOrders, isRefrigerated);
+  }
+
   // Calculate route rate excluding "Pickup" rates
-  const routeRate = await findCollectionOrderRouteRate(collectionOrder);
+  const routeRate = await findCollectionOrderRouteRate({ ...collectionOrder, delivery_type: deliveryTypeId });
 
   // Update collection order with aggregates
   const updateData = {
@@ -1071,6 +1102,10 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
     contact_pickup_discount: updatedPickupDiscount,
     _internal: true,
   };
+
+  if (deliveryTypeId && deliveryTypeId !== extractId(collectionOrder.delivery_type)) {
+    updateData.delivery_type = deliveryTypeId;
+  }
 
   // Only update route_rate if one was found
   if (routeRate) {
