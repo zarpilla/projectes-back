@@ -107,8 +107,13 @@ async function saveOrderOne(data) {
 
 const collectionOf = (id) => ROWS[id].collection_order && ROWS[id].collection_order.id;
 
+// the scenario's dates are in October 2026: run it on 1 October, so the 302
+// check on past pickup dates (issues/302) doesn't refuse the moves
+afterEach(() => jest.useRealTimers());
+
 describe('changing the date of an order collected by a -R (issues/292)', () => {
   beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-01T08:00:00Z'));
     ROWS = {
       1: child(1),
       2: child(2, { kilograms: 4 }),
