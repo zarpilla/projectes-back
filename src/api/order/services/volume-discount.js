@@ -16,6 +16,8 @@ const checkVolumeDiscount = async (id, date, routeId, ownerId, currentStatus) =>
   // Find all orders for the same route, date, and owner (excluding cancelled and this order)
   const ordersOfDateRouteOwner = await strapi.db.query('api::order.order').findMany({
     where: { estimated_delivery_date: toQueryDay(date), route: routeId, owner: ownerId },
+    // whether a sibling is on an invoice: it keeps its discount (issues/286)
+    populate: { emitted_invoice: { select: ['id'] } },
   });
 
   const others = ordersOfDateRouteOwner.filter(

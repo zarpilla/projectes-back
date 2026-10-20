@@ -61,10 +61,18 @@ const normalizeOrderDate = (value) => {
   return toQueryDay(value);
 };
 
+// A sibling that is invoiced, delivered or already on an invoice keeps the
+// discount it was charged with: repricing it left the order disagreeing with
+// its invoice line (issues/233). It still counts towards the group. The same
+// holds for the volume discount (issues/286).
+const FROZEN_DISCOUNT_STATUSES = ['invoiced', 'delivered'];
+const repriceable = (orders) =>
+  orders.filter((o) => !FROZEN_DISCOUNT_STATUSES.includes(o.status) && !relationId(o.emitted_invoice));
+
 // --- VOLUME DISCOUNT LOGIC ---
 // checkVolumeDiscount: services/volume-discount.js (the order form previews it, issues/227)
 const updateVolumeDiscountForOrders = async (orders, discount) => {
-  for await (const order of orders) {
+  for await (const order of repriceable(orders)) {
     if (order.volume_discount !== discount) {
       await strapi
         .query('api::order.order')
@@ -101,7 +109,7 @@ const processVolumeDiscountForOtherOrders = async (orderId, currentData, previou
     await updateVolumeDiscountForOrders(others, discount);
   } else if (!eligible && others.length > 0) {
     // Remove discount from others if not eligible
-    for await (const order of others) {
+    for await (const order of repriceable(others)) {
       if (order.volume_discount > 0) {
         await strapi
           .query('api::order.order')
@@ -137,7 +145,7 @@ const processVolumeDiscountForOtherOrders = async (orderId, currentData, previou
             count < prevRoute.volume_discount_number_of_orders
           ) {
             // Remove discount from previous group
-            for await (const order of prevGroup.others) {
+            for await (const order of repriceable(prevGroup.others)) {
               if (order.volume_discount > 0) {
                 await strapi
                   .query('api::order.order')
@@ -514,6 +522,29 @@ const calculateOrderTransferData = async (orderData) => {
       transfer_route_date: null,
     };
   }
+};
+
+// An order in one of these statuses keeps its transfer fields (issues/296).
+const TRANSFER_FROZEN_STATUSES = ['delivered', 'invoiced', 'cancelled'];
+
+/**
+ * Whether an update really changes what the transfer is computed from: the
+ * pickup, the route, the collection point or the dates. A field sent with
+ * its stored value is no change (issues/296).
+ */
+const transferFieldsChanged = (data, previousOrder) => {
+  const prev = previousOrder || {};
+  const relationChanged = (field) =>
+    data[field] !== undefined && extractId(data[field]) !== extractId(prev[field]);
+  const dayChanged = (field) =>
+    data[field] !== undefined && normalizeOrderDate(data[field]) !== normalizeOrderDate(prev[field]);
+  return (
+    relationChanged('pickup') ||
+    relationChanged('route') ||
+    relationChanged('collection_point') ||
+    dayChanged('estimated_delivery_date') ||
+    dayChanged('collection_pickup_date')
+  );
 };
 
 /**
@@ -933,6 +964,27 @@ const checkAndUpdateCollectionOrderStatus = async (collectionOrderId) => {
 };
 
 /**
+ * The delivery type of a collection order (-R) that matches what it collects
+ * (`refrigerated`: any of its orders is): its own when it matches, else the
+ * newest of its orders' that does, else the first delivery type that does
+ * (issues/292).
+ */
+const collectionDeliveryTypeId = async (collectionOrder, relatedOrders, refrigerated) => {
+  const isCold = (type) => Boolean(type && type.refrigerated);
+  const current = collectionOrder.delivery_type;
+  if (current && typeof current === 'object' && isCold(current) === refrigerated) return current.id;
+  const child = [...relatedOrders]
+    .sort((a, b) => b.id - a.id)
+    .find((o) => o.delivery_type && typeof o.delivery_type === 'object' && isCold(o.delivery_type) === refrigerated);
+  if (child) return child.delivery_type.id;
+  const types = await strapi.db
+    .query('api::delivery-type.delivery-type')
+    .findMany({ select: ['id', 'refrigerated'], orderBy: { id: 'asc' } });
+  const type = (types || []).find((t) => isCold(t) === refrigerated);
+  return type ? type.id : extractId(current);
+};
+
+/**
  * Update collection order with aggregated data from its collection_orders
  */
 const updateCollectionOrderAggregates = async (collectionOrderId) => {
@@ -945,7 +997,7 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   // — which is why these collection orders ended up with price NULL.
   const collectionOrder = await strapi.db.query('api::order.order').findOne({
     where: { id: collectionOrderId },
-    populate: { contact: true, route: true, delivery_type: true },
+    populate: { contact: true, route: true, delivery_type: true, emitted_invoice: { select: ['id'] } },
   });
 
   if (!collectionOrder) {
@@ -978,6 +1030,7 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   // Get all related orders (exclude cancelled and invoiced orders from aggregation)
   const relatedOrders = await strapi.db.query('api::order.order').findMany({
     where: { collection_order: collectionOrderId, status: { $notIn: CLOSED_STATUSES } },
+    populate: { delivery_type: { select: ['id', 'refrigerated'] } },
   });
 
   // If no related orders and status is pending, deposited, or processed, reset aggregates to 0
@@ -1028,8 +1081,17 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   // Concatenate comments with newlines
   // const concatenatedComments = commentsArray.join('\n');
 
+  // The -R is priced at the rate of what it collects: refrigerated when any
+  // of its orders is. Its delivery type was copied from the newest order
+  // only, so a refrigerated collection got the normal rate and vice versa
+  // (issues/292). One that is delivered or on an invoice keeps its type.
+  let deliveryTypeId = extractId(collectionOrder.delivery_type);
+  if (repriceable([collectionOrder]).length) {
+    deliveryTypeId = await collectionDeliveryTypeId(collectionOrder, relatedOrders, isRefrigerated);
+  }
+
   // Calculate route rate excluding "Pickup" rates
-  const routeRate = await findCollectionOrderRouteRate(collectionOrder);
+  const routeRate = await findCollectionOrderRouteRate({ ...collectionOrder, delivery_type: deliveryTypeId });
 
   // Update collection order with aggregates
   const updateData = {
@@ -1040,6 +1102,10 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
     contact_pickup_discount: updatedPickupDiscount,
     _internal: true,
   };
+
+  if (deliveryTypeId && deliveryTypeId !== extractId(collectionOrder.delivery_type)) {
+    updateData.delivery_type = deliveryTypeId;
+  }
 
   // Only update route_rate if one was found
   if (routeRate) {
@@ -1084,13 +1150,6 @@ const syncCollectionPickup = async (collectionOrderId, previousOrder) => {
     });
   }
 };
-
-// A sibling that is invoiced, delivered or already on an invoice keeps the
-// discount it was charged with: repricing it left the order disagreeing with
-// its invoice line (issues/233). It still counts towards the group.
-const FROZEN_DISCOUNT_STATUSES = ['invoiced', 'delivered'];
-const repriceable = (orders) =>
-  orders.filter((o) => !FROZEN_DISCOUNT_STATUSES.includes(o.status) && !relationId(o.emitted_invoice));
 
 const removeMultideliveryDiscountFromOrders = async (orders) => {
   for await (const order of repriceable(orders)) {
@@ -1294,6 +1353,23 @@ const processMultideliveryDiscountForOtherOrders = async (orderId, currentData, 
 };
 
 /**
+ * An order that is and stays invoiced keeps the price it was invoiced with:
+ * a price sent with it is dropped, not refused, since the order form and the
+ * list's quick edit send the price with every save (issues/287). Taking the
+ * order out of «Facturada» in the same save lets the price through.
+ */
+const keepInvoicedPrice = (data, previousOrder) => {
+  if (!previousOrder || previousOrder.status !== 'invoiced') return;
+  if (data.status !== undefined && data.status !== 'invoiced') return;
+  if (!('price' in data)) return;
+  const sent = data.price === null || data.price === undefined || data.price === '' ? null : Number(data.price);
+  const kept = previousOrder.price === null || previousOrder.price === undefined ? null : Number(previousOrder.price);
+  if (sent === kept) return;
+  strapi.log.warn(`order ${previousOrder.id}: invoiced, price ${kept} kept (sent ${data.price})`);
+  delete data.price;
+};
+
+/**
  * Read the documentation (https://strapi.io/documentation/developer-docs/latest/concepts/models.html#lifecycle-hooks)
  * to customize this model
  */
@@ -1341,6 +1417,8 @@ module.exports = {
     // Store previous order data for afterUpdate
     event.state.previousOrderData = previousOrder;
 
+    keepInvoicedPrice(data, previousOrder);
+
     await enforceCollectionOrderFields(data, previousOrder);
 
     if (data.status === 'delivered' && !data.delivery_date) {
@@ -1380,13 +1458,17 @@ module.exports = {
     };
 
     // Calculate and set transfer route data for normal orders if relevant fields changed
-    // Skip if user has manually set the transfer route (manual_transfer_route flag)
-    if (!data.is_collection_order && !previousOrder.is_collection_order) {
-      const relevantFieldsChanged =
-        data.pickup !== undefined ||
-        data.route !== undefined ||
-        data.estimated_delivery_date !== undefined ||
-        data.collection_pickup_date !== undefined;
+    // Skip if user has manually set the transfer route (manual_transfer_route flag).
+    // The form sends pickup, route and date on every save, so "sent" is not
+    // "changed": a save without changes turned old orders into transfers
+    // dated in the past. A delivered, invoiced or cancelled order is past its
+    // transfer and is never recomputed (issues/296).
+    if (
+      !data.is_collection_order &&
+      !previousOrder.is_collection_order &&
+      !TRANSFER_FROZEN_STATUSES.includes(mergedData.status)
+    ) {
+      const relevantFieldsChanged = transferFieldsChanged(data, previousOrder);
 
       const isManuallySet =
         data.manual_transfer_route === true || previousOrder.manual_transfer_route === true;
@@ -1397,8 +1479,9 @@ module.exports = {
         Object.assign(data, transferData);
       }
 
-      // If manual flag is explicitly set to false, allow recalculation
-      if (data.manual_transfer_route === false) {
+      // If the manual flag is switched off, allow recalculation (the form
+      // always sends it false)
+      if (data.manual_transfer_route === false && previousOrder.manual_transfer_route === true) {
         const transferData = await calculateOrderTransferData(mergedData);
         Object.assign(data, transferData);
       }
