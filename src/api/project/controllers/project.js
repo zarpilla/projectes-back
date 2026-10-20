@@ -1591,9 +1591,12 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     // End before start is refused; a request with one of the dates is checked
     // against the stored other one (issues/212)
     if (touchesDates(data)) {
+      // `id` is the documentId when the v3 middleware did not rewrite the
+      // request (PUT /api/projects/<documentId>), so look it up by either
+      const where = /^\d+$/.test(String(id)) ? { id: Number(id) } : { documentId: id };
       const stored = 'date_start' in data && 'date_end' in data
         ? {}
-        : await strapi.db.query('api::project.project').findOne({ where: { id }, select: ['date_start', 'date_end'] });
+        : await strapi.db.query('api::project.project').findOne({ where, select: ['date_start', 'date_end'] });
       const datesError = projectDatesError(data, stored);
       if (datesError) return ctx.badRequest(datesError);
     }
