@@ -193,3 +193,34 @@ describe('a -R is not edited by hand (issues/292)', () => {
     expect(event.params.data).toMatchObject({ kilograms: 12, price: 9 });
   });
 });
+
+// issues/303 (the user's decision, 2026-10-20): a -R that is processed, in
+// last mile or delivered has been picked up already. Any -R not cancelled or
+// invoiced took new orders, so an order could land in a pickup already done;
+// now only a pending -R takes them, and a new one is created otherwise.
+describe('a -R past pending takes no new orders (issues/303)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-01T08:00:00Z'));
+    ROWS = {
+      1: child(1),
+      2: child(2, { kilograms: 4 }),
+      10: collection(10, '2026-10-06', { kilograms: 14 }),
+    };
+  });
+
+  it.each(['processed', 'lastmile', 'delivered'])('a %s -R of the new day gets a new pending -R next to it', async (status) => {
+    ROWS[20] = collection(20, '2026-10-13', { status, kilograms: 6, units: 1 });
+    ROWS[3] = child(3, { status: 'delivered', collection_order: { id: 20 }, collection_pickup_date: '2026-10-13', kilograms: 6 });
+    await saveOrderOne({ collection_pickup_date: '2026-10-13' });
+    const moved = collectionOf(1);
+    expect([10, 20]).not.toContain(moved);
+    expect(ROWS[moved]).toMatchObject({ is_collection_order: true, status: 'pending', collection_pickup_date: '2026-10-13' });
+    expect(ROWS[20]).toMatchObject({ status, kilograms: 6, units: 1 });
+  });
+
+  it('an order in a -R that moved on stays in it when saved without moving', async () => {
+    ROWS[10].status = 'processed';
+    await saveOrderOne({ units: 1 });
+    expect(collectionOf(1)).toBe(10);
+  });
+});

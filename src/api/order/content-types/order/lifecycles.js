@@ -770,9 +770,10 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
     estimated_delivery_date: estimatedDeliveryDate,
   };
 
-  // Search for existing collection orders with any status EXCEPT cancelled and invoiced
-  // Collection orders in delivered/lastmile/processed/pending status should all be reusable
-  // Only cancelled and invoiced orders are truly "closed" and shouldn't be reused
+  // Only a pending collection order takes new orders: a processed, lastmile or
+  // delivered one has been picked up already, and the order got into a pickup
+  // already done (issues/303). An order already in one stays there unless its
+  // point, route or day changes (the early return above).
   // v3 flat operators (`status_nin`) and query params (`_sort`) are not
   // understood by v5's db.query: they were passed through verbatim as column
   // names, so this threw "Unknown column 't0.status_nin' in 'where clause'" and
@@ -783,7 +784,7 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
       owner: ownerId,
       contact: collectionPointId,
       route: route.id,
-      status: { $notIn: CLOSED_STATUSES },
+      status: 'pending',
     },
     // The filter below compares `collection_pickup_route` / `route` ids off
     // these rows. v3 returned them as FK columns; unpopulated in v5 they are
