@@ -719,6 +719,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * pending (the user's decision, 2026-10-19, issues/186).
    */
   async create(ctx) {
+    // a request without body is refused below, not a 500 (issues/210)
+    if (!ctx.request.body || typeof ctx.request.body !== 'object') ctx.request.body = {};
     if (!ctx.request.body._tracking_user && ctx.state.user) {
       ctx.request.body._tracking_user = ctx.state.user;
     }

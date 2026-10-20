@@ -77,6 +77,16 @@ describe('order create (issues/210)', () => {
     expect(base.create).not.toHaveBeenCalled();
   });
 
+  // verification of 210 (2026-10-20): a POST with no body at all answered 500
+  // (`_tracking_user` of undefined)
+  it('refuses a request without body', async () => {
+    const { ctrl, base } = load();
+    const ctx = ctxFor(undefined);
+    await ctrl.create(ctx);
+    expect(ctx.badRequest).toHaveBeenCalledWith(expect.stringMatching(/falta la ruta/));
+    expect(base.create).not.toHaveBeenCalled();
+  });
+
   it('creates what the order form sends', async () => {
     const { ctrl, base } = load();
     const ctx = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: `${DAY}T22:00:00.000Z` } });
