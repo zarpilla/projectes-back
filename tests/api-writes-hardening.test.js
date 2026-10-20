@@ -265,7 +265,7 @@ describe('delivery date rules (issues/168)', () => {
 
   it('refuses tomorrow past the cutoff in the body the front sends', async () => {
     const { ctrl, base } = load();
-    const ctx = ctxFor({ data: { estimated_delivery_date: '2026-10-19' } });
+    const ctx = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-19' } });
     await ctrl.create(ctx);
     expect(ctx.badRequest).toHaveBeenCalledWith(expect.stringMatching(/hora límit \(13h\)/));
     expect(base.create).not.toHaveBeenCalled();
@@ -273,20 +273,20 @@ describe('delivery date rules (issues/168)', () => {
 
   it.each([['2026-10-18'], ['2026-10-01']])('refuses delivering on %s', async (date) => {
     const { ctrl } = load();
-    const ctx = ctxFor({ data: { estimated_delivery_date: date } });
+    const ctx = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: date } });
     await ctrl.create(ctx);
     expect(ctx.badRequest).toHaveBeenCalledWith(expect.stringMatching(/a partir de demà/));
   });
 
   it('lets the office do it', async () => {
     const { ctrl, base } = load({ permissions: ['orders_admin'] });
-    await ctrl.create(ctxFor({ data: { estimated_delivery_date: '2026-10-19' } }));
+    await ctrl.create(ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-19' } }));
     expect(base.create).toHaveBeenCalled();
   });
 
   it('creates an order without state as pending', async () => {
     const { ctrl } = load();
-    const ctx = ctxFor({ data: { estimated_delivery_date: '2026-10-21' } });
+    const ctx = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-21' } });
     await ctrl.create(ctx);
     expect(ctx.request.body.data.status).toBe('pending');
   });
@@ -294,7 +294,7 @@ describe('delivery date rules (issues/168)', () => {
   // the user's decision (2026-10-19, issues/186): every order is created pending
   it('creates every order as pending, whatever state it is sent with', async () => {
     const { ctrl } = load({ permissions: ['orders_admin'] });
-    const ctx = ctxFor({ data: { estimated_delivery_date: '2026-10-21', status: 'delivered' } });
+    const ctx = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-21', status: 'delivered' } });
     await ctrl.create(ctx);
     expect(ctx.request.body.data.status).toBe('pending');
   });
@@ -305,7 +305,7 @@ describe('delivery date rules (issues/168)', () => {
     const { ctrl } = load({ permissions: ['orders_admin'] });
     const create = jest.fn(async () => ({ id: 9 }));
     global.strapi.service = () => ({ create });
-    const ctx = ctxFor({ owner: { id: 100 }, contact: { name: 'Nou punt' } });
+    const ctx = ctxFor({ route: { id: 3 }, owner: { id: 100 }, contact: { name: 'Nou punt' }, estimated_delivery_date: '2026-10-21' });
     await ctrl.createCSV(ctx);
     expect(create.mock.calls[0][0].data).toMatchObject({
       name: 'Nou punt',
@@ -316,12 +316,12 @@ describe('delivery date rules (issues/168)', () => {
 
   it('refuses moving an order to tomorrow past the cutoff, not saving it with its date', async () => {
     const moved = load({ stored: { id: 1, estimated_delivery_date: '2026-10-22' } });
-    const ctx = ctxFor({ data: { estimated_delivery_date: '2026-10-19' } }, { state: { v3: { numericId: 1 } } });
+    const ctx = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-19' } }, { state: { v3: { numericId: 1 } } });
     await moved.ctrl.update(ctx);
     expect(ctx.badRequest).toHaveBeenCalledWith(expect.stringMatching(/No es pot moure la comanda/));
 
     const same = load({ stored: { id: 1, estimated_delivery_date: '2026-10-19' } });
-    const keep = ctxFor({ data: { estimated_delivery_date: '2026-10-19', units: 2 } }, { state: { v3: { numericId: 1 } } });
+    const keep = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-19', units: 2 } }, { state: { v3: { numericId: 1 } } });
     await same.ctrl.update(keep);
     expect(keep.badRequest).not.toHaveBeenCalled();
     expect(same.base.update).toHaveBeenCalled();
@@ -329,7 +329,7 @@ describe('delivery date rules (issues/168)', () => {
 
   it('applies to the CSV import', async () => {
     const { ctrl } = load();
-    const ctx = ctxFor({ estimated_delivery_date: '2026-10-19' });
+    const ctx = ctxFor({ route: { id: 3 }, contact: { id: 4 }, estimated_delivery_date: '2026-10-19' });
     await ctrl.createCSV(ctx);
     expect(ctx.badRequest).toHaveBeenCalledWith(expect.stringMatching(/hora límit/));
   });

@@ -105,12 +105,74 @@ async function deliveryDateRefusal(date, user) {
   return null;
 }
 
+// A relation the request names: an id, a documentId, an `{ id }` /
+// `{ documentId }` object or a non-empty `connect` / `set`.
+function relationGiven(value) {
+  if (value === null || value === undefined || value === '') return false;
+  if (Array.isArray(value)) return value.some(relationGiven);
+  if (typeof value === 'object') {
+    if ('connect' in value || 'set' in value) return relationGiven(value.connect ?? value.set);
+    return relationGiven(value.id) || relationGiven(value.documentId);
+  }
+  return true;
+}
+
+/**
+ * Why a new order can't be created, or null: it needs a route, a delivery
+ * point and an estimated delivery date. `POST /orders {"data":{}}` and
+ * `POST /orders/csv {}` created empty pending orders, which showed in the
+ * office's Pendents and skipped the cutoff (issues/210). `contactGiven` lets
+ * the CSV import pass a new delivery point by its data.
+ */
+function missingOrderFields(order, { contactGiven } = {}) {
+  if (!relationGiven(order.route)) return "No es pot crear la comanda: falta la ruta.";
+  if (!(contactGiven ?? relationGiven(order.contact))) return "No es pot crear la comanda: falta el punt d'entrega.";
+  const date = order.estimated_delivery_date;
+  if (!date || !moment(date).isValid()) return "No es pot crear la comanda: falta la data prevista d'entrega.";
+  return null;
+}
+
+// A non-empty array of order ids, or null (issues/210).
+function orderIdsOf(body) {
+  const ids = body && body.orders;
+  return Array.isArray(ids) && ids.length > 0 && ids.every((id) => id !== null && id !== undefined && id !== '')
+    ? ids
+    : null;
+}
+
+// finalPrice in SQL, the same formula as orderDiscountedPrice (services/final-price.js)
+const FINAL_PRICE_SQL =
+  'CAST(ROUND((COALESCE(price, 0) - COALESCE(volume_discount, 0)) * ' +
+  '(1 - (COALESCE(multidelivery_discount, 0) + COALESCE(contact_pickup_discount, 0)) / 100), 2) AS DECIMAL(14, 2))';
+
+/**
+ * `_where[final_price_contains]`: the orders list's Preu column filter, on the
+ * price the column shows (after discounts), with a decimal comma or point.
+ * It filtered `price_contains`, the rate's price before discounts, and a
+ * comma matched nothing (issues/276). finalPrice is not stored, so the
+ * matching ids are found in SQL and the filter becomes `id_in`.
+ */
+async function adaptFinalPriceFilter(query) {
+  const where = query && query._where;
+  if (!where || typeof where !== 'object' || !('final_price_contains' in where)) return;
+  let typed = String(where.final_price_contains ?? '').replace(/\s|€/g, '');
+  // «1.234,56»: the points group thousands when there is a comma
+  if (typed.includes(',')) typed = typed.replace(/\./g, '').replace(',', '.');
+  delete where.final_price_contains;
+  if (!typed) return;
+  const pattern = `%${typed.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const rows = await strapi.db.connection('orders').select('id').whereRaw(`${FINAL_PRICE_SQL} LIKE ?`, [pattern]);
+  // no match: an id no order has, so the list comes back empty
+  where.id_in = rows.length ? rows.map((r) => r.id) : [0];
+}
+
 module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   /**
    * find override — ports the v3 afterFind hook (removed in v5): computes the
    * finalPrice field on every order (multidelivery + pickup discounts, volume).
    */
   async find(ctx) {
+    await adaptFinalPriceFilter(ctx.query);
     adaptCtxQuery(ctx);
     const response = await super.find(ctx);
     const rows = response?.data;
@@ -138,6 +200,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * Lightweight list with restricted populate (drops emitted_invoice).
    */
   async table(ctx) {
+    await adaptFinalPriceFilter(ctx.query);
     const opts = adaptQuery(ctx.query);
     const entities = await strapi.db.query('api::order.order').findMany({
       where: opts.filters || {},
@@ -163,6 +226,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * order matching the same filters as /orders/table, not one page (issues/177).
    */
   async totals(ctx) {
+    await adaptFinalPriceFilter(ctx.query);
     const opts = adaptQuery(ctx.query);
     const rows = await strapi.db.query('api::order.order').findMany({
       where: opts.filters || {},
@@ -263,6 +327,18 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * Bulk order creation from CSV import with contact resolution.
    */
   async createCSV(ctx) {
+    const body = ctx.request.body && typeof ctx.request.body === 'object' ? ctx.request.body : {};
+    const csvContact = body.contact;
+    const missing = missingOrderFields(body, {
+      contactGiven:
+        relationGiven(csvContact) ||
+        Boolean(
+          csvContact &&
+          typeof csvContact === 'object' &&
+          String(csvContact.trade_name || csvContact.name || '').trim(),
+        ),
+    });
+    if (missing) return ctx.badRequest(missing);
     const refusal = await deliveryDateRefusal(ctx.request.body?.estimated_delivery_date, ctx.state.user);
     if (refusal) return ctx.badRequest(refusal);
     const order = { ...ctx.request.body };
@@ -334,6 +410,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * are already invoiced.
    */
   async invoice(ctx) {
+    if (!orderIdsOf(ctx.request.body)) return ctx.badRequest('Cal indicar les comandes a facturar.');
     if (invoiceRunInFlight) {
       return ctx.send(
         {
@@ -356,7 +433,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * Generates a merged PDF of multiple order documents (QR codes, logos, box labels).
    */
   async pdfmultiple(ctx) {
-    const { orders: orderIds } = ctx.request.body;
+    const orderIds = orderIdsOf(ctx.request.body);
+    if (!orderIds) return ctx.badRequest('Cal indicar les comandes.');
     const ordersEntities = await strapi.db.query('api::order.order').findMany({
       where: { id: { $in: orderIds } },
       // lines (component) and the transfer pickups feed the box labels and the
@@ -539,7 +617,10 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * previews it, issues/227); absent when the lifecycle keeps the stored one.
    */
   async checkMultidelivery(ctx) {
-    const { id, date, contactId, ownerId, routeId, status } = ctx.request.body;
+    const { id, date, contactId, ownerId, routeId, status } = ctx.request.body || {};
+    if (!date || !moment(date).isValid() || !relationGiven(contactId)) {
+      return ctx.badRequest("Cal indicar el punt d'entrega i la data.");
+    }
     const owner = await strapi.db.query('plugin::users-permissions.user').findOne({ where: { id: ownerId } });
     const ownerFactor = owner?.multidelivery_discount === false ? 0 : 1;
     const me = await getMe();
@@ -642,6 +723,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       ctx.request.body._tracking_user = ctx.state.user;
     }
     const payload = orderPayloadOf(ctx.request.body);
+    const missing = missingOrderFields(payload);
+    if (missing) return ctx.badRequest(missing);
     const refusal = await deliveryDateRefusal(payload.estimated_delivery_date, ctx.state.user);
     if (refusal) return ctx.badRequest(refusal);
     payload.status = 'pending';
