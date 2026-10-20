@@ -140,12 +140,39 @@ function orderIdsOf(body) {
     : null;
 }
 
+// finalPrice in SQL, the same formula as orderDiscountedPrice (services/final-price.js)
+const FINAL_PRICE_SQL =
+  'CAST(ROUND((COALESCE(price, 0) - COALESCE(volume_discount, 0)) * ' +
+  '(1 - (COALESCE(multidelivery_discount, 0) + COALESCE(contact_pickup_discount, 0)) / 100), 2) AS DECIMAL(14, 2))';
+
+/**
+ * `_where[final_price_contains]`: the orders list's Preu column filter, on the
+ * price the column shows (after discounts), with a decimal comma or point.
+ * It filtered `price_contains`, the rate's price before discounts, and a
+ * comma matched nothing (issues/276). finalPrice is not stored, so the
+ * matching ids are found in SQL and the filter becomes `id_in`.
+ */
+async function adaptFinalPriceFilter(query) {
+  const where = query && query._where;
+  if (!where || typeof where !== 'object' || !('final_price_contains' in where)) return;
+  let typed = String(where.final_price_contains ?? '').replace(/\s|€/g, '');
+  // «1.234,56»: the points group thousands when there is a comma
+  if (typed.includes(',')) typed = typed.replace(/\./g, '').replace(',', '.');
+  delete where.final_price_contains;
+  if (!typed) return;
+  const pattern = `%${typed.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const rows = await strapi.db.connection('orders').select('id').whereRaw(`${FINAL_PRICE_SQL} LIKE ?`, [pattern]);
+  // no match: an id no order has, so the list comes back empty
+  where.id_in = rows.length ? rows.map((r) => r.id) : [0];
+}
+
 module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   /**
    * find override — ports the v3 afterFind hook (removed in v5): computes the
    * finalPrice field on every order (multidelivery + pickup discounts, volume).
    */
   async find(ctx) {
+    await adaptFinalPriceFilter(ctx.query);
     adaptCtxQuery(ctx);
     const response = await super.find(ctx);
     const rows = response?.data;
@@ -173,6 +200,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * Lightweight list with restricted populate (drops emitted_invoice).
    */
   async table(ctx) {
+    await adaptFinalPriceFilter(ctx.query);
     const opts = adaptQuery(ctx.query);
     const entities = await strapi.db.query('api::order.order').findMany({
       where: opts.filters || {},
@@ -198,6 +226,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
    * order matching the same filters as /orders/table, not one page (issues/177).
    */
   async totals(ctx) {
+    await adaptFinalPriceFilter(ctx.query);
     const opts = adaptQuery(ctx.query);
     const rows = await strapi.db.query('api::order.order').findMany({
       where: opts.filters || {},
