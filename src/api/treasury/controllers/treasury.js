@@ -788,7 +788,10 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           total_amount: -1 * e.total_irpf,
           date: moment(e.emitted, 'YYYY-MM-DD').endOf('quarter').add(20, 'day'),
           date_error: e.emitted === null,
-          paid: false,
+          // Executed once its date has passed, as for received invoices (issues/242).
+          paid:
+            moment(e.emitted, 'YYYY-MM-DD').endOf('quarter').add(20, 'day').format('YYYY-MM-DD') <
+            moment().format('YYYY-MM-DD'),
           contact: e.contact && e.contact.name ? e.contact.name : '-',
           to: `/document/${e.id}/received-expenses`,
           bank_account: me.bank_account_irpf && me.bank_account_irpf.name ? me.bank_account_irpf.name : null,
