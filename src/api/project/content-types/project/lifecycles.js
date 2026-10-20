@@ -99,11 +99,27 @@ module.exports = {
     // `{ id, __pivot }` references: merged as-is they replaced the loaded rows
     // and the financials read `pp.year` off a reference — a 500 on every save
     // with a periodification. Merge their stored values instead.
+    // The references themselves stay in the update: the db layer links the
+    // components through their `__pivot` (field + component_type).
+    const componentFields = Object.entries(strapi.contentType('api::project.project').attributes)
+      .filter(([, attribute]) => attribute.type === 'component')
+      .map(([field]) => field);
+    const componentRefs = Object.fromEntries(
+      componentFields.filter((field) => field in data).map((field) => [field, data[field]]),
+    );
     await resolveComponentRefs('api::project.project', dataToMerge);
     Object.assign(fullProject, dataToMerge);
 
     const calculatedData = await strapi.controller('api::project.project').calculateProject(fullProject, id);
     Object.assign(data, calculatedData);
+    // The assign above also put the resolved rows back in place of the
+    // references: linked without a `__pivot`, every save added an untyped copy
+    // of each periodification / grant row, and the API returned each one once
+    // more per save (issues/232).
+    for (const field of componentFields) {
+      if (field in componentRefs) data[field] = componentRefs[field];
+      else delete data[field];
+    }
     // calculatedData IS the loaded project, so the assign above also copied the
     // graph it was loaded with — every activity and phase, fully populated — into
     // the update. The db layer then "set" those relations again: a deep-equal

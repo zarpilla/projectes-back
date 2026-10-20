@@ -84,7 +84,7 @@ describe('trashed children of a mother project (issues/135)', () => {
     const data = rows();
     jest.doMock('../src/services/component-refs', () => ({ resolveComponentRefs: jest.fn() }));
     const { db } = fakeDb(data);
-    global.strapi = { db, controller: () => ({ calculateProject: async () => ({}) }) };
+    global.strapi = { db, contentType: () => ({ attributes: {} }), controller: () => ({ calculateProject: async () => ({}) }) };
     const lifecycles = require('../src/api/project/content-types/project/lifecycles');
 
     const event = { params: { where: { id: 2 }, data: { trashed: true } }, state: {} };

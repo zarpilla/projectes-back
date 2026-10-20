@@ -31,6 +31,7 @@ const { widenBudgetLineDecimals } = require('./services/widen-budget-line-decima
 const { repairBudgetLineTotals } = require('./services/repair-budget-line-totals');
 const { fillDeliveryPointTradeNames } = require('./services/fill-delivery-point-trade-names');
 const { clearDanglingMotherLinks } = require('./services/clear-dangling-mother-links');
+const { removeUntypedProjectComponentLinks } = require('./services/remove-untyped-project-component-links');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
@@ -155,6 +156,8 @@ module.exports = {
       ['fillDeliveryPointTradeNames', fillDeliveryPointTradeNames, { runOnce: true }],
       // issues/206: projects migrated from v3 pointing at a deleted mother.
       ['clearDanglingMotherLinks', clearDanglingMotherLinks, { runOnce: true }],
+      // issues/232: project saves linked the periodification / grant rows again without a component_type.
+      ['removeUntypedProjectComponentLinks', removeUntypedProjectComponentLinks, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
