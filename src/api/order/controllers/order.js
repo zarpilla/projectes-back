@@ -45,7 +45,9 @@ const { currentOrderVolumeDiscount } = require('../services/volume-discount');
 // order picked up at a farm through a collection point looked like a farm
 // pickup without one and got no rate (issues/151)
 const TABLE_POPULATE = ['route', 'owner', 'contact', 'pickup', 'delivery_type', 'contact_legal_form', 'route_rate'];
-const TABLE_POPULATE_SELECT = { collection_point: { select: ['id'] } };
+// emitted_invoice by id only: the quick edit doesn't reprice an order still on
+// an invoice (issues/287)
+const TABLE_POPULATE_SELECT = { collection_point: { select: ['id'] }, emitted_invoice: { select: ['id'] } };
 
 // The permissions that skip the delivery date rules: the logistics office and
 // the entity's staff.

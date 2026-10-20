@@ -89,6 +89,16 @@ describe('orders/table gives what the quick edit needs to pick a rate (issues/15
     expect(table).toMatch(/collection_point/);
     expect(table).toMatch(/route_rate/);
   });
+
+  // issues/287: an order still on an invoice is not repriced by the quick edit
+  it("gives the invoice an order is on, by id only", () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'api', 'order', 'controllers', 'order.js'),
+      'utf8',
+    );
+    const table = src.slice(src.indexOf('const TABLE_POPULATE'), src.indexOf('const DATE_RULES_EXEMPT'));
+    expect(table).toMatch(/emitted_invoice: \{ select: \['id'\] \}/);
+  });
 });
 
 describe('repairCollectionOrderRates (issues/151)', () => {
