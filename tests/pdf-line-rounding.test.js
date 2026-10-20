@@ -13,7 +13,15 @@
 const path = require('path');
 const { computeLineTotals } = require('../src/services/document-lifecycle');
 
-const CONTROLLER = path.join(__dirname, '..', 'src', 'api', 'emitted-invoice', 'controllers', 'emitted-invoice.js');
+const CONTROLLER = path.join(
+  __dirname,
+  '..',
+  'src',
+  'api',
+  'emitted-invoice',
+  'controllers',
+  'emitted-invoice.js',
+);
 
 async function render(invoice) {
   let options;
@@ -22,7 +30,8 @@ async function render(invoice) {
     jest.fn().mockImplementation((o) => {
       options = o;
       return { options: o, generate: jest.fn() };
-    }));
+    }),
+  );
   jest.doMock('../src/services/me-settings', () => ({ getMe: async () => ({ name: 'Coop' }) }));
   const ct = { uid: 'api::emitted-invoice.emitted-invoice', attributes: {} };
   global.strapi = {
@@ -83,7 +92,7 @@ describe('PDF line amounts (issues/243)', () => {
     const discount = totalOf(data, 'Descompte');
 
     expect(Math.round((without - discount) * 100) / 100).toBe(totalOf(data, 'Base imposable'));
-    expect(cells(data, 'Descompte')[0]).toBe('27,09 EUR (12,5%)') // 216,67 − 189,58;
+    expect(cells(data, 'Descompte')[0]).toBe('27,09 EUR (12,5%)'); // 216,67 − 189,58;
   });
 
   it('prints quantities and percentages with a decimal comma', async () => {
