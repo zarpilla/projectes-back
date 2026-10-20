@@ -30,7 +30,7 @@ const project = () => ({
     { from: '2026-02-02', to: '2026-04-01', quantity: 40, quantity_type: 'month', users_permissions_user: USER },
     // 10 h a week over two weeks across the end of March
     { from: '2026-03-23', to: '2026-04-06', quantity: 10, quantity_type: 'week', users_permissions_user: OTHER },
-    // 30 h in total, spread over three months
+    // 30 h in total, spread over the working days of May to July (issues/259)
     { from: '2026-05-01', to: '2026-08-01', quantity: 30, users_permissions_user: USER },
     // no person: the stored total leaves it out
     { from: '2026-02-02', to: '2026-04-01', quantity: 99, quantity_type: 'month' },
@@ -85,7 +85,8 @@ describe('planned hours by person and month (issues/067)', () => {
     // 10 h a week: 7 working days in March, 3 in April (Monday 6 is not counted)
     expect(planned.find((r) => r.month === '03' && r.user === 8).estimated_hours).toBe(14);
     expect(planned.find((r) => r.month === '04' && r.user === 8).estimated_hours).toBe(6);
-    expect(planned.find((r) => r.month === '06').estimated_hours).toBe(10);
+    // June has 22 of the 66 working days from 1 May to 1 August
+    expect(planned.find((r) => r.month === '06').estimated_hours).toBeCloseTo(10, 9);
   });
 
   it('count the planned hours up to today', async () => {
