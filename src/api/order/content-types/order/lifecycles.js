@@ -772,7 +772,7 @@ const processCollectionOrder = async (orderId, orderData, previousOrderData = nu
 
   // Only a pending collection order takes new orders: a processed, lastmile or
   // delivered one has been picked up already, and the order got into a pickup
-  // already done (issues/304). An order already in one stays there unless its
+  // already done (issues/303). An order already in one stays there unless its
   // point, route or day changes (the early return above).
   // v3 flat operators (`status_nin`) and query params (`_sort`) are not
   // understood by v5's db.query: they were passed through verbatim as column
