@@ -56,7 +56,7 @@ const getValidationKey = (entityType, entityId, subType = null) => {
 };
 
 // running balances per account and in total
-const { walkBalances, sortRows } = require('../services/balances');
+const { walkBalances, sortRows, round2 } = require('../services/balances');
 const { treasuryDisplayDate } = require('../services/display-date');
 
 module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => ({
@@ -249,7 +249,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             // totals (issues/143)
             const vat_pct = lineVatPct(e, e.expense_type);
             const lineVat = ((e.total_amount || 0) * vat_pct) / 100;
-            const totalWithVat = (e.total_amount || 0) + lineVat;
+            // to cents: the export showed 8535.6062 / −990.1320000000001 (issues/277)
+            const totalWithVat = round2((e.total_amount || 0) + lineVat);
 
             const expense = {
               expenseId: e.id,
@@ -336,7 +337,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             // totals (issues/143)
             const vat_pct = lineVatPct(i, i.income_type);
             const lineVat = ((i.total_amount || 0) * vat_pct) / 100;
-            const totalWithVat = (i.total_amount || 0) + lineVat;
+            // to cents: the export showed 8535.6062 / −990.1320000000001 (issues/277)
+            const totalWithVat = round2((i.total_amount || 0) + lineVat);
 
             const income = {
               incomeId: i.id,
