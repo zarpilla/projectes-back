@@ -30,6 +30,9 @@ const { getMe } = require('../../../../services/me-settings');
 // final. Named once so the four call sites cannot drift apart.
 const CLOSED_STATUSES = ['cancelled', 'invoiced'];
 
+// The statuses of an order that is not delivered yet (issues/266).
+const PRE_DELIVERY_STATUSES = ['pending', 'deposited', 'processed', 'distributing', 'lastmile'];
+
 const extractId = (value) => {
   if (value === null || value === undefined) {
     return null;
@@ -1047,6 +1050,41 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
   await strapi.db.query('api::order.order').update({ where: { id: collectionOrderId }, data: updateData });
 };
 
+const sameInstant = (a, b) => (a ? new Date(a).getTime() : null) === (b ? new Date(b).getTime() : null);
+
+/**
+ * The farm pickup of a collection order (-R) is the pickup of the orders it
+ * collects: when the driver marks it collected, moves it or undoes it, its
+ * open orders follow, so they no longer wait for a «Recollir» of their own
+ * (issues/267). An order with a pickup of its own (not the previous one of
+ * the collection order) keeps it.
+ */
+const syncCollectionPickup = async (collectionOrderId, previousOrder) => {
+  if (!previousOrder) return;
+  const collectionOrder = await strapi.db
+    .query('api::order.order')
+    .findOne({ where: { id: collectionOrderId }, populate: { pickup_user: true } });
+  if (!collectionOrder || !collectionOrder.is_collection_order) return;
+  const before = previousOrder.pickup_date || null;
+  const now = collectionOrder.pickup_date || null;
+  if (sameInstant(before, now)) return;
+  const children = await strapi.db.query('api::order.order').findMany({
+    where: { collection_order: collectionOrderId, status: { $notIn: CLOSED_STATUSES } },
+  });
+  for (const child of children || []) {
+    if (child.pickup_date && !(before && sameInstant(child.pickup_date, before))) continue;
+    if (!child.pickup_date && !now) continue;
+    await strapi.db.query('api::order.order').update({
+      where: { id: child.id },
+      data: {
+        pickup_date: now,
+        pickup_user: now ? extractId(collectionOrder.pickup_user) : null,
+        _internal: true,
+      },
+    });
+  }
+};
+
 // A sibling that is invoiced, delivered or already on an invoice keeps the
 // discount it was charged with: repricing it left the order disagreeing with
 // its invoice line (issues/233). It still counts towards the group.
@@ -1308,6 +1346,11 @@ module.exports = {
     if (data.status === 'delivered' && !data.delivery_date) {
       data.delivery_date = data.estimated_delivery_date ? data.estimated_delivery_date : new Date();
     }
+    // An order set back before delivery is not delivered any more: its
+    // delivery date went on showing it as delivered (issues/266).
+    if (PRE_DELIVERY_STATUSES.includes(data.status)) {
+      data.delivery_date = null;
+    }
 
     if (data.status === 'lastmile') {
       data.last_mile = true;
@@ -1459,6 +1502,7 @@ module.exports = {
       // but don't process it as a regular order (it should never create another collection order)
       if (currentOrder.is_collection_order) {
         await updateCollectionOrderAggregates(params.id);
+        await syncCollectionPickup(params.id, previousOrder);
       } else {
         // Process collection order if needed (collection_point was added or changed)
         // This is only for regular orders that have a collection_point, not for collection orders themselves
