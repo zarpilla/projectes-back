@@ -241,6 +241,8 @@ const ECONOMIC_DETAIL_POPULATE = {
   project_likelihood: true,
   project_type: true,
   leader: true,
+  // the «Mare» dimension carries the mother's name, not the project's (issues/282)
+  mother: true,
   // the yearly adjustments of the form's PERIODIFICACIÓ card (issues/171)
   periodification: true,
   project_phases: {
@@ -1190,6 +1192,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       const childrenAll = await strapi.db.query('api::project.project').findMany({
         where: liveChildrenWhere(id),
         populate: {
+          // the mother's Planificació splits its children into active and not (issues/282)
+          project_state: true,
           project_phases: phasePopulate,
           project_original_phases: phasePopulate,
         },
