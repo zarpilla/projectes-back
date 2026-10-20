@@ -4,6 +4,7 @@
 const moment = require('moment');
 const _ = require('lodash');
 const { capacityForMonth, capacityForWeek } = require('./ganttCapacity');
+const { calculateEstimatedTotals } = require('./projectFinancials');
 
 // Catalan short month names so the period labels are independent of the
 // process-wide moment locale (the frontend renders these with moment 'ca').
@@ -35,31 +36,45 @@ function periodKeyFromDate(dateStr, view) {
   return `${year}-W${String(week).padStart(2, '0')}`;
 }
 
-// Port of DedicationGantt.vue processEstimatedHours: expands an estimated-hours
-// range into one row per day. Only the selected phaseType is populated on the
-// project, so this reads p[phaseType] directly.
-function expandEstimatedHours(p, h, targetYear, festivesMap, dedications) {
-  if (!h || !h.from || !h.to) return;
+// Every period of the calendar year `year`: its 12 months (month view) or the
+// ISO weeks its days fall in (week view). The columns no longer depend on
+// where planned hours happen to fall: a month without any was missing, and
+// rows of the next years added columns (issues/237).
+function periodKeysOfYear(year, view) {
+  if (view === 'month') {
+    return Array.from({ length: 12 }, (_v, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+  }
+  const keys = [];
+  const day = moment(`${year}-01-01`, 'YYYY-MM-DD');
+  while (day.year() === year) {
+    const key = periodKeyFromDate(day.format('YYYY-MM-DD'), view);
+    if (keys[keys.length - 1] !== key) keys.push(key);
+    day.add(1, 'day');
+  }
+  return keys;
+}
 
-  const fromMoment = moment(h.from, 'YYYY-MM-DD');
-  const toMoment = moment(h.to, 'YYYY-MM-DD');
-  const mdiff = Math.round(moment.duration(toMoment.diff(fromMoment)).asDays());
+// The planned hours of one project, one row per person and day within the
+// calendar year `targetYear` (the Excel payload). They come from
+// calculateEstimatedTotals, the source of the project's stored
+// `total_estimated_hours`, Prev./Real and Informes › Dedicació
+// (buildPlannedHoursByMonth, issues/067), so «15 h/mes» is ~15 h a month on
+// every screen. The old per-day formula here spread «h/mes» as quantity/30
+// per weekday (~70 %) and kept every day from the target year onward
+// (issues/237).
+async function plannedHoursRows(p, phases, targetYear, dailyDedications, festives, usernameById, dedications) {
+  if (!phases || !phases.length) return;
+  const { totalsByDay } = await calculateEstimatedTotals(
+    { id: p.id, name: p.name },
+    phases,
+    dailyDedications,
+    festives,
+    false,
+  );
 
-  let estimated_hours = h.quantity && mdiff > 0 ? h.quantity / mdiff : 0;
-  if (h.quantity_type === 'month') estimated_hours = h.quantity / 30;
-  if (h.quantity_type === 'week') estimated_hours = h.quantity / 5;
-
-  const weekendCount = h.quantity_type === 'month' || h.quantity_type === 'week';
-  const userId = h.users_permissions_user && h.users_permissions_user.id ? h.users_permissions_user.id : null;
-  const username =
-    h.users_permissions_user && h.users_permissions_user.username ? h.users_permissions_user.username : '-';
-
-  // Most relations (phases/incomes/estimated_hours.user aside) are not
-  // populated here, so the remaining hour/total columns resolve to 0.
-  // project_type and project_likelihood are eagerly loaded on the project, so
-  // they are populated here and surface in the Excel export. The legacy
-  // placeholder columns (project_leader, project_state, project_scope,
-  // project_scope_name, project_client) were removed since they were always "-".
+  // Most relations are not populated here, so the remaining hour/total
+  // columns resolve to 0. project_type and project_likelihood are eagerly
+  // loaded on the project and surface in the Excel export.
   const projectBase = {
     project_name: p.name,
     project_type: p.project_type && p.project_type.name ? p.project_type.name : '-',
@@ -70,34 +85,24 @@ function expandEstimatedHours(p, h, targetYear, festivesMap, dedications) {
     day: 0,
     date: '-',
     hours: 0,
-    estimated_hours: estimated_hours,
     dedication_type: '-',
-    username: username,
   };
 
-  for (let i = 0; i < mdiff; i++) {
-    const currentDay = fromMoment.clone().add(i, 'days');
-    const dayFormat = currentDay.format('YYYY-MM-DD');
-
-    const festiveKey = `${dayFormat}-${userId || 'all'}`;
-    const festiveKeyAll = `${dayFormat}-all`;
-    const festive = festivesMap.get(festiveKey) || festivesMap.get(festiveKeyAll);
-
-    const dayOfWeek = currentDay.day();
-    if ((![0, 6].includes(dayOfWeek) && !festive && weekendCount) || !weekendCount) {
-      const yr = currentDay.isoWeekYear();
-      if (yr >= targetYear) {
-        dedications.push(
-          Object.assign({}, projectBase, {
-            from: dayFormat,
-            to: currentDay.clone().add(1, 'day').format('YYYY-MM-DD'),
-            week: currentDay.isoWeek(),
-            month: currentDay.format('MM'),
-            year: yr,
-          }),
-        );
-      }
-    }
+  for (let i = 0; i < totalsByDay.length; i++) {
+    const t = totalsByDay[i];
+    if (!t.q || t.day.year() !== targetYear) continue;
+    dedications.push(
+      Object.assign({}, projectBase, {
+        estimated_hours: t.q,
+        user_id: t.userId,
+        username: usernameById[t.userId] || '-',
+        from: t.day.format('YYYY-MM-DD'),
+        to: t.day.clone().add(1, 'day').format('YYYY-MM-DD'),
+        week: t.day.isoWeek(),
+        month: t.day.format('MM'),
+        year: t.day.year(),
+      }),
+    );
   }
 }
 
@@ -142,37 +147,27 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
     .query('plugin::users-permissions.user')
     .findMany({ populate: { daily_dedications: true, permissions: true } });
 
-  // 3) Festives for the target year onward, with festive_type and user.
+  // 3) Festives of the target year (a calendar year: it took every festive
+  //    from the year onward), with festive_type and user.
   const festives = await strapi.db.query('api::festive.festive').findMany({
-    where: { date: { $gte: `${targetYear}-01-01` } },
+    where: { date: { $gte: `${targetYear}-01-01`, $lte: `${targetYear}-12-31` } },
     populate: { festive_type: true, users_permissions_user: true },
   });
 
-  // Festives map keyed by `${date}-${userId|'all'}` for the day-expansion loop
-  // (identical to the festivesMap built in DedicationGantt.vue).
-  const festivesMap = new Map();
-  festives.forEach((f) => {
-    if (!f.date) return;
-    const uid = f.users_permissions_user && f.users_permissions_user.id ? f.users_permissions_user.id : 'all';
-    festivesMap.set(`${f.date}-${uid}`, f);
+  // 4) Planned hours per person and day of the target year (the Excel
+  //    payload), from the same source as the other screens (issues/237).
+  const dailyDedications = [];
+  const usernameById = Object.create(null);
+  users.forEach((u) => {
+    usernameById[u.id] = u.username;
+    (u.daily_dedications || []).forEach((dd) =>
+      dailyDedications.push(Object.assign({}, dd, { users_permissions_user: { id: u.id } })),
+    );
   });
-
-  // 4) Expand estimated-hours ranges into per-day rows (the Excel payload).
   const dedications = [];
   for (let pi = 0; pi < projectList.length; pi++) {
     const p = projectList[pi];
-    const phases = p[phaseType] || [];
-    for (let i = 0; i < phases.length; i++) {
-      const ph = phases[i];
-      const incomes = (ph && ph.incomes) || [];
-      for (let j = 0; j < incomes.length; j++) {
-        const sph = incomes[j];
-        const estimatedHours = (sph && sph.estimated_hours) || [];
-        for (let k = 0; k < estimatedHours.length; k++) {
-          expandEstimatedHours(p, estimatedHours[k], targetYear, festivesMap, dedications);
-        }
-      }
-    }
+    await plannedHoursRows(p, p[phaseType], targetYear, dailyDedications, festives, usernameById, dedications);
   }
 
   // 5) Aggregate per visible-leader x period (mirrors
@@ -195,16 +190,8 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
     })),
   }));
 
-  // Match DedicationGanttChart.vue: when there are no dedication rows the
-  // periods list is empty, so the whole table renders empty.
-  if (dedications.length === 0) {
-    return { leaders, periods: [], cells: {}, dedications: [] };
-  }
-
-  const leaderByUsername = Object.create(null);
   const bucket = Object.create(null);
   visibleLeaders.forEach((leader) => {
-    leaderByUsername[leader.username] = leader;
     bucket[leader.id] = {};
   });
 
@@ -235,10 +222,9 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
   for (let i = 0; i < dedications.length; i++) {
     const d = dedications[i];
     if (!d.estimated_hours) continue;
-    const leader = leaderByUsername[d.username];
-    if (!leader) continue;
+    const b = bucket[d.user_id];
+    if (!b) continue;
     const periodKey = periodKeyFromDate(d.from, view);
-    const b = bucket[leader.id];
     let entry = b[periodKey];
     if (!entry) {
       entry = {
@@ -275,21 +261,9 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
     }
   });
 
-  // 6) Periods: driven by where estimated dedication hours fall (matches the
-  //    DedicationGanttChart.vue periods computed property). Festives reduce
-  //    each cell's expected capacity but do not add periods on their own — a
-  //    month with only holidays and no dedication has nothing to show.
-  const periodKeysSet = new Set();
-  for (let i = 0; i < dedications.length; i++) {
-    const d = dedications[i];
-    if (d.from && d.estimated_hours) {
-      periodKeysSet.add(periodKeyFromDate(d.from, view));
-    }
-  }
-
-  const periods = Array.from(periodKeysSet)
-    .sort()
-    .map((key) => {
+  // 6) Periods: every month (or week) of the target calendar year, with or
+  //    without planned hours (issues/237).
+  const periods = periodKeysOfYear(targetYear, view).map((key) => {
       if (view === 'month') {
         const parts = key.split('-');
         const yy = parseInt(parts[0], 10);
