@@ -6,7 +6,7 @@
  *
  * generateFaceJWT() extracted the certificate and the private key from the
  * tenant's PKCS#12 file by running `openssl pkcs12 ...`. The backend image
- * (node:20-bookworm-slim) has no openssl binary, so sending an invoice to FACe
+ * (node:22-bookworm-slim) has no openssl binary, so sending an invoice to FACe
  * and checking its status both failed. Same family as issues/036 (pdftk).
  *
  * Guards:

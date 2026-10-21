@@ -6,7 +6,7 @@
  *
  * POST /api/orders/pdf merged the per-order PDFs with `pdf-merge`, which
  * shells out to the `pdftk` binary. The backends moved to Docker on
- * 2026-10-09 and the image (node:20-bookworm-slim) has no pdftk, so every
+ * 2026-10-09 and the image (node:22-bookworm-slim) has no pdftk, so every
  * request failed with a 500.
  *
  * Guards:

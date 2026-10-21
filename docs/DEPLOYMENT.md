@@ -103,7 +103,7 @@ backend does not have.
 - **A non-interactive SSH shell gets Node 12.** The backend runs in its image and
   is not affected, but any Node script run on the host must source nvm first:
   ```bash
-  export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm use 20
+  export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm use 22
   ```
 - **nginx runs HTTP/2**, enabled per vhost with `listen 443 ssl http2;` (the
   `http2 on;` directive needs nginx ≥ 1.25.1, newer than what is installed).
