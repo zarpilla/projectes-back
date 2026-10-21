@@ -726,6 +726,15 @@ describe('app permissions (issues/099)', () => {
       expect(ctx.request.body.data).toEqual({ kilograms: 12, price: null, route_rate: null });
     });
 
+    // issues/315: a member can't take off her late surcharge nor mark herself late
+    it('drops the late flags and the surcharge from her order', async () => {
+      const ctx = await expectAllowed(
+        'api::order.order.update',
+        put(1, { comments: 'x', late_order: false, late_surcharge: 0, late_pickup: false }),
+      );
+      expect(ctx.request.body.data).toEqual({ comments: 'x' });
+    });
+
     it('keeps the stored price when nothing it depends on changes', async () => {
       const ctx = await expectAllowed('api::order.order.update', put(1, { comments: 'x', price: 0.5 }));
       expect(ctx.request.body.data).toEqual({ comments: 'x' });

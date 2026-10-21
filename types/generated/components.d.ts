@@ -314,8 +314,12 @@ export interface OptionsOrdersOptions extends Struct.ComponentSchema {
   };
   attributes: {
     invoice_concept: Schema.Attribute.String;
+    late_order_message: Schema.Attribute.Text;
+    late_pickup_message: Schema.Attribute.Text;
+    late_surcharge: Schema.Attribute.Decimal & Schema.Attribute.DefaultTo<25>;
     multidelivery_discount: Schema.Attribute.Decimal;
     next_day_limit_hour: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<14>;
+    pickup_same_day_limit_hour: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<10>;
   };
 }
 

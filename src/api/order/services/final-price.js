@@ -6,7 +6,12 @@
  * (issues/057, 145). The front's copy is `invoicedPrice` in
  * projectes-front `src/domain/logisticsInvoicing.js`.
  *
- *   (price − volume discount €) × (1 − (multidelivery % + pickup %) / 100)
+ *   (price − volume discount €) × (1 + late surcharge % / 100)
+ *     × (1 − (multidelivery % + pickup %) / 100)
+ *
+ * The surcharge of a late order (issues/315, «Recàrrec per incidència») is
+ * part of the line's base, rounded to cents, so the invoice shows the
+ * surcharged price and the discounts as they were.
  *
  * It is what the invoice has always charged: the line's base is the price
  * less the volume discount and its discount is the sum of both percentages,
@@ -21,11 +26,19 @@
 
 const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
 
-/** The invoice line of an order: base (price − volume discount) and discount %. */
+/** The late surcharge % an order pays (issues/315): only while it is marked late. */
+function lateSurchargeOf(order) {
+  const o = order || {};
+  return o.late_order ? Number(o.late_surcharge) || 0 : 0;
+}
+
+/** The invoice line of an order: base (price − volume discount, plus the late surcharge) and discount %. */
 function orderInvoiceLine(order) {
   const o = order || {};
+  const base = (Number(o.price) || 0) - (Number(o.volume_discount) || 0);
+  const surcharge = lateSurchargeOf(o);
   return {
-    base: (Number(o.price) || 0) - (Number(o.volume_discount) || 0),
+    base: surcharge ? round2(base * (1 + surcharge / 100)) : base,
     discount: (Number(o.multidelivery_discount) || 0) + (Number(o.contact_pickup_discount) || 0),
   };
 }
@@ -52,4 +65,4 @@ function applyFinalPriceToAll(orders) {
   return orders;
 }
 
-module.exports = { applyFinalPrice, applyFinalPriceToAll, orderDiscountedPrice, orderInvoiceLine };
+module.exports = { applyFinalPrice, applyFinalPriceToAll, lateSurchargeOf, orderDiscountedPrice, orderInvoiceLine };

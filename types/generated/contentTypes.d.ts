@@ -1408,6 +1408,9 @@ export interface ApiOrderOrder extends Struct.CollectionTypeSchema {
     is_collection_order: Schema.Attribute.Boolean;
     kilograms: Schema.Attribute.Decimal;
     last_mile: Schema.Attribute.Boolean;
+    late_order: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    late_pickup: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    late_surcharge: Schema.Attribute.Decimal;
     lines: Schema.Attribute.Component<'orders.lines', true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::order.order'> & Schema.Attribute.Private;

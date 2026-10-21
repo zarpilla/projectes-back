@@ -247,6 +247,17 @@
     },
     "transfer_route_date": {
       "type": "date"
+    },
+    "late_order": {
+      "type": "boolean",
+      "default": false
+    },
+    "late_surcharge": {
+      "type": "decimal"
+    },
+    "late_pickup": {
+      "type": "boolean",
+      "default": false
     }
   }
 }

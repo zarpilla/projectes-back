@@ -263,12 +263,14 @@ describe('delivery date rules (issues/168)', () => {
     badRequest: jest.fn((message) => message),
   });
 
-  it('refuses tomorrow past the cutoff in the body the front sends', async () => {
+  // tomorrow past the cutoff was refused; since issues/315 it is accepted, late
+  it('takes tomorrow past the cutoff in the body the front sends as a late order', async () => {
     const { ctrl, base } = load();
     const ctx = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-19' } });
     await ctrl.create(ctx);
-    expect(ctx.badRequest).toHaveBeenCalledWith(expect.stringMatching(/hora límit \(13h\)/));
-    expect(base.create).not.toHaveBeenCalled();
+    expect(ctx.badRequest).not.toHaveBeenCalled();
+    expect(base.create).toHaveBeenCalled();
+    expect(ctx.request.body.data).toMatchObject({ late_order: true, late_surcharge: 25 });
   });
 
   it.each([['2026-10-18'], ['2026-10-01']])('refuses delivering on %s', async (date) => {
@@ -314,11 +316,17 @@ describe('delivery date rules (issues/168)', () => {
     });
   });
 
-  it('refuses moving an order to tomorrow past the cutoff, not saving it with its date', async () => {
+  it('refuses moving an order to today, and marks one moved to tomorrow past the cutoff late', async () => {
+    const today = load({ stored: { id: 1, estimated_delivery_date: '2026-10-22' } });
+    const refused = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-18' } }, { state: { v3: { numericId: 1 } } });
+    await today.ctrl.update(refused);
+    expect(refused.badRequest).toHaveBeenCalledWith(expect.stringMatching(/No es pot moure la comanda/));
+
     const moved = load({ stored: { id: 1, estimated_delivery_date: '2026-10-22' } });
     const ctx = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-19' } }, { state: { v3: { numericId: 1 } } });
     await moved.ctrl.update(ctx);
-    expect(ctx.badRequest).toHaveBeenCalledWith(expect.stringMatching(/No es pot moure la comanda/));
+    expect(ctx.badRequest).not.toHaveBeenCalled();
+    expect(ctx.request.body.data).toMatchObject({ late_order: true, late_surcharge: 25 });
 
     const same = load({ stored: { id: 1, estimated_delivery_date: '2026-10-19' } });
     const keep = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-19', units: 2 } }, { state: { v3: { numericId: 1 } } });
@@ -329,8 +337,15 @@ describe('delivery date rules (issues/168)', () => {
 
   it('applies to the CSV import', async () => {
     const { ctrl } = load();
-    const ctx = ctxFor({ route: { id: 3 }, contact: { id: 4 }, estimated_delivery_date: '2026-10-19' });
+    const ctx = ctxFor({ route: { id: 3 }, contact: { id: 4 }, estimated_delivery_date: '2026-10-18' });
     await ctrl.createCSV(ctx);
-    expect(ctx.badRequest).toHaveBeenCalledWith(expect.stringMatching(/hora límit/));
+    expect(ctx.badRequest).toHaveBeenCalledWith(expect.stringMatching(/a partir de demà/));
+
+    const create = jest.fn(async () => ({ id: 9 }));
+    global.strapi.service = () => ({ create });
+    const late = ctxFor({ route: { id: 3 }, contact: { id: 4 }, estimated_delivery_date: '2026-10-19' });
+    await ctrl.createCSV(late);
+    expect(late.badRequest).not.toHaveBeenCalled();
+    expect(create.mock.calls[0][0].data).toMatchObject({ late_order: true, late_surcharge: 25 });
   });
 });

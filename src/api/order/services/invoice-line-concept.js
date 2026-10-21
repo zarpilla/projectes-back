@@ -8,12 +8,16 @@ const moment = require('moment');
  * rest of the invoice (issues/111). A collection order's number carries «-R»,
  * as everywhere else (issues/298).
  */
+const formatPercent = (value) => String(Math.round(Number(value) * 100) / 100).replace('.', ',');
+
 function orderLineConcept(order) {
   const day = moment(order.estimated_delivery_date, 'YYYY-MM-DD', true);
   const date = day.isValid() ? day.format('DD/MM/YYYY') : order.estimated_delivery_date || '';
   const route = order.route && order.route.name;
   const number = `${String(order.id).padStart(4, '0')}${order.is_collection_order ? '-R' : ''}`;
-  return [date ? `Comanda ${date}` : 'Comanda', number, route].filter(Boolean).join(' | ');
+  // a late order says why it costs more (issues/315)
+  const surcharge = order.late_order && Number(order.late_surcharge) ? `Express +${formatPercent(order.late_surcharge)} %` : null;
+  return [date ? `Comanda ${date}` : 'Comanda', number, route, surcharge].filter(Boolean).join(' | ');
 }
 
 /** First and last estimated delivery (or route) date of the orders; today when none. */

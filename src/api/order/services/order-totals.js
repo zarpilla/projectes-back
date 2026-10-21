@@ -22,6 +22,8 @@ const TOTALS_SELECT = [
   'volume_discount',
   'multidelivery_discount',
   'contact_pickup_discount',
+  'late_order',
+  'late_surcharge',
   'refrigerated',
   'transfer',
   'deposit_date',
