@@ -154,6 +154,7 @@ describe('ReadCache.get', () => {
     expect(cache.entries.size).toBe(0);
     await expect(cache.get('k', load)).rejects.toThrow('db error');
     expect(load).toHaveBeenCalledTimes(2);
+    expect(cache.counts.notStored['load failed']).toBe(2);
   });
 
   it('callers never share objects with the cache', async () => {
@@ -422,6 +423,70 @@ describe('ReadCache.get', () => {
       expect(cache.counts.mismatches).toBe(1);
       expect(log.error).toHaveBeenCalledWith(expect.stringContaining('STALE'));
       expect(cache.entries.has('k')).toBe(false);
+    });
+
+    describe('with the stamps: a difference is confirmed before calling it stale', () => {
+      let report; // what the next stamps reading reports as changed outside
+      beforeEach(() => {
+        cache.verifyRate = 1;
+        cache.random = () => 0;
+        cache.confirmWaitMs = 0;
+        report = [];
+        cache.stamps = {
+          fresh: async () => {},
+          check: async () => report.length && tracker.externalChange(report.splice(0)),
+          completed: () => 0,
+          completedAt: () => null,
+          watch() {},
+          coveredSince: () => true,
+        };
+      });
+
+      it('a write from outside, noticed by the stamps after the hit: a late notice, not an error', async () => {
+        let value = 'a';
+        const load = loaderOf(['cities'], () => value);
+        await cache.get('k', load);
+        value = 'b'; // written by another process; the stamps will report it
+        report = ['cities'];
+        expect(await cache.get('k', load)).toBe('b');
+        expect(await cache.confirming).toBe('late');
+        expect(cache.counts.late).toBe(1);
+        expect(cache.counts.mismatches).toBe(0);
+        expect(log.error).not.toHaveBeenCalled();
+        expect(cache.entries.has('k')).toBe(false);
+      });
+
+      it('nothing reported by the stamps: an error', async () => {
+        let value = 'a';
+        const load = loaderOf(['cities'], () => value);
+        await cache.get('k', load);
+        value = 'b';
+        await cache.get('k', load);
+        expect(await cache.confirming).toBe('stale');
+        expect(log.error).toHaveBeenCalledWith(
+          expect.stringContaining('First difference: (root): kept "a" ≠ now "b"'),
+        );
+      });
+
+      it('a write of this process after the hit explains nothing', async () => {
+        let value = 'a';
+        const load = loaderOf(['cities'], () => value);
+        await cache.get('k', load);
+        value = 'b';
+        await cache.get('k', load);
+        sql('update `cities` set x = 1'); // after the difference was seen
+        expect(await cache.confirming).toBe('stale');
+      });
+
+      it('a change reported for another table explains nothing', async () => {
+        let value = 'a';
+        const load = loaderOf(['cities'], () => value);
+        await cache.get('k', load);
+        value = 'b';
+        report = ['regions'];
+        await cache.get('k', load);
+        expect(await cache.confirming).toBe('stale');
+      });
     });
 
     it('the same answer is fine', async () => {

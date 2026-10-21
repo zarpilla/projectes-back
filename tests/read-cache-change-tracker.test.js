@@ -564,3 +564,59 @@ describe('a write that changed no row changes nothing (MySQL says so)', () => {
     expect(stale(['cities'], at)).toBe(true);
   });
 });
+
+describe('tables are matched as identifiers, not substrings', () => {
+  // `us` is the `me` single type's table; `orders` is inside a component table's name
+  beforeEach(() => {
+    tracker.setSchema({
+      tables: [
+        'us',
+        'orders',
+        'components_options_orders_options',
+        'users-permissions_user',
+        'projects',
+        'status_logs',
+      ],
+    });
+  });
+  const named = (sql, values) => tracker.tablesIn(sql, values).sort();
+
+  it('a longer name does not count as a shorter one inside it', () => {
+    expect(named('update `users-permissions_user` set `status` = ? where `id` = ?')).toEqual([
+      'users-permissions_user',
+    ]);
+    expect(named('insert into `components_options_orders_options` (`a`) values (?)')).toEqual([
+      'components_options_orders_options',
+    ]);
+    expect(named('select * from `status_logs`')).toEqual(['status_logs']);
+  });
+
+  it('a table named alone is found, quoted or not, in any case', () => {
+    expect(named('select * from `us`')).toEqual(['us']);
+    expect(named('SELECT * FROM us WHERE id = 1')).toEqual(['us']);
+    expect(named('UPDATE Projects SET status = ? WHERE id = ?')).toEqual(['projects']);
+    expect(named('update `db`.`projects` set x = 1')).toEqual(['projects']);
+    expect(named('update db.projects set x = 1')).toEqual(['projects']);
+  });
+
+  it('names with a dash are found, also as plain text', () => {
+    expect(named('SELECT * FROM `Users-Permissions_User`')).toEqual(['users-permissions_user']);
+    expect(named("select 'users-permissions_user'")).toEqual(['users-permissions_user']);
+  });
+
+  it('a stray backtick in a string does not hide a table named after it', () => {
+    expect(named("update projects set note = 'it`s' where id = 1")).toEqual(['projects']);
+    expect(named("select 'a`b' from x join projects on 1")).toEqual(['projects']);
+  });
+
+  it('a table named in a string or a comment counts (only a reload lost)', () => {
+    expect(named("select * from x where note = 'projects' /* orders */")).toEqual(['orders', 'projects']);
+  });
+
+  it('a write to the users table does not drop what depends on `us`', () => {
+    const at = load();
+    run('c1', 'update `users-permissions_user` set `blocked` = ? where `id` = ?');
+    expect(stale(['us'], at)).toBe(false);
+    expect(stale(['users-permissions_user'], at)).toBe(true);
+  });
+});

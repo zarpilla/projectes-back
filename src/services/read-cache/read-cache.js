@@ -35,8 +35,10 @@
  * and every entry also expires after `ttlMs` as a last safety net.
  *
  * `verifyRate` (0..1): that share of hits is loaded again and compared with
- * what was kept. A difference that no recorded change explains is logged as an
- * error and the entry is dropped: proof that a write went unnoticed.
+ * what was kept. A difference drops the entry; if the stamps then report a
+ * write from outside on its tables it was the normal few seconds of delay for
+ * those (warning), otherwise it is logged as an error: proof that a write went
+ * unnoticed.
  */
 
 const MB = 1024 * 1024;
@@ -92,6 +94,28 @@ function measure(value, freeze = false) {
   return bytes;
 }
 
+/** Where two values first differ, for the STALE log: `data[2].name: "a" ≠ "b"`. */
+function firstDifference(kept, fresh, path = '') {
+  const show = (v) => {
+    const text = JSON.stringify(v);
+    return text === undefined ? String(v) : text.length > 80 ? `${text.slice(0, 80)}…` : text;
+  };
+  if (JSON.stringify(kept) === JSON.stringify(fresh)) return null;
+  const isObject = (v) => v !== null && typeof v === 'object' && !(v instanceof Date);
+  if (!isObject(kept) || !isObject(fresh) || Array.isArray(kept) !== Array.isArray(fresh)) {
+    return `${path || '(root)'}: kept ${show(kept)} ≠ now ${show(fresh)}`;
+  }
+  if (Array.isArray(kept) && kept.length !== fresh.length) {
+    return `${path || '(root)'}: kept ${kept.length} items ≠ now ${fresh.length}`;
+  }
+  for (const k of new Set([...Object.keys(kept), ...Object.keys(fresh)])) {
+    const at = Array.isArray(kept) ? `${path}[${k}]` : path ? `${path}.${k}` : k;
+    const found = firstDifference(kept[k], fresh[k], at);
+    if (found) return found;
+  }
+  return `${path || '(root)'}: differs`;
+}
+
 const deepFreeze = (value) => {
   measure(value, true);
   return value;
@@ -118,6 +142,8 @@ class ReadCache {
     this.random = random;
     this.inTransaction = inTransaction;
     this.log = log;
+    this.confirmWaitMs = 3100; // the 2 s recheck of recent stamps, and a margin
+    this.confirming = null; // the last confirmMismatch (tests)
     this.enabled = false;
     this.entries = new Map(); // key -> entry, least recently used first
     this.byTable = new Map(); // table -> keys
@@ -133,6 +159,7 @@ class ReadCache {
       evicted: 0,
       verified: 0,
       mismatches: 0,
+      late: 0,
       stampFailures: 0,
       notStored: {},
       invalid: {},
@@ -256,7 +283,14 @@ class ReadCache {
       const started = this.tracker.now();
       const stampSeq = this.stamps ? this.stamps.completed() : 0;
       const stampNow = this.stamps ? this.stamps.completedAt() : null;
-      const { result, store } = await this.tracker.captureReads(loader);
+      let captured;
+      try {
+        captured = await this.tracker.captureReads(loader);
+      } catch (error) {
+        this.counts.notStored['load failed'] = (this.counts.notStored['load failed'] || 0) + 1;
+        throw error;
+      }
+      const { result, store } = captured;
       const tables = [
         ...new Set([...(options.tables || []).map((t) => String(t).toLowerCase()), ...store.tables]),
       ];
@@ -348,12 +382,14 @@ class ReadCache {
       same = false;
     }
     if (!same && !changed) {
-      this.counts.mismatches++;
-      const message =
-        `[read-cache] STALE entry: "${key}" differs from the database although none of its tables changed ` +
-        `(${entry.tables.join(', ')}); entry dropped`;
-      if (this.log && this.log.error) this.log.error(message);
+      // dropped at once; whether it was a detection failure is decided after
       if (this.entries.get(key) === entry) this.remove(key, 'dropped');
+      this.confirming = this.confirmMismatch(
+        key,
+        entry,
+        firstDifference(entry.value, result),
+        this.tracker.now(),
+      );
     }
     if (options.frozen) {
       try {
@@ -363,6 +399,42 @@ class ReadCache {
       }
     }
     return result;
+  }
+
+  /**
+   * A verified hit differed from the database and no recorded change explains
+   * it. A write from another process is noticed by the stamps up to ~4 s late
+   * (by design), so the stamps are read again, and once more after the 2 s
+   * recheck of recent stamps: a change they report for the entry's tables is
+   * logged as a late notice (warning). Anything else is a detection failure
+   * (error), the thing READ_CACHE_VERIFY is there to find.
+   */
+  async confirmMismatch(key, entry, difference, at) {
+    try {
+      if (this.stamps) {
+        await this.tracker.capture.exit(() => this.stamps.check());
+        await new Promise((resolve) => setTimeout(resolve, this.confirmWaitMs));
+        await this.tracker.capture.exit(() => this.stamps.check());
+      }
+    } catch {
+      // the stamps can't be read: nothing explains the difference
+    }
+    if (this.tracker.externallyChangedSince(entry.tables, at)) {
+      this.counts.late++;
+      this.warn(
+        `[read-cache] "${key}" was served up to a few seconds after a write from outside this process, ` +
+          `before the stamps noticed it (first difference: ${difference})`,
+      );
+      return 'late';
+    }
+    this.counts.mismatches++;
+    if (this.log && this.log.error) {
+      this.log.error(
+        `[read-cache] STALE entry: "${key}" differed from the database although none of its tables changed ` +
+          `(${entry.tables.join(', ')}); entry dropped. First difference: ${difference}`,
+      );
+    }
+    return 'stale';
   }
 
   store(key, entry) {
@@ -446,4 +518,4 @@ class ReadCache {
   }
 }
 
-module.exports = { ReadCache, MB, deepFreeze, measure };
+module.exports = { ReadCache, MB, deepFreeze, measure, firstDifference };

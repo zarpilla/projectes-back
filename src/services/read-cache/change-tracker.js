@@ -30,8 +30,8 @@
  * entirely between the write and the commit read the old data, and the stamp
  * at the end of the COMMIT invalidates it.
  *
- * Which tables a statement touches: every known table whose name appears in
- * its text (a table is always named in the statement that writes it), plus
+ * Which tables a statement touches: every known table named in it as an
+ * identifier (a table is always named in the statement that writes it), plus
  * the tables its foreign keys cascade to (458 ON DELETE CASCADE and 193 SET
  * NULL in a tenant database: deleting a row changes link and component tables
  * that the statement doesn't name). A write that names no known table, an
@@ -73,9 +73,11 @@ class ChangeTracker {
   constructor() {
     this.counter = 0;
     this.changedAt = new Map(); // table -> counter of its last change
+    this.externalAt = new Map(); // table -> counter of its last change reported by the stamps
     this.clearedAt = 0; // counter of the last change of every table
     this.tables = []; // known table names, lower case
     this.known = new Set();
+    this.oddTables = []; // known names with characters an unquoted identifier can't hold
     this.cascades = new Map(); // table -> tables its foreign keys change
     this.pending = new Map(); // connection -> tables written since its last COMMIT/ROLLBACK
     this.listeners = new Set();
@@ -101,6 +103,7 @@ class ChangeTracker {
   setSchema({ tables, foreignKeys = [] }) {
     this.tables = [...new Set(tables.map((t) => String(t).toLowerCase()))];
     this.known = new Set(this.tables);
+    this.oddTables = this.tables.filter((t) => !/^[\p{L}\p{N}_$]+$/u.test(t));
     const children = new Map();
     for (const fk of foreignKeys) {
       const rules = [fk.deleteRule, fk.updateRule].map((r) => String(r || '').toUpperCase());
@@ -128,7 +131,16 @@ class ChangeTracker {
     this.everythingChanged('schema loaded');
   }
 
-  /** Known tables named in a statement (and in its values, if it has `??`). */
+  /**
+   * Known tables named in a statement (and in its values, if it has `??`).
+   * A table is always named as a whole identifier, so the statement is cut
+   * into identifiers: backticked or double-quoted names whole (they may hold
+   * a "-", like `users-permissions_user`), and every bare word, comments and
+   * strings included (a table named in a string only counts once more). Names
+   * with other characters than letters, digits, "_" and "$" are also looked
+   * for as plain text. Matching substrings instead made the table `us` (the
+   * `me` single type) part of every statement with "users" or "status".
+   */
   tablesIn(sql, values) {
     let text = String(sql).toLowerCase();
     if (text.includes('??') && Array.isArray(values)) {
@@ -139,9 +151,16 @@ class ChangeTracker {
           .join(' ')
           .toLowerCase();
     }
-    const found = [];
-    for (const t of this.tables) if (text.includes(t)) found.push(t);
-    return found;
+    const found = new Set();
+    for (const m of text.matchAll(/`((?:[^`]|``)*)`|"((?:[^"]|"")*)"/g)) {
+      const name = m[1] !== undefined ? m[1].replace(/``/g, '`') : m[2].replace(/""/g, '"');
+      if (this.known.has(name)) found.add(name);
+    }
+    for (const m of text.matchAll(/[\p{L}\p{N}_$]+/gu)) {
+      if (this.known.has(m[0])) found.add(m[0]);
+    }
+    for (const t of this.oddTables) if (text.includes(t)) found.add(t);
+    return [...found];
   }
 
   /** The tables plus the ones their foreign keys cascade to. */
@@ -322,7 +341,18 @@ class ChangeTracker {
 
   /** Tables changed by someone else (another process, a manual edit). */
   externalChange(tables) {
-    this.markChanged(this.withCascades(tables.map((t) => String(t).toLowerCase())));
+    const all = this.withCascades(tables.map((t) => String(t).toLowerCase()));
+    this.markChanged(all);
+    for (const t of all) this.externalAt.set(t, this.counter);
+  }
+
+  /** True if the stamps reported a change of any of the tables after `since`. */
+  externallyChangedSince(tables, since) {
+    for (const t of tables) {
+      const at = this.externalAt.get(t);
+      if (at !== undefined && at > since) return true;
+    }
+    return false;
   }
 
   onSchemaChange(fn) {

@@ -18,6 +18,7 @@ middleware `src/middlewares/read-cache.js`, the admin endpoints
 | Foreign key cascades (`ON DELETE CASCADE` / `SET NULL`) | the tracker follows the foreign keys of the written table (read from information_schema) | with the write |
 | Another process (the other slot during a deploy), manual SQL, a restore | `information_schema.TABLES.UPDATE_TIME` / `CREATE_TIME` of the tables the cache depends on (`table-stamps.js`) | within `READ_CACHE_STAMPS_MS` (2 s) + 2 s |
 | A MySQL restart | its start time moved | at the next stamps reading: everything dropped |
+| (MySQL keeps UPDATE_TIME in memory: NULL after a restart, a TRUNCATE (CREATE_TIME doesn't move), or when the table leaves the dictionary cache, which is full on the VPS: `table_definition_cache` 2000 for ~6300 tables. NULL counts as unknown: a first reading NULL never covers a result, a value → NULL counts as a change.) | | |
 | Something none of the above sees | `READ_CACHE_VERIFY` shows it as `[read-cache] STALE entry` errors; «Buida la memòria cau» (`POST /api/read-cache/clear`); `READ_CACHE_TTL_S` | — |
 
 Rules that keep it safe (`change-tracker.js`, `read-cache.js`):
@@ -98,7 +99,7 @@ Cached today (phase 1): the master tables, i.e. «Taules auxiliars» except
 | `READ_CACHE_MAX_MB` | 64 | memory cap per process (JSON size; least recently used out) |
 | `READ_CACHE_TTL_S` | 600 | no answer is kept longer |
 | `READ_CACHE_STAMPS_MS` | 2000 | max age of MySQL's stamps when an answer is served |
-| `READ_CACHE_VERIFY` | 0 | share of hits loaded again and compared (0..1); a difference no change explains is logged as `[read-cache] STALE entry` and dropped |
+| `READ_CACHE_VERIFY` | 0 | share of hits loaded again and compared (0..1). A difference drops the entry; if the stamps then report a write from outside on its tables it was the normal delay for those (warning «served up to a few seconds after a write from outside»), otherwise it is a detection failure: `[read-cache] STALE entry` error with the first difference |
 
 ## Administration
 
