@@ -32,7 +32,8 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
 
   /**
    * POST /api/payrolls/create-all?year=YYYY
-   * Creates payrolls for every user with a daily-dedication covering each month.
+   * Creates payrolls for every visible, not blocked user with a daily-dedication
+   * of more than 0 h covering each month's last day.
    */
   async createAll(ctx) {
     const year = ctx.query.year;
@@ -49,6 +50,9 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
     const userPayrollsInfo = [];
 
     for (const user of users) {
+      // a hidden (Ocult) or blocked person is not in Persones: no advances
+      if (user.hidden || user.blocked) continue;
+
       const userPayrollsCreated = [];
       const userPayrollsExist = [];
 
@@ -71,7 +75,8 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
           const emitted = moment(`${year}-${m}-01`, 'YYYY-MM-DD').endOf('month').format('YYYY-MM-DD');
 
           const dedication = dedications.find((dd) => emitted >= dd.from && emitted <= dd.to);
-          if (!dedication) continue;
+          // a period of 0 h is «sense jornada activa»: nothing to pay
+          if (!dedication || !(Number(dedication.hours) > 0)) continue;
 
           const month = months.find((mo) => mo.month == m);
           const y = years.find((ye) => ye.year == year);
