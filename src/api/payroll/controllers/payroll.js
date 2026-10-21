@@ -55,6 +55,8 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
 
       const userPayrollsCreated = [];
       const userPayrollsExist = [];
+      // months left without an advance and why, for the summary's warning
+      const skipped = [];
 
       const dedications = await strapi.db
         .query('api::daily-dedication.daily-dedication')
@@ -75,12 +77,22 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
           const emitted = moment(`${year}-${m}-01`, 'YYYY-MM-DD').endOf('month').format('YYYY-MM-DD');
 
           const dedication = dedications.find((dd) => emitted >= dd.from && emitted <= dd.to);
+          if (!dedication) {
+            skipped.push({ month: m, reason: 'no-period' });
+            continue;
+          }
           // a period of 0 h is «sense jornada activa»: nothing to pay
-          if (!dedication || !(Number(dedication.hours) > 0)) continue;
+          if (!(Number(dedication.hours) > 0)) {
+            skipped.push({ month: m, reason: 'zero-hours' });
+            continue;
+          }
 
           const month = months.find((mo) => mo.month == m);
           const y = years.find((ye) => ye.year == year);
-          if (!month || !y) continue;
+          if (!month || !y) {
+            skipped.push({ month: m, reason: 'no-calendar' });
+            continue;
+          }
 
           const yearId = String(y.id);
           const monthId = String(month.id);
@@ -160,6 +172,7 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
           username: user.username,
           created: userPayrollsCreated.length,
           existing: userPayrollsExist.length,
+          skipped,
         });
       }
     }

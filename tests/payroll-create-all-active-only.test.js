@@ -66,5 +66,19 @@ describe('payrolls/create-all only for people with hours', () => {
     expect(byUser(5).map((p) => p.month)).toEqual([1, 2, 3, 4, 5, 6]);
     // the summary lists who is in Persones, not the hidden or blocked
     expect(userPayrollsInfo.map((u) => u.username)).toEqual(['activa', 'zero', 'parcial']);
+    // and why the months without an advance have none
+    const info = (name) => userPayrollsInfo.find((u) => u.username === name);
+    expect(info('activa').skipped).toEqual([]);
+    expect(info('zero').skipped).toHaveLength(12);
+    expect(info('zero').skipped.every((s) => s.reason === 'zero-hours')).toBe(true);
+    expect(info('parcial').skipped).toEqual([7, 8, 9, 10, 11, 12].map((month) => ({ month, reason: 'zero-hours' })));
+  });
+
+  it('tells the months without any period', async () => {
+    PERIODS[1] = [{ id: 11, from: '2026-03-01', to: '2026-12-31', hours: 8, monthly_salary: 2000 }];
+    const { controller, created } = setup();
+    const { userPayrollsInfo } = await controller.createAll({ query: { year: '2026' } });
+    expect(created.filter((p) => p.users_permissions_user === 1)).toHaveLength(10);
+    expect(userPayrollsInfo[0].skipped).toEqual([{ month: 1, reason: 'no-period' }, { month: 2, reason: 'no-period' }]);
   });
 });
