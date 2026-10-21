@@ -138,15 +138,15 @@ const ENUM_LABELS = {
 // Help under a field of the admin form.
 const FIELD_HELP = {
   'festive-type': {
-    personal: "Marcat: cada persona en té els seus dies (vacances, lliure elecció). Sense marcar: festius per a tothom (estatals, autonòmics).",
+    personal: "Marcat: cada persona en té els seus dies (vacances, lliure elecció). Sense marcar: festius per a totes (estatals, autonòmics).",
     max: "Dies a l'any que en té cada persona. Es pot canviar per a una persona a «Festius d'usuari».",
   },
   // issues/310: the holidays for everyone; a person's own are set in Hores dedicades
   festive: {
-    festive_type: "Només els tipus per a tothom. Les vacances i els festius de cada persona es posen a Hores dedicades.",
+    festive_type: "Només els tipus per a totes. Les vacances i els festius de cada persona es posen a Hores dedicades.",
   },
   'user-festive': {
-    users_permissions_user: "Buit: el màxim de l'any per a tothom (p. ex. 2027 té 9 festius estatals i 3 de Catalunya).",
+    users_permissions_user: "Buit: el màxim de l'any per a totes (p. ex. 2027 té 9 festius estatals i 3 de Catalunya).",
     year: 'Buit: per a tots els anys.',
   },
   'route-rate': {
@@ -291,7 +291,7 @@ const DISPLAY_NAMES = {
   strategy: { displayName: 'Estratègies', displayNameSingular: 'Estratègia' },
   'task-state': { displayName: 'Estats de tasca', displayNameSingular: 'Estat de tasca' },
   'user-festive': { displayName: "Festius d'usuari", displayNameSingular: "Festiu d'usuari" },
-  festive: { displayName: 'Festius de tothom', displayNameSingular: 'Festiu de tothom' },
+  festive: { displayName: 'Festius de totes', displayNameSingular: 'Festiu de totes' },
   year: { displayName: 'Anys', displayNameSingular: 'Any' },
   'festive-type': { displayName: 'Tipus de festiu', displayNameSingular: 'Tipus de festiu' },
   'route-rate': { displayName: 'Tarifes de ruta', displayNameSingular: 'Tarifa de ruta' },

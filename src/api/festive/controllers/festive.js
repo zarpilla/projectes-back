@@ -12,7 +12,7 @@ const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { relationId } = require('../../../services/relation-input');
 const { isAppAdmin } = require('../../../services/app-permissions');
 
-const FORBIDDEN = 'Només una persona administradora pot canviar els festius de tothom';
+const FORBIDDEN = 'Només una persona administradora pot canviar els festius de totes';
 
 module.exports = createCoreController('api::festive.festive', ({ strapi }) => {
   const isPersonalType = async (typeId) => {

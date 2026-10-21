@@ -3,7 +3,7 @@
 /**
  * issues/310 (2026-10-21): the holidays for everyone could only be changed
  * from the Hores dedicades calendar, one day at a time. They are now an
- * auxiliary table, «Festius de tothom»:
+ * auxiliary table, «Festius de totes»:
  * - only the rows with no person are listed, newest first;
  * - the form asks for the date and a type for everyone, and has no person
  *   field, so what it saves is a holiday for everyone;
@@ -27,14 +27,14 @@ afterEach(() => {
   delete global.strapi;
 });
 
-describe('«Festius de tothom» admin table (issues/310)', () => {
+describe('«Festius de totes» admin table (issues/310)', () => {
   it('is listed for admins, with Catalan names, on the festives API', async () => {
     const { byName, body } = await load();
     const f = byName.festive;
     expect(f).toBeTruthy();
     expect(f.apiPath).toBe('festives');
-    expect(f.displayName).toBe('Festius de tothom');
-    expect(f.displayNameSingular).toBe('Festiu de tothom');
+    expect(f.displayName).toBe('Festius de totes');
+    expect(f.displayNameSingular).toBe('Festiu de totes');
     expect(body.entityToApiPath.festive).toBe('festives');
   });
 
@@ -67,6 +67,6 @@ describe('«Festius de tothom» admin table (issues/310)', () => {
     const { byName } = await load();
     expect(byName['festive-type'].listQuery).toBeUndefined();
     expect(byName['festive-type'].attributes.name.required).toBe(false);
-    expect(byName['user-festive'].attributes.users_permissions_user.help).toMatch(/màxim de l'any per a tothom/);
+    expect(byName['user-festive'].attributes.users_permissions_user.help).toMatch(/màxim de l'any per a totes/);
   });
 });
