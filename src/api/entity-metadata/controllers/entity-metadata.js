@@ -141,6 +141,14 @@ const FIELD_HELP = {
     personal: "Marcat: cada persona en té els seus dies (vacances, lliure elecció). Sense marcar: festius per a tothom (estatals, autonòmics).",
     max: "Dies a l'any que en té cada persona. Es pot canviar per a una persona a «Festius d'usuari».",
   },
+  // issues/310: the holidays for everyone; a person's own are set in Hores dedicades
+  festive: {
+    festive_type: "Només els tipus per a tothom. Les vacances i els festius de cada persona es posen a Hores dedicades.",
+  },
+  'user-festive': {
+    users_permissions_user: "Buit: el màxim de l'any per a tothom (p. ex. 2027 té 9 festius estatals i 3 de Catalunya).",
+    year: 'Buit: per a tots els anys.',
+  },
   'route-rate': {
     routes: 'Les rutes on s\'aplica. Sense cap ruta, s\'aplica a totes.',
     pickup: 'Només per a aquesta recollida. Buit: qualsevol.',
@@ -180,6 +188,26 @@ const HIDDEN_FIELDS = {
   pickup: ['allowed_users'],
   // worked out by the lifecycle from code and name (issues/183)
   strategy: ['code_name'],
+  // the table lists the holidays for everyone, those with no person (issues/310)
+  festive: ['users_permissions_user'],
+};
+
+// Fields the admin form asks for although the schema doesn't require them.
+const REQUIRED_FIELDS = {
+  festive: ['date', 'festive_type'],
+};
+
+// The options a relation offers in the admin form, by the option's fields.
+const OPTION_FILTERS = {
+  // a holiday for everyone takes a type for everyone (issues/310)
+  festive: { festive_type: { personal: false } },
+};
+
+// Which rows the admin list asks the API for (a query string, read by the
+// v3 query adapter of the find) and its first order.
+const LIST_VIEWS = {
+  // the holidays for everyone, newest first; the people's own are not listed (issues/310)
+  festive: { query: '_where[users_permissions_user_null]=true', sort: ['date', 'desc'] },
 };
 
 // To-many relations the admin form edits (the others are edited from the other side).
@@ -190,6 +218,7 @@ const EDITABLE_COLLECTIONS = {
 // Order of the fields on the admin screens (the ones not listed go after them).
 // Route rates: the tiers by weight, as the price is worked out.
 const FIELD_ORDER = {
+  festive: ['date', 'festive_type'],
   pickup: ['name', 'alias', 'city', 'pickup', 'message'],
   'activity-type': ['name', 'global', 'project'],
   'route-rate': ['name', 'routes', 'pickup', 'delivery_type', 'less10', 'more10', 'from10to20',
@@ -225,6 +254,8 @@ const ADMIN_ENTITIES = {
   'task-state': 'task-states',
   'user-festive': 'user-festives',
   year: 'years',
+  // issues/310: the holidays for everyone
+  festive: 'festives',
   'festive-type': 'festive-types',
   'route-rate': 'route-rates',
   // issues/159: tables that needed the Strapi admin
@@ -260,6 +291,7 @@ const DISPLAY_NAMES = {
   strategy: { displayName: 'Estratègies', displayNameSingular: 'Estratègia' },
   'task-state': { displayName: 'Estats de tasca', displayNameSingular: 'Estat de tasca' },
   'user-festive': { displayName: "Festius d'usuari", displayNameSingular: "Festiu d'usuari" },
+  festive: { displayName: 'Festius de tothom', displayNameSingular: 'Festiu de tothom' },
   year: { displayName: 'Anys', displayNameSingular: 'Any' },
   'festive-type': { displayName: 'Tipus de festiu', displayNameSingular: 'Tipus de festiu' },
   'route-rate': { displayName: 'Tarifes de ruta', displayNameSingular: 'Tarifa de ruta' },
@@ -315,6 +347,10 @@ module.exports = {
             collectionName: schema.collectionName,
             attributes: {},
           };
+          if (LIST_VIEWS[singularFolder]) {
+            metadata.listQuery = LIST_VIEWS[singularFolder].query;
+            metadata.listSort = LIST_VIEWS[singularFolder].sort;
+          }
 
           for (const [attrName, attr] of orderedAttributes(singularFolder, schema.attributes)) {
             // Skip internal timestamp/audit fields.
@@ -326,7 +362,7 @@ module.exports = {
             }
             const entry = {
               type: attr.type,
-              required: attr.required || false,
+              required: attr.required || (REQUIRED_FIELDS[singularFolder] || []).includes(attrName),
               unique: attr.unique || false,
               default: attr.default,
               label: (ENTITY_FIELD_TRANSLATIONS[singularFolder] || {})[attrName] || FIELD_TRANSLATIONS[attrName] || null,
@@ -334,6 +370,8 @@ module.exports = {
             const help = (FIELD_HELP[singularFolder] || {})[attrName];
             if (help) entry.help = help;
             if ((EDITABLE_COLLECTIONS[singularFolder] || []).includes(attrName)) entry.editable = true;
+            const optionsWhere = (OPTION_FILTERS[singularFolder] || {})[attrName];
+            if (optionsWhere) entry.optionsWhere = optionsWhere;
             if (attr.type === 'enumeration' && attr.enum) {
               entry.enum = attr.enum;
               const enumLabels = ((ENUM_LABELS[singularFolder] || {})[attrName]);
