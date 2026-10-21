@@ -31,10 +31,23 @@ describe('invoicePdfConcept (issues/312)', () => {
   it('names both months when the orders span several', () => {
     expect(
       invoicePdfConcept([{ estimated_delivery_date: '2026-10-02' }, { estimated_delivery_date: '2026-09-29' }], TEXT),
-    ).toBe('Serveis de Transport i Logística_Setembre_Octubre_2026');
+    ).toBe('Serveis de Transport i Logística_Setembre-Octubre_2026');
     expect(
       invoicePdfConcept([{ estimated_delivery_date: '2026-12-30' }, { estimated_delivery_date: '2027-01-02' }], TEXT),
-    ).toBe('Serveis de Transport i Logística_Desembre_2026_Gener_2027');
+    ).toBe('Serveis de Transport i Logística_Desembre-Gener_2026-2027');
+  });
+
+  it('fills the placeholders of a template', () => {
+    const oct = [{ estimated_delivery_date: '2026-10-03' }];
+    expect(invoicePdfConcept(oct, 'Serveis logístics_{Mes}_{any}')).toBe('Serveis logístics_Octubre_2026');
+    expect(invoicePdfConcept(oct, 'Serveis {mes} de {any}')).toBe('Serveis octubre de 2026');
+    expect(invoicePdfConcept(oct, '{MES}/{any} logística')).toBe('OCTUBRE/2026 logística');
+    expect(invoicePdfConcept(oct, 'Logística {any}-{mm}')).toBe('Logística 2026-10');
+    // unknown placeholders stay as typed; a template is never appended to
+    expect(invoicePdfConcept(oct, 'Serveis {mes} {dia}')).toBe('Serveis octubre {dia}');
+    expect(
+      invoicePdfConcept([{ estimated_delivery_date: '2026-09-29' }, ...oct], 'Serveis_{Mes}_{any}'),
+    ).toBe('Serveis_Setembre-Octubre_2026');
   });
 
   it('is null without a text', () => {

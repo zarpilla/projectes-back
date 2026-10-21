@@ -42,23 +42,33 @@ function invoiceConcept(orders) {
 }
 
 /**
- * Concept printed on a logistics invoice's PDF: the tenant's text
- * (Configuració, `me.orders_options.invoice_concept`) and the orders' month,
- * «Serveis de Transport i Logística_Octubre_2026» (issues/312). Orders
- * spanning months read «…_Setembre_Octubre_2026», or «…_Desembre_2026_Gener_2027»
- * across years. Null without a text: the invoice then has no such concept.
+ * Concept printed on a logistics invoice's PDF, from the tenant's text
+ * (Configuració, `me.orders_options.invoice_concept`) and the orders' month
+ * (issues/312). The text is a template:
+ *   {Mes} Octubre · {mes} octubre · {MES} OCTUBRE · {mm} 10 · {any} 2026
+ * so «Serveis logístics_{Mes}_{any}» gives «Serveis logístics_Octubre_2026».
+ * Orders spanning months join them with «-»: {Mes} «Setembre-Octubre», and
+ * {any} «2026-2027» across years. A text without placeholders gets
+ * «_{Mes}_{any}» appended (the first version of the setting). Null without a
+ * text: the invoice then has no such concept.
  */
+const PLACEHOLDER = /\{(mes|Mes|MES|mm|any)\}/g;
+
 function invoicePdfConcept(orders, text) {
-  const prefix = (text || '').trim();
-  if (!prefix) return null;
+  let template = (text || '').trim();
+  if (!template) return null;
+  if (!template.match(PLACEHOLDER)) template = `${template}_{Mes}_{any}`;
   const { first, last } = monthRange(orders);
-  const month = (m) => {
-    const name = m.locale('ca').format('MMMM');
-    return name.charAt(0).toUpperCase() + name.slice(1);
+  const both = (f) => (first.isSame(last, 'month') ? f(first) : `${f(first)}-${f(last)}`);
+  const name = (m) => m.locale('ca').format('MMMM');
+  const values = {
+    mes: () => both(name),
+    Mes: () => both((m) => name(m).charAt(0).toUpperCase() + name(m).slice(1)),
+    MES: () => both((m) => name(m).toUpperCase()),
+    mm: () => both((m) => m.format('MM')),
+    any: () => (first.isSame(last, 'year') ? String(last.year()) : `${first.year()}-${last.year()}`),
   };
-  if (first.isSame(last, 'month')) return `${prefix}_${month(first)}_${first.year()}`;
-  if (first.isSame(last, 'year')) return `${prefix}_${month(first)}_${month(last)}_${last.year()}`;
-  return `${prefix}_${month(first)}_${first.year()}_${month(last)}_${last.year()}`;
+  return template.replace(PLACEHOLDER, (_, key) => values[key]());
 }
 
 module.exports = { orderLineConcept, invoiceConcept, invoicePdfConcept };
