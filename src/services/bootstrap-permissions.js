@@ -207,7 +207,7 @@ async function importSeedPermissions() {
     'daily-dedication': ['create', 'find', 'findOne', 'update', 'delete'],
     'document-type': ['find', 'findOne', 'create', 'update', 'delete'],
     regions: ['find', 'findOne'],
-    task: ['create', 'find', 'findOne', 'update', 'delete', 'hours'],
+    task: ['create', 'find', 'findOne', 'update', 'delete', 'hours', 'alerts'],
     'task-comment': ['create', 'find', 'findOne', 'update', 'delete'],
     'task-template': ['create', 'find', 'findOne', 'update', 'delete'],
     'task-state': ['find', 'findOne'],

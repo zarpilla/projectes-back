@@ -13,6 +13,7 @@ const _ = require('lodash');
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { doneStateId } = require('../services/done-state');
+const { taskAlerts, iso } = require('../services/alerts');
 const { taskEmailAllowed } = require('../services/email-gate');
 const { getMe, frontUrlOf } = require('../../../services/me-settings');
 const { nextTaskData } = require('../services/recurrence');
@@ -160,6 +161,42 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
     const response = await super.update(ctx);
     await afterTaskSave(before, await loadTask({ documentId }), ctx.state.user);
     return response;
+  },
+
+  /**
+   * GET /api/tasks/alerts?seen=<ISO>&today=<YYYY-MM-DD>
+   * The Tasques menu dot of the logged-in person (issues/307): `{ overdue,
+   * fresh }` (services/alerts.js). `seen` is when she last opened Tasques,
+   * `today` her day (the browser's); both as the front had them. Her own data
+   * only: never cached per route (the read cache keys by role).
+   */
+  async alerts(ctx) {
+    const me = ctx.state.user && ctx.state.user.id;
+    if (!me) return ctx.unauthorized();
+    const today = /^\d{4}-\d{2}-\d{2}$/.test(String(ctx.query.today || ''))
+      ? ctx.query.today
+      : moment().format('YYYY-MM-DD');
+    const seenAt = iso(ctx.query.seen);
+    const [tasks, states, mentions] = await Promise.all([
+      strapi.db.query(TASK_UID).findMany({
+        where: { archived: false, users_permissions_users: { id: me } },
+        select: ['id', 'due_date', 'archived', 'createdAt'],
+        populate: {
+          task_state: { select: ['id'] },
+          created: { select: ['id'] },
+          users_permissions_users: { select: ['id'] },
+          checklist: { populate: { user: { select: ['id'] } } },
+        },
+      }),
+      // ordered as the front asked them: the done state is the last by order
+      strapi.db.query('api::task-state.task-state').findMany({ select: ['id', 'order'], orderBy: { order: 'asc' } }),
+      strapi.db.query('api::task-comment.task-comment').findMany({
+        where: { mentions: { id: me }, ...(seenAt ? { createdAt: { $gt: seenAt } } : {}) },
+        select: ['id', 'createdAt'],
+        populate: { author: { select: ['id'] } },
+      }),
+    ]);
+    return taskAlerts({ tasks, states, mentions, me, seenAt, today });
   },
 
   /**

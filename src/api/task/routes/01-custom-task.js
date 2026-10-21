@@ -23,5 +23,11 @@ module.exports = {
       path: '/tasks/hours',
       handler: 'task.hours',
     },
+    // the Tasques menu dot of the logged-in person (issues/307)
+    {
+      method: 'GET',
+      path: '/tasks/alerts',
+      handler: 'task.alerts',
+    },
   ],
 };
