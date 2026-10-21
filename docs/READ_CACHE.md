@@ -88,8 +88,27 @@ actions whose answer depends on nothing but those and the data (review custom
 controllers one by one: `GET /activity-types/global` writes, so it is not
 listed).
 
-Cached today (phase 1): the master tables, i.e. «Taules auxiliars» except
-«Festius d'usuari», plus months, routes and city routes.
+Cached today: the master tables («Taules auxiliars» except «Festius
+d'usuari», plus months, routes and city routes), and `contacts/basic`,
+`contacts/for-orders`, `projects/basic`. The last three declare only their own
+table (`OWN_TABLE_ONLY`): declaring all of a project's link tables would drop
+`projects/basic` on every hour logged. Contacts were checked against every
+role's scope in `middlewares/app-permissions.js` (members' filters go into the
+query, so each member has her own entry; cleaning per person happens after).
+
+### Per request: the user and her app permissions
+
+Every authenticated request read the user and her role
+(`fetchAuthenticatedUser`) and her app permissions (app-permissions
+middleware): 7 queries for an answer served from memory. Both are kept per user
+(`services/authenticated-user-cache.js`, `services/app-permissions.js`):
+3 queries left (the API-token lookup, the access token's user check, the
+plugin's settings). Blocking a user or changing her role or app permissions
+applies at her next request; secrets are never kept.
+
+Comparing answers: Strapi fills populated relations with parallel queries, so
+the key order of a row varies between two loads of the same data. The
+verification compares with sorted keys (`canonicalJson`).
 
 ## Settings (environment)
 

@@ -630,3 +630,37 @@ describe('ReadCache.get', () => {
     expect(cache.stats()).toMatchObject({ on: true, entries: 1, hits: 1, misses: 1, stored: 1 });
   });
 });
+
+describe('canonicalJson (verification compares data, not key order)', () => {
+  const { canonicalJson, firstDifference } = require('../src/services/read-cache/read-cache');
+  it('the same data with keys in another order is equal; array order and values count', () => {
+    expect(canonicalJson({ a: 1, b: { c: 2, d: [1, 2] } })).toBe(
+      canonicalJson({ b: { d: [1, 2], c: 2 }, a: 1 }),
+    );
+    expect(canonicalJson({ d: [1, 2] })).not.toBe(canonicalJson({ d: [2, 1] }));
+    expect(canonicalJson({ a: new Date(0) })).toBe(canonicalJson({ a: new Date(0) }));
+    expect(canonicalJson({ a: new Date(0) })).not.toBe(canonicalJson({ a: new Date(1) }));
+    expect(canonicalJson({ a: null })).not.toBe(canonicalJson({}));
+  });
+  it('a verified hit whose keys came in another order is not a mismatch', async () => {
+    const t = new ChangeTracker();
+    t.setLogger({ warn: () => {} });
+    t.setSchema({ tables: ['contacts'] });
+    const c = new ReadCache({ tracker: t, log: { warn: () => {}, error: jest.fn() } });
+    c.enable();
+    c.verifyRate = 1;
+    c.random = () => 0;
+    let n = 0;
+    const load = async () => {
+      t.statementEnded('c1', t.statementStarted('c1', 'select * from `contacts`'));
+      n += 1;
+      return n === 1
+        ? [{ id: 1, owner: { id: 2 }, sector: null }]
+        : [{ id: 1, sector: null, owner: { id: 2 } }];
+    };
+    await c.get('k', load);
+    await c.get('k', load);
+    expect(c.counts.mismatches).toBe(0);
+    expect(firstDifference({ a: 1, b: 2 }, { b: 2, a: 1 })).toBeNull();
+  });
+});

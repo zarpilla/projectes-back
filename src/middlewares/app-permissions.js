@@ -57,6 +57,7 @@ const {
 const { rulesFor, sanitizeResponse, modelUidOfAction } = require('../services/response-sanitizer');
 const { findOrderRouteRate } = require('../api/order/services/route-price');
 const { relationId } = require('../services/relation-input');
+const { appPermissionsOf: cachedAppPermissionsOf } = require('../services/app-permissions');
 
 const ORDER = 'api::order.order';
 const CONTACT = 'api::contact.contact';
@@ -216,12 +217,8 @@ function actionOf(route) {
   return null;
 }
 
-async function appPermissionsOf(strapi, userId) {
-  const user = await strapi.db
-    .query(USER)
-    .findOne({ where: { id: userId }, populate: { permissions: true } });
-  return ((user && user.permissions) || []).map((p) => p && p.permission).filter(Boolean);
-}
+// kept in the read cache per user (services/app-permissions.js, issues/307)
+const appPermissionsOf = (strapi, userId) => cachedAppPermissionsOf(userId, strapi);
 
 const idOf = (value) => (value && typeof value === 'object' ? value.id : value);
 

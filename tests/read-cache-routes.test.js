@@ -80,8 +80,12 @@ describe('registerReadCacheRoutes', () => {
   it('lists no write and no per-person table', () => {
     expect(CACHED_ROUTES['user-festive']).toBeUndefined();
     for (const actions of Object.values(CACHED_ROUTES)) {
-      for (const a of actions) expect(['find', 'findOne', 'getBasic', 'basic']).toContain(a);
+      for (const a of actions)
+        expect(['find', 'findOne', 'getBasic', 'basic', 'forOrders', 'findWithBasicInfo']).toContain(a);
     }
+    // the delicate ones: only these reads, nothing else of contacts or projects
+    expect(CACHED_ROUTES.contact).toEqual(['basic', 'forOrders']);
+    expect(CACHED_ROUTES.project).toEqual(['findWithBasicInfo']);
   });
 
   it('every listed api exists, and its custom reads are GET routes', () => {
@@ -173,6 +177,27 @@ describe('tablesOf', () => {
       'api::city-route.city-route',
     );
   });
+  it('contacts and projects declare only their own table (the rest is what the load reads)', () => {
+    const app = {
+      db: {
+        metadata: {
+          get: (uid) =>
+            ({
+              'api::project.project': {
+                tableName: 'projects',
+                attributes: {
+                  activities: { type: 'relation', joinTable: { name: 'projects_activities_lnk' } },
+                },
+              },
+            })[uid],
+        },
+      },
+    };
+    expect(
+      routesModule.routeTables(app, { handler: 'project.findWithBasicInfo', info: { apiName: 'project' } }),
+    ).toEqual(['projects', ...PERMISSION_TABLES]);
+  });
+
   it('a route depends on its tables and on the role permissions', () => {
     const tables = routesModule.routeTables(strapi, { handler: 'api::city.city.find' });
     expect(tables).toEqual(expect.arrayContaining(['cities', ...PERMISSION_TABLES]));
@@ -271,6 +296,19 @@ describe('the read-cache middleware', () => {
       await middleware(r, controller(r));
     }
     expect(controllerRuns).toBe(3);
+  });
+
+  it('keeps answers without the users’ secrets', async () => {
+    const a = request();
+    await middleware(
+      a,
+      controller(a, { data: [{ id: 1, owner: { id: 3, password: 'hash', resetPasswordToken: 't' } }] }),
+    );
+    const kept = JSON.stringify([...cache.entries.values()].map((e) => e.value));
+    expect(kept).not.toMatch(/password|resetPasswordToken/);
+    const b = request();
+    await middleware(b, controller(b));
+    expect(b.body).toEqual({ data: [{ id: 1, owner: { id: 3 } }] });
   });
 
   it('only 200 JSON answers are kept', async () => {

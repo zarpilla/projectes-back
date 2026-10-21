@@ -9,10 +9,12 @@
  * controller returns is kept, per role, query string and route parameters.
  * A request that isn't a plain GET by a users-permissions user or the Public
  * role goes straight to the controller, and so does every request while the
- * cache is off. Only 200 answers with a JSON body are kept.
+ * cache is off. Only 200 answers with a JSON body are kept, without the
+ * users' secrets.
  */
 
 const { getReadCache } = require('../services/read-cache');
+const { stripUserSecrets } = require('./strip-user-secrets');
 const { callerOf, routeCacheKey, routeTables } = require('../services/read-cache/routes');
 
 const isJsonBody = (body) =>
@@ -33,6 +35,9 @@ module.exports = (_config, { strapi }) =>
       routeCacheKey(ctx, caller),
       async () => {
         await next();
+        // users' secrets are never kept (strip-user-secrets removes them from
+        // every answer on the way out anyway)
+        if (isJsonBody(ctx.body)) stripUserSecrets(ctx.body);
         return ctx.body;
       },
       {

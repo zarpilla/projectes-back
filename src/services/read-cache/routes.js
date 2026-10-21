@@ -11,6 +11,14 @@
  * data and the caller's role are listed: the core find/findOne, and the
  * custom reads reviewed one by one. «Festius d'usuari» is left out (each
  * person's own), and so is GET /activity-types/global, which writes.
+ *
+ * Then `contacts/basic`, `contacts/for-orders` and `projects/basic`, reviewed
+ * against every role's scope in middlewares/app-permissions.js: a member's
+ * own contacts are a filter added to the query before the controller (so
+ * part of the key: each member her own entry), the logistics staff and the
+ * full-access users go straight to the controller, a worker's names-only list
+ * and the cleaning of every answer per person happen after it, on each
+ * request's copy. The controllers read only the query.
  */
 
 const CORE_READS = ['find', 'findOne'];
@@ -47,7 +55,18 @@ const CACHED_ROUTES = {
   route: CORE_READS,
   'route-rate': CORE_READS,
   'city-route': [...CORE_READS, 'basic'],
+  // the lists read on almost every page (issues/307): only these reads
+  contact: ['basic', 'forOrders'],
+  project: ['findWithBasicInfo'],
 };
+
+/**
+ * APIs whose answers are declared to depend only on their own table (plus the
+ * tables their load actually reads, recorded as for every entry). Declaring
+ * every link table of a project would drop `projects/basic` on every hour
+ * logged (projects link to activities, invoices...), though it reads none.
+ */
+const OWN_TABLE_ONLY = new Set(['contact', 'project']);
 
 // what the role-based cleaning of an answer reads (sanitizeOutput): kept
 // answers are per role, and stale when the role's permissions change
@@ -131,10 +150,22 @@ function uidOfRoute(route, apiName) {
   return name ? `api::${name}.${name}` : null;
 }
 
+function ownTable(strapi, uid) {
+  try {
+    const meta = strapi.db.metadata.get(uid);
+    return meta && meta.tableName ? [String(meta.tableName).toLowerCase()] : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Everything a route's kept answer depends on besides what its load reads. */
 function routeTables(strapi, route) {
   const uid = uidOfRoute(route);
-  return [...(uid ? tablesOf(strapi, uid) : []), ...PERMISSION_TABLES];
+  if (!uid) return [...PERMISSION_TABLES];
+  const api = uid.split('::')[1].split('.')[0];
+  if (OWN_TABLE_ONLY.has(api)) return [...ownTable(strapi, uid), ...PERMISSION_TABLES];
+  return [...tablesOf(strapi, uid), ...PERMISSION_TABLES];
 }
 
 /** JSON with sorted keys, so the same query always gives the same key. */
@@ -169,6 +200,7 @@ function routeCacheKey(ctx, caller) {
 
 module.exports = {
   CACHED_ROUTES,
+  OWN_TABLE_ONLY,
   PERMISSION_TABLES,
   MIDDLEWARE,
   registerReadCacheRoutes,

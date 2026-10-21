@@ -94,13 +94,31 @@ function measure(value, freeze = false) {
   return bytes;
 }
 
+/**
+ * JSON with the keys of every object sorted (array order kept): two answers
+ * with the same data compare equal even if their keys came in another order.
+ * Strapi fills populated relations with parallel queries, so the key order of
+ * a row changes from one load to the next (measured on contacts/basic).
+ */
+function canonicalJson(value) {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (typeof value.toJSON === 'function') return JSON.stringify(value);
+  if (Array.isArray(value))
+    return `[${value.map((v) => (v === undefined ? 'null' : canonicalJson(v))).join(',')}]`;
+  const keys = Object.keys(value)
+    .filter((k) => value[k] !== undefined && typeof value[k] !== 'function')
+    .sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`;
+}
+
 /** Where two values first differ, for the STALE log: `data[2].name: "a" ≠ "b"`. */
 function firstDifference(kept, fresh, path = '') {
   const show = (v) => {
     const text = JSON.stringify(v);
     return text === undefined ? String(v) : text.length > 80 ? `${text.slice(0, 80)}…` : text;
   };
-  if (JSON.stringify(kept) === JSON.stringify(fresh)) return null;
+  if (canonicalJson(kept) === canonicalJson(fresh)) return null;
   const isObject = (v) => v !== null && typeof v === 'object' && !(v instanceof Date);
   if (!isObject(kept) || !isObject(fresh) || Array.isArray(kept) !== Array.isArray(fresh)) {
     return `${path || '(root)'}: kept ${show(kept)} ≠ now ${show(fresh)}`;
@@ -377,7 +395,7 @@ class ReadCache {
     const changed = this.tracker.changedSince(tables, Math.min(started, entry.started));
     let same;
     try {
-      same = JSON.stringify(result) === JSON.stringify(entry.value);
+      same = canonicalJson(result) === canonicalJson(entry.value);
     } catch {
       same = false;
     }
@@ -518,4 +536,4 @@ class ReadCache {
   }
 }
 
-module.exports = { ReadCache, MB, deepFreeze, measure, firstDifference };
+module.exports = { ReadCache, MB, deepFreeze, measure, firstDifference, canonicalJson };
