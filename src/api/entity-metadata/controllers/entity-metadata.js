@@ -18,7 +18,7 @@ const { isAppAdmin } = require('../../../services/app-permissions');
 
 // What the logistics office (orders_admin without admin) opens in Taules
 // auxiliars: the Logística group (issues/159)
-const OFFICE_ENTITIES = ['pickup', 'delivery-type', 'city', 'route-rate'];
+const OFFICE_ENTITIES = ['pickup', 'delivery-type', 'city', 'route-rate', 'route-pickup-notice'];
 
 // Catalan field labels (preserved verbatim from v3).
 const FIELD_TRANSLATIONS = {
@@ -126,6 +126,7 @@ const FIELD_TRANSLATIONS = {
 // Labels of one table that differ from FIELD_TRANSLATIONS.
 const ENTITY_FIELD_TRANSLATIONS = {
   pickup: { pickup: 'Recollida a la finca', city: 'Població' },
+  'route-pickup-notice': { pickup: 'Recollida (magatzem)', message: 'Avís' },
   'vat-type': { value: '% IVA' },
   product: { base: 'Preu base', vat: '% IVA' },
 };
@@ -157,6 +158,13 @@ const FIELD_HELP = {
     more10: 'Preu d\'una comanda de 10 kg. Entre dos trams, el preu es calcula proporcionalment.',
     additional60: 'Per sobre de 60 kg: el preu de 60 kg més aquest import per cada kg de més.',
     pickup_point: 'Se suma per cada línia que va a un punt de recollida.',
+  },
+  // issues/313
+  'route-pickup-notice': {
+    name: 'Per trobar-lo a la llista; no surt a la comanda.',
+    routes: "Les rutes on s'aplica. Sense cap ruta, s'aplica a totes.",
+    pickup: 'El magatzem on la sòcia deixa la comanda. Buit: qualsevol.',
+    message: "Surt destacat a la comanda en triar la ruta i el magatzem, p. ex. «Per a aquesta ruta, cal deixar el paquet abans de dimarts a les 12 h». Si n'hi ha més d'un, guanya el més concret.",
   },
   pickup: {
     alias: 'Nom curt que surt a les llistes i als albarans.',
@@ -213,6 +221,7 @@ const LIST_VIEWS = {
 // To-many relations the admin form edits (the others are edited from the other side).
 const EDITABLE_COLLECTIONS = {
   'route-rate': ['routes'],
+  'route-pickup-notice': ['routes'],
 };
 
 // Order of the fields on the admin screens (the ones not listed go after them).
@@ -220,6 +229,7 @@ const EDITABLE_COLLECTIONS = {
 const FIELD_ORDER = {
   festive: ['date', 'festive_type'],
   pickup: ['name', 'alias', 'city', 'pickup', 'message'],
+  'route-pickup-notice': ['name', 'routes', 'pickup', 'message'],
   'activity-type': ['name', 'global', 'project'],
   'route-rate': ['name', 'routes', 'pickup', 'delivery_type', 'less10', 'more10', 'from10to20',
     'from20to30', 'from30to40', 'from40to50', 'from50to60', 'additional60', 'pickup_point'],
@@ -258,6 +268,7 @@ const ADMIN_ENTITIES = {
   festive: 'festives',
   'festive-type': 'festive-types',
   'route-rate': 'route-rates',
+  'route-pickup-notice': 'route-pickup-notices',
   // issues/159: tables that needed the Strapi admin
   pickup: 'pickups',
   'delivery-type': 'delivery-types',
@@ -296,6 +307,7 @@ const DISPLAY_NAMES = {
   'festive-type': { displayName: 'Tipus de festiu', displayNameSingular: 'Tipus de festiu' },
   'route-rate': { displayName: 'Tarifes de ruta', displayNameSingular: 'Tarifa de ruta' },
   pickup: { displayName: 'Punts de recollida', displayNameSingular: 'Punt de recollida' },
+  'route-pickup-notice': { displayName: 'Avisos de dipòsit', displayNameSingular: 'Avís de dipòsit' },
   'delivery-type': { displayName: 'Tipus de lliurament', displayNameSingular: 'Tipus de lliurament' },
   city: { displayName: 'Poblacions', displayNameSingular: 'Població' },
   product: { displayName: 'Productes', displayNameSingular: 'Producte' },

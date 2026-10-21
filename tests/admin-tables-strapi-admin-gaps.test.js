@@ -63,7 +63,7 @@ describe('admin metadata of the tables that needed the Strapi admin', () => {
 
   it('gives the logistics office only the Logística tables (issues/159)', async () => {
     const { byName } = await load(2);
-    expect(Object.keys(byName).sort()).toEqual(['city', 'delivery-type', 'pickup', 'route-rate']);
+    expect(Object.keys(byName).sort()).toEqual(['city', 'delivery-type', 'pickup', 'route-pickup-notice', 'route-rate']);
   });
 
   it('names the document types in Catalan and picks a project from the slim list', async () => {

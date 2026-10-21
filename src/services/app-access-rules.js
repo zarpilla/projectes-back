@@ -89,7 +89,7 @@ for (const name of [
 allow(api('activity-type'), ['getBasic'], EVERYONE);
 // The logistics catalogs, for the logistics screens only: no hours screen
 // reads routes, tariffs, pickups or products (issues/188).
-for (const name of ['route', 'pickup', 'delivery-type', 'route-rate', 'product', 'city-route', 'route-festive']) {
+for (const name of ['route', 'pickup', 'delivery-type', 'route-rate', 'route-pickup-notice', 'product', 'city-route', 'route-festive']) {
   allow(api(name), READ, LOGISTICS);
 }
 allow(api('city-route'), ['basic'], LOGISTICS);
@@ -164,6 +164,8 @@ allow(api('city'), ['update', 'delete'], ORDERS_ADMIN);
 // …and the route rates, and opens those tables in the app (only those: the
 // metadata controller narrows the list for her)
 allow(api('route-rate'), WRITE, ORDERS_ADMIN);
+// the deposit notices per route and warehouse (issues/313)
+allow(api('route-pickup-notice'), WRITE, ORDERS_ADMIN);
 allow(api('entity-metadata'), ['adminEntities'], ORDERS_ADMIN);
 // «Facturar comandes»: the project's last invoices; the contact form's DIR3 search
 allow(api('emitted-invoice'), ['find'], ORDERS_ADMIN);

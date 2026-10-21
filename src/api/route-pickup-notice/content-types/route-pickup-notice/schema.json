@@ -1,0 +1,33 @@
+{
+  "kind": "collectionType",
+  "collectionName": "route_pickup_notices",
+  "info": {
+    "singularName": "route-pickup-notice",
+    "pluralName": "route-pickup-notices",
+    "displayName": "RoutePickupNotice"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "routes": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::route.route",
+      "inversedBy": "pickup_notices"
+    },
+    "pickup": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::pickup.pickup"
+    },
+    "message": {
+      "type": "text",
+      "required": true
+    }
+  }
+}
