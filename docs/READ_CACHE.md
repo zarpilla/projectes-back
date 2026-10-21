@@ -147,6 +147,7 @@ verification compares with sorted keys (`canonicalJson`).
 | `READ_CACHE_MAX_MB` | 64 | memory cap per process (JSON size; least recently used out) |
 | `READ_CACHE_TTL_S` | 600 | no answer is kept longer |
 | `READ_CACHE_STAMPS_MS` | 2000 | max age of MySQL's stamps when an answer is served |
+| `READ_CACHE_LOG_SLOW_MS` | 1000 | a load someone waits this long or more is logged («slow load») |
 | `READ_CACHE_VERIFY` | 0 | share of hits loaded again and compared (0..1). A difference drops the entry; if the stamps then report a write from outside on its tables it was the normal delay for those (warning «served up to a few seconds after a write from outside»), otherwise it is a detection failure: `[read-cache] STALE entry` error with the first difference |
 
 ## Administration
@@ -156,7 +157,12 @@ verification compares with sorted keys (`canonicalJson`).
   verification results, what the tracker and the stamps saw, and the
   process's memory (`memory`: RSS, heap used, heap limit, the container's
   limit) to size `READ_CACHE_MAX_MB` per tenant: the kept bytes are a
-  JSON-size estimate, the heap holds about 2.5 times that.
+  JSON-size estimate, the heap holds about 2.5 times that. Also, per report
+  (`reports`, by dataset prefix or route path, since `since`): answers from
+  memory, loads waited for (`firstLoads` since the start, `loadsAgain` after a
+  change, the TTL or the cap) and their time. A report made of pieces
+  (Tresoreria) counts each piece. A load of `READ_CACHE_LOG_SLOW_MS` or more
+  is logged: `[read-cache] slow load: <report> <ms> ms (first since start|again)`.
 - `POST /api/read-cache/clear` (app admins): «Buida la memòria cau», the button
   of Configuració general › Memòria cau, which also shows the stats.
 

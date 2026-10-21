@@ -134,6 +134,21 @@ function firstDifference(kept, fresh, path = '') {
   return `${path || '(root)'}: differs`;
 }
 
+/**
+ * The report a key belongs to, for the per-report figures: a dataset's prefix
+ * ('treasury.forecast:projects' → 'treasury.forecast'), or a route's method
+ * and path ('route|GET /projects/basic|…' → 'GET /projects/basic').
+ */
+function familyOf(key) {
+  const text = String(key);
+  if (text.startsWith('route|')) return text.split('|')[1] || 'route';
+  return text.split(':')[0];
+}
+
+// keys remembered to tell a first load from a load again (bounded: the
+// queries of a cached route can vary without end)
+const MAX_LOADED_KEYS = 5000;
+
 const deepFreeze = (value) => {
   measure(value, true);
   return value;
@@ -150,6 +165,7 @@ class ReadCache {
     random = Math.random,
     inTransaction = () => false,
     log = null,
+    slowLoadMs = 1000,
   }) {
     this.tracker = tracker;
     this.stamps = stamps;
@@ -160,6 +176,12 @@ class ReadCache {
     this.random = random;
     this.inTransaction = inTransaction;
     this.log = log;
+    // per report: what its users got from memory and what they waited for
+    // (issues/307: to decide whether warming the cache is worth it)
+    this.startedAt = clock();
+    this.slowLoadMs = slowLoadMs;
+    this.reports = new Map(); // family -> figures
+    this.loadedKeys = new Set();
     this.confirmWaitMs = 3100; // the 2 s recheck of recent stamps, and a margin
     this.confirming = null; // the last confirmMismatch (tests)
     this.enabled = false;
@@ -238,6 +260,7 @@ class ReadCache {
         this.touch(key, entry);
         if (verifyRate > 0 && this.random() < verifyRate) return this.verify(key, entry, loader, options);
         this.counts.hits++;
+        this.report(key).hits++;
         this.tracker.noteRead(entry.tables);
         return answer(entry.value);
       }
@@ -249,6 +272,7 @@ class ReadCache {
       const result = await shared.catch(() => null);
       if (result && result.stored && !this.tracker.changedSince(result.tables, result.started)) {
         this.counts.shared++;
+        this.report(key).shared++;
         this.tracker.noteRead(result.tables);
         // from the kept copy: the first caller may already be changing its own
         return answer(result.kept);
@@ -301,6 +325,7 @@ class ReadCache {
       const started = this.tracker.now();
       const stampSeq = this.stamps ? this.stamps.completed() : 0;
       const stampNow = this.stamps ? this.stamps.completedAt() : null;
+      const loadStarted = this.clock();
       let captured;
       try {
         captured = await this.tracker.captureReads(loader);
@@ -309,6 +334,7 @@ class ReadCache {
         throw error;
       }
       const { result, store } = captured;
+      this.noteLoad(key, this.clock() - loadStarted);
       const tables = [
         ...new Set([...(options.tables || []).map((t) => String(t).toLowerCase()), ...store.tables]),
       ];
@@ -388,6 +414,7 @@ class ReadCache {
   /** A sampled hit: load again and compare with what is kept. */
   async verify(key, entry, loader, options = {}) {
     this.counts.verified++;
+    this.report(key).verified++;
     const started = this.tracker.now();
     const { result, store } = await this.tracker.captureReads(loader);
     const tables = [...new Set([...entry.tables, ...store.tables])];
@@ -512,6 +539,52 @@ class ReadCache {
     this.tracker.everythingChanged(reason);
   }
 
+  /** The figures of a key's report (created on first use). */
+  report(key) {
+    const family = familyOf(key);
+    let figures = this.reports.get(family);
+    if (!figures) {
+      figures = {
+        hits: 0,
+        shared: 0,
+        verified: 0,
+        firstLoads: 0,
+        loadsAgain: 0,
+        loadMsTotal: 0,
+        loadMsMax: 0,
+        lastLoadMs: null,
+        lastLoadAt: null,
+      };
+      this.reports.set(family, figures);
+    }
+    return figures;
+  }
+
+  /**
+   * A load someone waited for: the first of its key since the start (a
+   * deploy, a restart), or a load again after a change, the TTL or the cap.
+   * A slow one is also logged, to follow it across tenants in the logs.
+   */
+  noteLoad(key, ms) {
+    const figures = this.report(key);
+    const again = this.loadedKeys.has(key);
+    if (!again) {
+      if (this.loadedKeys.size >= MAX_LOADED_KEYS) this.loadedKeys.clear();
+      this.loadedKeys.add(key);
+    }
+    if (again) figures.loadsAgain++;
+    else figures.firstLoads++;
+    figures.loadMsTotal += ms;
+    figures.loadMsMax = Math.max(figures.loadMsMax, ms);
+    figures.lastLoadMs = ms;
+    figures.lastLoadAt = this.clock();
+    if (ms >= this.slowLoadMs && this.log && this.log.info) {
+      this.log.info(
+        `[read-cache] slow load: ${familyOf(key)} ${Math.round(ms)} ms (${again ? 'again' : 'first since start'})`,
+      );
+    }
+  }
+
   stats() {
     return {
       on: this.isOn(),
@@ -523,6 +596,19 @@ class ReadCache {
       verifyRate: this.verifyRate,
       ...this.counts,
       tracker: { ...this.tracker.stats, tables: this.tracker.tables.length },
+      since: new Date(this.startedAt).toISOString(),
+      reports: Object.fromEntries(
+        [...this.reports].map(([family, f]) => [
+          family,
+          {
+            ...f,
+            loadMsTotal: Math.round(f.loadMsTotal),
+            loadMsMax: Math.round(f.loadMsMax),
+            lastLoadMs: f.lastLoadMs === null ? null : Math.round(f.lastLoadMs),
+            lastLoadAt: f.lastLoadAt === null ? null : new Date(f.lastLoadAt).toISOString(),
+          },
+        ]),
+      ),
       stamps: this.stamps ? { ...this.stamps.stats, watched: this.stamps.watched.size } : null,
     };
   }
@@ -536,4 +622,4 @@ class ReadCache {
   }
 }
 
-module.exports = { ReadCache, MB, deepFreeze, measure, firstDifference, canonicalJson };
+module.exports = { ReadCache, MB, deepFreeze, measure, firstDifference, canonicalJson, familyOf };

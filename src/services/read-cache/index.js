@@ -28,6 +28,8 @@
  *                               process are seen within this, + 2 s)
  *   READ_CACHE_VERIFY=0         share of hits loaded again and compared
  *                               (0..1); a difference is logged as an error
+ *   READ_CACHE_LOG_SLOW_MS=1000 a load someone waits this long or more is
+ *                               logged («[read-cache] slow load: …»)
  */
 
 const { getTracker } = require('./change-tracker');
@@ -53,6 +55,7 @@ function getReadCache() {
       maxBytes: number(process.env.READ_CACHE_MAX_MB, 64) * MB,
       ttlMs: number(process.env.READ_CACHE_TTL_S, 600) * 1000,
       verifyRate: Math.min(1, number(process.env.READ_CACHE_VERIFY, 0)),
+      slowLoadMs: number(process.env.READ_CACHE_LOG_SLOW_MS, 1000),
     });
   }
   return globalThis[KEY];
