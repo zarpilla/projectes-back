@@ -26,6 +26,7 @@ const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { getMe } = require('../../../services/me-settings');
 const { getReadCache } = require('../../../services/read-cache');
+const { queryTables } = require('../../../services/query-tables');
 const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { addExpectedVat, applyExpectedVatPct } = require('../services/vat-forecast');
@@ -74,9 +75,17 @@ const forecastProjectOption = (p) => ({
 // each piece when one of the tables it read changes (issues/307). Prod
 // resilience took 10 s, most of it loading and mapping these rows.
 // Frozen and shared, never copied; not re-verified (a check would redo the
-// whole load).
-const forecastData = (name, loader) =>
-  getReadCache().get(`treasury.forecast:${name}`, loader, { frozen: true, verifyRate: 0 });
+// whole load). Each piece declares the tables its query reads, so their MySQL
+// stamps are read before its first load (issues/307).
+const forecastTables = new Map();
+const forecastData = (name, [uid, populate], loader) => {
+  if (!forecastTables.has(name)) forecastTables.set(name, [...queryTables(strapi, uid, populate)]);
+  return getReadCache().get(`treasury.forecast:${name}`, loader, {
+    frozen: true,
+    verifyRate: 0,
+    tables: forecastTables.get(name),
+  });
+};
 
 module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -98,8 +107,9 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     const projectIncomes = [];
 
     // Fetch all validations
-    const validations = await forecastData('validations', () =>
-      strapi.db.query('api::treasury-validation.treasury-validation').findMany({}),
+    const VALIDATION = 'api::treasury-validation.treasury-validation';
+    const validations = await forecastData('validations', [VALIDATION], () =>
+      strapi.db.query(VALIDATION).findMany({}),
     );
 
     // Create a map for quick lookup: validationKey -> true
@@ -109,76 +119,73 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       validationMap[key] = true;
     });
 
-    const treasuries = await forecastData('treasuries', () =>
-      strapi.db.query('api::treasury.treasury').findMany({ populate: { bank_account: true, project: true } }),
+    const TREASURY_POPULATE = { bank_account: true, project: true };
+    const treasuries = await forecastData('treasuries', ['api::treasury.treasury', TREASURY_POPULATE], () =>
+      strapi.db.query('api::treasury.treasury').findMany({ populate: TREASURY_POPULATE }),
     );
 
-    const emitted = await forecastData('emitted', () =>
-      strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
-        populate: { bank_account: true, project: true, projects: true, contact: true },
-      }),
+    const DOCUMENT_POPULATE = { bank_account: true, project: true, projects: true, contact: true };
+    const emitted = await forecastData('emitted', ['api::emitted-invoice.emitted-invoice', DOCUMENT_POPULATE], () =>
+      strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({ populate: DOCUMENT_POPULATE }),
     );
 
-    const received = await forecastData('received', () =>
-      strapi.db.query('api::received-invoice.received-invoice').findMany({
-        populate: { bank_account: true, project: true, projects: true, contact: true },
-      }),
+    const received = await forecastData('received', ['api::received-invoice.received-invoice', DOCUMENT_POPULATE], () =>
+      strapi.db.query('api::received-invoice.received-invoice').findMany({ populate: DOCUMENT_POPULATE }),
     );
 
-    const receivedIncomes = await forecastData('receivedIncomes', () =>
-      strapi.db.query('api::received-income.received-income').findMany({
-        populate: { bank_account: true, project: true, projects: true, contact: true, document_type: true },
-      }),
+    const TYPED_DOCUMENT_POPULATE = { ...DOCUMENT_POPULATE, document_type: true };
+    const receivedIncomes = await forecastData(
+      'receivedIncomes',
+      ['api::received-income.received-income', TYPED_DOCUMENT_POPULATE],
+      () => strapi.db.query('api::received-income.received-income').findMany({ populate: TYPED_DOCUMENT_POPULATE }),
     );
 
-    const receivedExpenses = await forecastData('receivedExpenses', () =>
-      strapi.db.query('api::received-expense.received-expense').findMany({
-        populate: { bank_account: true, project: true, projects: true, contact: true, document_type: true },
-      }),
+    const receivedExpenses = await forecastData(
+      'receivedExpenses',
+      ['api::received-expense.received-expense', TYPED_DOCUMENT_POPULATE],
+      () => strapi.db.query('api::received-expense.received-expense').findMany({ populate: TYPED_DOCUMENT_POPULATE }),
     );
 
-    const payrolls = await forecastData('payrolls', () =>
-      strapi.db.query('api::payroll.payroll').findMany({
-        // the person's name only: kept in memory, never the whole user (password hash)
-        populate: { bank_account: true, year: true, month: true, users_permissions_user: { select: ['id', 'username'] } },
-      }),
+    // the person's name only: kept in memory, never the whole user (password hash)
+    const PAYROLL_POPULATE = { bank_account: true, year: true, month: true, users_permissions_user: { select: ['id', 'username'] } };
+    const payrolls = await forecastData('payrolls', ['api::payroll.payroll', PAYROLL_POPULATE], () =>
+      strapi.db.query('api::payroll.payroll').findMany({ populate: PAYROLL_POPULATE }),
     );
 
     // Fetch ALL projects (we'll filter in JavaScript)
-    const allProjectsRaw = await forecastData('projects', () =>
-      strapi.db.query('api::project.project').findMany({
+    const PROJECT_FORECAST_POPULATE = {
+      project_phases: {
         populate: {
-          project_phases: {
+          expenses: {
             populate: {
-              expenses: {
-                populate: {
-                  provider: true,
-                  expense_type: true,
-                  invoice: true,
-                  grant: true,
-                  ticket: true,
-                  diet: true,
-                  expense: true,
-                  bank_account: true,
-                },
-              },
-              incomes: {
-                populate: { client: true, income_type: true, invoice: true, income: true, bank_account: true },
-              },
+              provider: true,
+              expense_type: true,
+              invoice: true,
+              grant: true,
+              ticket: true,
+              diet: true,
+              expense: true,
+              bank_account: true,
             },
           },
-          periodification: true,
-          // Returned to the frontend as `projects`: TreasuryAnnotationInput reads
-          // `p.mother.id` whenever `p.mother !== null`. v5 omits an unpopulated
-          // relation (undefined, not null), so the render threw and froze the
-          // "Afegir moviment" form with its Enviar button disabled.
-          mother: true,
-          // v3 exposed these as FK columns on the row; v5 omits an unpopulated
-          // relation entirely, so the state/type/likelihood filters below would
-          // see `undefined` for every project and match nothing.
-          ...Object.fromEntries(FILTER_RELATIONS.map((r) => [r, true])),
+          incomes: {
+            populate: { client: true, income_type: true, invoice: true, income: true, bank_account: true },
+          },
         },
-      }),
+      },
+      periodification: true,
+      // Returned to the frontend as `projects`: TreasuryAnnotationInput reads
+      // `p.mother.id` whenever `p.mother !== null`. v5 omits an unpopulated
+      // relation (undefined, not null), so the render threw and froze the
+      // "Afegir moviment" form with its Enviar button disabled.
+      mother: true,
+      // v3 exposed these as FK columns on the row; v5 omits an unpopulated
+      // relation entirely, so the state/type/likelihood filters below would
+      // see `undefined` for every project and match nothing.
+      ...Object.fromEntries(FILTER_RELATIONS.map((r) => [r, true])),
+    };
+    const allProjectsRaw = await forecastData('projects', ['api::project.project', PROJECT_FORECAST_POPULATE], () =>
+      strapi.db.query('api::project.project').findMany({ populate: PROJECT_FORECAST_POPULATE }),
     );
 
     // Filter out mother projects (is_mother === true) for unpaid items processing
@@ -229,13 +236,14 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       return ids.some((id) => allowedProjectIds.has(id));
     };
 
-    const years = await forecastData('years', () => strapi.db.query('api::year.year').findMany({}));
+    const years = await forecastData('years', ['api::year.year'], () => strapi.db.query('api::year.year').findMany({}));
 
-    const bankAccounts = await forecastData('bankAccounts', () =>
+    const bankAccounts = await forecastData('bankAccounts', ['api::bank-account.bank-account'], () =>
       strapi.db.query('api::bank-account.bank-account').findMany({}),
     );
 
-    const me = await forecastData('me', () => getMe());
+    // getMe() populates every first-level relation and component
+    const me = await forecastData('me', ['api::me.me', '*'], () => getMe());
 
     // Economic forecast ("prevista") per year, derived from the project PLAN
     // (project_phases + prevista periodification) — exactly the way

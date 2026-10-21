@@ -18,6 +18,7 @@ const { fiscalYearStartMonth } = require('../../../services/fiscal-year');
 const { documentsOfProject, mergeDocuments, refreshLineWarnings } = require('../../../services/refresh-line-warnings');
 const { loadActivitiesByProjectMonth } = require('../services/economic-detail-activities');
 const { getReadCache } = require('../../../services/read-cache');
+const { queryTables } = require('../../../services/query-tables');
 const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDocuments');
 const { lineTotal, invalidLineValueMessage } = require('../../../services/budget-line');
 const { touchesDates, projectDatesError } = require('../../../services/project-dates');
@@ -286,9 +287,25 @@ const PHASES_BOTH_POPULATE = {
   project_scope: true,
   default_dedication_type: true,
 };
-// frozen and shared, never copied (issues/307)
-const phasesBothData = (name, loader) =>
-  getReadCache().get(`project.phases-both:${name}`, loader, { frozen: true, verifyRate: 0 });
+// Frozen and shared, never copied; each piece declares the tables its query
+// reads, so their MySQL stamps are read before its first load (issues/307).
+const phasesBothTables = new Map();
+const phasesBothData = (name, [uid, populate], loader) => {
+  if (!phasesBothTables.has(name)) phasesBothTables.set(name, [...queryTables(strapi, uid, populate)]);
+  return getReadCache().get(`project.phases-both:${name}`, loader, {
+    frozen: true,
+    verifyRate: 0,
+    tables: phasesBothTables.get(name),
+  });
+};
+const PHASES_BOTH_ACTIVITY_POPULATE = {
+  project: { select: ['id'] },
+  users_permissions_user: { select: ['id'] },
+  activity_type: { select: ['id'] },
+  dedication_type: { select: ['id'] },
+};
+// the person's id only: kept in memory, never the whole user
+const PERSON_ID = { users_permissions_user: { select: ['id'] } };
 
 // State filter of projects/economic-detail (Ingressos/Despeses, Preu hora).
 // The id 0 is the «Sense estat» chip: projects without a project_state
@@ -727,7 +744,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     const userId = parseInt(ctx.query.user, 10) > 0 ? parseInt(ctx.query.user, 10) : null;
     const projectId = parseInt(ctx.query.project, 10) > 0 ? parseInt(ctx.query.project, 10) : null;
 
-    const all = await phasesBothData('projects', () =>
+    const all = await phasesBothData('projects', ['api::project.project', PHASES_BOTH_POPULATE], () =>
       strapi.db.query('api::project.project').findMany({
         // date_start / createdAt back the pivot's "Any" dimension, which reads
         // `p.date_start || p.created_at`.
@@ -745,15 +762,10 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     let activitiesByProject = null;
     if (activities) {
       // their relations as ids, like with-activities (what DedicationEstPivot reads)
-      const rows = await phasesBothData('activities', () =>
+      const rows = await phasesBothData('activities', ['api::activity.activity', PHASES_BOTH_ACTIVITY_POPULATE], () =>
         strapi.db.query('api::activity.activity').findMany({
           select: ['id', 'date', 'hours', 'cost_by_hour'],
-          populate: {
-            project: { select: ['id'] },
-            users_permissions_user: { select: ['id'] },
-            activity_type: { select: ['id'] },
-            dedication_type: { select: ['id'] },
-          },
+          populate: PHASES_BOTH_ACTIVITY_POPULATE,
         }),
       );
       const idOf = (relation) => (relation && relation.id) || null;
@@ -781,13 +793,12 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     let festives = null;
     if (plannedHours === 'true' || plannedHours === true) {
       [dailyDedications, festives] = await Promise.all([
-        // the person's id only: kept in memory, never the whole user
-        phasesBothData('dedications', () =>
+        phasesBothData('dedications', ['api::daily-dedication.daily-dedication', PERSON_ID], () =>
           strapi.db
             .query('api::daily-dedication.daily-dedication')
             .findMany({ populate: { users_permissions_user: { select: ['id'] } } }),
         ),
-        phasesBothData('festives', () =>
+        phasesBothData('festives', ['api::festive.festive', PERSON_ID], () =>
           strapi.db
             .query('api::festive.festive')
             .findMany({ populate: { users_permissions_user: { select: ['id'] } } }),

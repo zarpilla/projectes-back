@@ -20,9 +20,11 @@ const controller = fs.readFileSync(
 
 describe('treasury forecast projects shape', () => {
   it('populates mother on the projects it returns', () => {
-    const start = controller.indexOf("query('api::project.project')");
+    // the populate is a constant since issues/309 (also declared to the read cache)
+    const start = controller.indexOf('const PROJECT_FORECAST_POPULATE = {');
     expect(start).toBeGreaterThan(-1);
-    const populate = controller.slice(start, controller.indexOf('});', start));
+    const populate = controller.slice(start, controller.indexOf('};', start));
     expect(populate).toMatch(/\bmother:\s*true\b/);
+    expect(controller).toMatch(/query\('api::project\.project'\)\.findMany\(\{ populate: PROJECT_FORECAST_POPULATE \}\)/);
   });
 });
