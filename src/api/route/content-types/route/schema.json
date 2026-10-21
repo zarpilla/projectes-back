@@ -91,6 +91,12 @@
       "type": "relation",
       "relation": "oneToOne",
       "target": "plugin::users-permissions.user"
+    },
+    "time_from": {
+      "type": "time"
+    },
+    "time_to": {
+      "type": "time"
     }
   }
 }

@@ -244,7 +244,8 @@ async function importSeedPermissions() {
     // Taules auxiliars › Avisos de dipòsit (issues/313)
     'route-pickup-notice': ['find', 'findOne', 'create', 'update', 'delete'],
     city: ['find', 'findOne', 'create', 'update', 'delete', 'postcodes'],
-    'city-route': ['find', 'findOne', 'create', 'delete', 'basic'],
+    // update: the time slot of a town in a route (issues/314)
+    'city-route': ['find', 'findOne', 'create', 'update', 'delete', 'basic'],
     'form-submission': ['create', 'find', 'findOne'],
     'route-festive': ['find', 'findOne', 'create', 'delete'],
     'project-phases': ['find', 'findOne', 'create', 'update', 'delete'],
