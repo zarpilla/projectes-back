@@ -73,7 +73,10 @@ const forecastProjectOption = (p) => ({
 // applied to it on every request, as before (issues/309). The read cache drops
 // each piece when one of the tables it read changes (issues/307). Prod
 // resilience took 10 s, most of it loading and mapping these rows.
-const forecastData = (name, loader) => getReadCache().get(`treasury.forecast:${name}`, loader);
+// Frozen and shared, never copied; not re-verified (a check would redo the
+// whole load).
+const forecastData = (name, loader) =>
+  getReadCache().get(`treasury.forecast:${name}`, loader, { frozen: true, verifyRate: 0 });
 
 module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where

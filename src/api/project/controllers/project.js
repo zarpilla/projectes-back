@@ -286,7 +286,9 @@ const PHASES_BOTH_POPULATE = {
   project_scope: true,
   default_dedication_type: true,
 };
-const phasesBothData = (name, loader) => getReadCache().get(`project.phases-both:${name}`, loader);
+// frozen and shared, never copied (issues/307)
+const phasesBothData = (name, loader) =>
+  getReadCache().get(`project.phases-both:${name}`, loader, { frozen: true, verifyRate: 0 });
 
 // State filter of projects/economic-detail (Ingressos/Despeses, Preu hora).
 // The id 0 is the «Sense estat» chip: projects without a project_state

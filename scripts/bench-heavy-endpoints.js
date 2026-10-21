@@ -50,7 +50,16 @@ async function main() {
   const { createStrapi } = require(require.resolve('@strapi/strapi', { paths: [ROOT] }));
   const app = await createStrapi({ appDir: ROOT, distDir: ROOT }).load();
   let queries = 0;
-  app.db.connection.on('query', () => { queries += 1; });
+  const sqlLog = [];
+  const started = new Map();
+  app.db.connection.on('query', (q) => {
+    queries += 1;
+    if (process.env.BENCH_SQL) started.set(q.__knexQueryUid, [Date.now(), q.sql]);
+  });
+  app.db.connection.on('query-response', (_r, q) => {
+    const s = started.get(q.__knexQueryUid);
+    if (s) sqlLog.push(`    ${Date.now() - s[0]} ms ${s[1].replace(/\s+/g, ' ').slice(0, 110)}`);
+  });
 
   const user = await app.db.query('plugin::users-permissions.user').findOne({ where: { blocked: false } });
   // Fixed so runs on different days compare equal.
@@ -74,14 +83,17 @@ async function main() {
         set() {},
       };
       const t = process.hrtime.bigint();
+      sqlLog.length = 0;
       const res = await app.controller(uid)[action](ctx);
       times.push(Number(process.hrtime.bigint() - t) / 1e6);
+      if (process.env.BENCH_SQL && i >= 2) console.log(`  pass ${i + 1}: ${times[i].toFixed(0)} ms, SQL:\n${sqlLog.join('\n') || '    (none)'}`);
       body = ctx.body !== undefined ? ctx.body : res;
     }
     if (process.env.BENCH_CACHE_STATS) {
       const { getReadCache } = require(path.join(ROOT, 'src/services/read-cache'));
       const c = getReadCache().counts;
-      console.log(`  read-cache ${name}: ${JSON.stringify({ hits: c.hits, misses: c.misses, stored: c.stored, notStored: c.notStored, invalid: c.invalid, dropped: c.dropped })}`);
+      const heap = (process.memoryUsage().heapUsed / 1e6).toFixed(0);
+      console.log(`  read-cache ${name}: ${JSON.stringify({ hits: c.hits, misses: c.misses, stored: c.stored, notStored: c.notStored, invalid: c.invalid, dropped: c.dropped })} heap ${heap} MB`);
     }
     const json = JSON.stringify(body);
     fs.writeFileSync(path.join(outDir, `${name}.json`), json);
