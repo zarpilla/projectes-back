@@ -4,8 +4,8 @@
  * project service (v5). Core service methods (find/findOne/create/update/delete)
  * provided by createCoreService — required by the core API controllers.
  *
- * The dedication/festive cache helpers this file used to hold live in
- * ./projectCache.js (they are a plain shared module, not service methods).
+ * The daily dedications and festives the project engine reads come from
+ * src/services/calendars.js (through the read cache, issues/307).
  */
 
 const { createCoreService } = require('@strapi/strapi').factories;

@@ -54,7 +54,8 @@ describe('estimated hours cost (calendars populated with their user)', () => {
         query: (uid) => fakeQuery(uid === 'api::festive.festive' ? FESTIVES : DEDICATIONS),
       },
     };
-    cache = require('../src/api/project/services/projectCache');
+    // the calendars the engine reads (services/calendars.js, issues/307)
+    cache = require('../src/services/calendars');
   });
 
   afterEach(() => {
@@ -83,22 +84,19 @@ describe('estimated hours cost (calendars populated with their user)', () => {
   });
 });
 
-describe('project controller loaders populate the calendar/festive user', () => {
+describe('the project controller takes the calendars from services/calendars.js', () => {
   const controller = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'api', 'project', 'controllers', 'project.js'),
     'utf8',
   );
 
+  // a loader of its own would bypass the populate checked above, and the
+  // read cache's shared copy (issues/307)
   it.each(['api::daily-dedication.daily-dedication', 'api::festive.festive'])('%s', (uid) => {
-    const calls = controller
+    const loads = controller
       .split(`.query('${uid}')`)
       .slice(1)
       .filter((rest) => /^\s*\.findMany\(/.test(rest));
-    expect(calls.length).toBeGreaterThan(0);
-    calls.forEach((rest) => {
-      const call = rest.slice(0, rest.indexOf(')') + 1);
-      // the whole user, or its id (the read cache keeps no password hash, issues/309)
-      expect(call).toMatch(/populate:\s*\{\s*users_permissions_user:\s*(true|\{\s*select:\s*\['id'\])/);
-    });
+    expect(loads).toEqual([]);
   });
 });

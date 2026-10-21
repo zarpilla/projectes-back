@@ -19,7 +19,15 @@
  * full-access users go straight to the controller, a worker's names-only list
  * and the cleaning of every answer per person happen after it, on each
  * request's copy. The controllers read only the query.
+ *
+ * Then the gantts of Informes (`projects/dedications`, Previsió dedicació, and
+ * `projects/real-dedications`, % Dedicació real) and `projects/estimated-totals`
+ * (Justificacions): heavy, built from the query string and the data only (no
+ * scope of app-permissions, no `ctx.state.user`; workers' answers are cleaned
+ * after, on the copy). The gantts also depend on the day (DATED_ROUTES).
  */
+
+const moment = require('moment');
 
 const CORE_READS = ['find', 'findOne'];
 
@@ -57,7 +65,25 @@ const CACHED_ROUTES = {
   'city-route': [...CORE_READS, 'basic'],
   // the lists read on almost every page (issues/307): only these reads
   contact: ['basic', 'forOrders'],
-  project: ['findWithBasicInfo'],
+  project: ['findWithBasicInfo', 'findDedications', 'findRealDedications', 'findEstimatedTotalsByDay'],
+};
+
+/**
+ * The largest answer a route keeps (its JSON size). Every hit is a copy of it
+ * (~12 ms per MB), and the cap is shared with the big datasets (Tresoreria,
+ * Ingressos/Despeses): the few answers above it (the Excel rows of Previsió
+ * dedicació, every year's estimated totals) are asked rarely and are left to
+ * the controller. Every list cached before them is under 2 MB on resilience.
+ */
+const ROUTE_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Reads whose answer also depends on the day, which then goes in the key: the
+ * gantts take the current year when none is asked, and % Dedicació real
+ * leaves the periods after the current one empty.
+ */
+const DATED_ROUTES = {
+  project: ['findDedications', 'findRealDedications'],
 };
 
 /**
@@ -193,13 +219,26 @@ function callerOf(ctx) {
   return `role:${role.id}`;
 }
 
-function routeCacheKey(ctx, caller) {
+/** True when the route's answer depends on the day (DATED_ROUTES). */
+function isDated(route, dated = DATED_ROUTES) {
+  const uid = uidOfRoute(route);
+  const handler = typeof (route && route.handler) === 'string' ? route.handler : '';
+  // 'api::project.project.findDedications', or a custom route's 'project.findDedications'
+  const api = uid ? uid.split('::')[1].split('.')[0] : handler.split('.').length === 2 ? handler.split('.')[0] : null;
+  return Boolean(api && dated[api] && dated[api].includes(actionOf(handler)));
+}
+
+function routeCacheKey(ctx, caller, today = () => moment().format('YYYY-MM-DD')) {
   const route = (ctx.state && ctx.state.route) || {};
-  return `route|${route.method} ${route.path}|${route.handler}|${caller}|${stableJson(ctx.params || {})}|${stableJson(ctx.query || {})}`;
+  const day = isDated(route) ? `|day:${today()}` : '';
+  return `route|${route.method} ${route.path}|${route.handler}|${caller}|${stableJson(ctx.params || {})}|${stableJson(ctx.query || {})}${day}`;
 }
 
 module.exports = {
   CACHED_ROUTES,
+  DATED_ROUTES,
+  ROUTE_MAX_BYTES,
+  isDated,
   OWN_TABLE_ONLY,
   PERMISSION_TABLES,
   MIDDLEWARE,

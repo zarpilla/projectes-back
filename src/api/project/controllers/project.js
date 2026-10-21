@@ -12,7 +12,7 @@ const {
   v3FindArgs,
 } = require('../../../services/query-adapter');
 const { numericId } = require('../../../middlewares/v3-compat');
-const { getDailyDedications, getFestives } = require('../services/projectCache');
+const { getDailyDedications, getFestives } = require('../../../services/calendars');
 const { getMe } = require('../../../services/me-settings');
 const { fiscalYearStartMonth } = require('../../../services/fiscal-year');
 const { documentsOfProject, mergeDocuments, refreshLineWarnings } = require('../../../services/refresh-line-warnings');
@@ -304,19 +304,177 @@ const PHASES_BOTH_ACTIVITY_POPULATE = {
   activity_type: { select: ['id'] },
   dedication_type: { select: ['id'] },
 };
-// the person's id only: kept in memory, never the whole user
-const PERSON_ID = { users_permissions_user: { select: ['id'] } };
-
 // State filter of projects/economic-detail (Ingressos/Despeses, Preu hora).
 // The id 0 is the «Sense estat» chip: projects without a project_state
 // (issues/205).
 const NO_STATE = 0;
+const economicDetailStateIds = (stateIds) =>
+  (stateIds || []).map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
 const economicDetailStateFilter = (stateIds) => {
-  const ids = (stateIds || []).map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
+  const ids = economicDetailStateIds(stateIds);
   const withState = { project_state: { id: { $in: ids.filter((n) => n !== NO_STATE) } } };
   if (!ids.includes(NO_STATE)) return withState;
   return { $or: [withState, { project_state: { id: { $null: true } } }] };
 };
+/** The same filter on a project's state id (null: no state), applied in memory. */
+const economicDetailStateMatch = (stateIds) => {
+  const ids = economicDetailStateIds(stateIds);
+  const withState = new Set(ids.filter((n) => n !== NO_STATE));
+  const withoutState = ids.includes(NO_STATE);
+  return (state) => (state === null ? withoutState : withState.has(state));
+};
+
+// The projects of the economic detail: the published ones (mothers are left
+// out after loading, their children carry the figures).
+const ECONOMIC_DETAIL_QUERY = { _limit: -1, published_at_null: false };
+
+/**
+ * The engine's context shared by every project of the economic detail: the
+ * calendars, the executed hours per project and month (issues/060, summed by
+ * the database since issues/309), the deductible VAT and the fiscal year.
+ */
+async function economicDetailContext(projects, dailyDedications, festives) {
+  const activitiesByProject = await loadActivitiesByProjectMonth(projects.map((p) => p.id));
+  const me = await getMe();
+  const fallback_deductible_vat_pct =
+    me.options && me.options.deductible_vat_pct ? me.options.deductible_vat_pct : 100.0;
+  const yearEntities = await strapi.db.query('api::year.year').findMany({});
+  const deductibleVatPctByYear = new Map(
+    (yearEntities || [])
+      .filter((y) => y && y.year)
+      .map((y) => [String(y.year), parseFloat(y.deductible_vat_pct || 100)]),
+  );
+  return {
+    dailyDedications,
+    festives,
+    deductibleVatPctByYear,
+    fallback_deductible_vat_pct,
+    activitiesByProject,
+    fiscalYearStartMonth: fiscalYearStartMonth(me),
+  };
+}
+
+/**
+ * The year, state and paid filters of projects/economic-detail on the rows of
+ * the chosen projects, and its order. The rows' `document` (the whole linked
+ * invoice) is left out: the reports drop it on arrival and it was a third of
+ * the response (issues/309).
+ */
+const ECONOMIC_DETAIL_ORDER = ['year', 'date', 'name'];
+
+// The rows of every published, non-mother project, computed once and kept by
+// the read cache (issues/307): 1 s locally and ~6.8 s in production on every
+// change of chip in Ingressos/Despeses or Preu hora. Kept in the order the
+// answers have, each row with its project's state: a request only filters.
+// Frozen and shared: answers are made of copies. The current year is in the
+// key: undated projects take it (getProjectDefaultYear).
+const MB = 1024 * 1024;
+const economicDetailTables = () => [
+  ...new Set([
+    ...queryTables(strapi, 'api::project.project', ECONOMIC_DETAIL_POPULATE),
+    ...queryTables(strapi, 'api::activity.activity', { project: true }),
+    ...queryTables(strapi, 'api::me.me', '*'),
+    ...queryTables(strapi, 'api::year.year'),
+  ]),
+];
+
+async function loadEconomicDetail() {
+  const [all, dailyDedications, festives] = await Promise.all([
+    strapi.db
+      .query('api::project.project')
+      .findMany(toDbArgs(adaptQuery(ECONOMIC_DETAIL_QUERY), ECONOMIC_DETAIL_POPULATE)),
+    getDailyDedications(),
+    getFestives(),
+  ]);
+  const projects = all.filter((p) => !p.is_mother);
+  const financialsCtx = await economicDetailContext(projects, dailyDedications, festives);
+  const perProject = await Promise.all(projects.map((p) => buildProjectRows(p, financialsCtx)));
+  const items = [];
+  perProject.forEach((rows, i) => {
+    const p = projects[i];
+    const state = p.project_state && p.project_state.id ? p.project_state.id : null;
+    for (const { document: _document, ...row } of rows) items.push({ row, state });
+  });
+  // lodash's sortBy is stable: filtering this order gives each answer's order
+  const sorted = _.sortBy(items, ECONOMIC_DETAIL_ORDER.map((field) => (item) => item.row[field]));
+  return { rows: sorted.map((item) => item.row), states: sorted.map((item) => item.state) };
+}
+
+const economicDetailRows = () =>
+  getReadCache().get(`project.economic-detail:${moment().format('YYYY')}`, loadEconomicDetail, {
+    frozen: true,
+    // a verified hit would redo the whole computation
+    verifyRate: 0,
+    // ~11 MB on resilience, the biggest tenant
+    maxBytes: 32 * MB,
+    tables: economicDetailTables(),
+  });
+
+/**
+ * projects/economic-detail computed on the projects the database finds: for a
+ * search by name (`_q`) or one state (`_where[project_state_eq]`), which the
+ * kept rows (economicDetailRows) don't cover.
+ */
+async function economicDetailComputed(ctx) {
+  const { paid } = ctx.query;
+  const year = ctx.query && ctx.query._where && ctx.query._where.year_eq ? ctx.query._where.year_eq : null;
+
+  // `_where` on this endpoint carries its own control params — `year_eq`
+  // selects the reporting year and `project_state_in`/`_eq` the state filter.
+  // Neither is a column on `projects`, so the whole ctx.query must never be
+  // handed to adaptQuery: `year` reached the projects table as a field filter
+  // and answered "Unknown column 't0.year' in 'where clause'". Build the
+  // project query explicitly instead, on both branches.
+  const projectQuery = { ...ECONOMIC_DETAIL_QUERY };
+  let stateFilter = null;
+  if (ctx.query && ctx.query._where) {
+    if (ctx.query._where.project_state_eq) {
+      projectQuery.project_state = ctx.query._where.project_state_eq;
+    } else if (ctx.query._where.project_state_in) {
+      const stateIds =
+        typeof ctx.query._where.project_state_in === 'string'
+          ? ctx.query._where.project_state_in.split(',').map((s) => parseInt(s))
+          : ctx.query._where.project_state_in;
+      stateFilter = economicDetailStateFilter(stateIds);
+    }
+  }
+  // the state filter is ANDed apart: the `_q` search already uses `$or`
+  const withStates = (args) => (stateFilter ? { ...args, where: { $and: [args.where, stateFilter] } } : args);
+  const projectArgs = ctx.query._q
+    ? withStates(
+        toDbArgs(adaptQuery({ ...projectQuery, _q: ctx.query._q }, { searchFields: ['name'] }), ECONOMIC_DETAIL_POPULATE),
+      )
+    : withStates(toDbArgs(adaptQuery(projectQuery), ECONOMIC_DETAIL_POPULATE));
+
+  const [found, dailyDedications, festives] = await Promise.all([
+    strapi.db.query('api::project.project').findMany(projectArgs),
+    getDailyDedications(),
+    getFestives(),
+  ]);
+  // Filter out mother projects to avoid double-counting (children are already included)
+  const projects = found.filter((p) => !p.is_mother);
+  const financialsCtx = await economicDetailContext(projects, dailyDedications, festives);
+
+  // Delegate all per-project row construction to the shared engine so
+  // the pivot view cannot drift from the form's RESUM FINANCER.
+  const projectResponses = await Promise.all(projects.map((p) => buildProjectRows(p, financialsCtx)));
+  let response = [];
+  for (const rows of projectResponses) {
+    for (const { document: _document, ...row } of rows) response.push(row);
+  }
+  if (year) {
+    response = response.filter((r) => r.year === year);
+  }
+  if (ctx.query && ctx.query._where && ctx.query._where.year_eq) {
+    response = response.filter((r) => r.year.toString() === ctx.query._where.year_eq.toString());
+  }
+  if (paid != null) {
+    response = response.filter((r) => r.paid === (paid === 'true'));
+  }
+  // By date within each year: with a fiscal year starting in September,
+  // sorting by month put January before the September that opens the year.
+  return _.sortBy(response, ECONOMIC_DETAIL_ORDER);
+}
 
 module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   /**
@@ -792,18 +950,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     let dailyDedications = null;
     let festives = null;
     if (plannedHours === 'true' || plannedHours === true) {
-      [dailyDedications, festives] = await Promise.all([
-        phasesBothData('dedications', ['api::daily-dedication.daily-dedication', PERSON_ID], () =>
-          strapi.db
-            .query('api::daily-dedication.daily-dedication')
-            .findMany({ populate: { users_permissions_user: { select: ['id'] } } }),
-        ),
-        phasesBothData('festives', ['api::festive.festive', PERSON_ID], () =>
-          strapi.db
-            .query('api::festive.festive')
-            .findMany({ populate: { users_permissions_user: { select: ['id'] } } }),
-        ),
-      ]);
+      // shared with the other reports and the project form (services/calendars.js)
+      [dailyDedications, festives] = await Promise.all([getDailyDedications(), getFestives()]);
     }
 
     // New objects only: the kept data is shared between requests, and the
@@ -899,154 +1047,40 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     });
   },
 
+  // Informes › Ingressos/Despeses and Preu hora (EconomicDetailPivot,
+  // PricePerHourDetail):
+  //   _where[project_state_in]=1,2,0   states (0: «Sense estat», issues/205)
+  //   _where[year_eq]=2026             the rows of one year
+  //   paid=true|false                  only the paid or the unpaid rows
+  // Answered from the rows kept by the read cache (issues/307); a search by
+  // name (`_q`) or one state (`_where[project_state_eq]`) is computed as
+  // before, on the projects the database finds.
   async findWithEconomicDetail(ctx) {
-    // Calling the default core action
+    const where = (ctx.query && ctx.query._where) || {};
+    if (ctx.query._q || where.project_state_eq) return economicDetailComputed(ctx);
 
-    // only published
-    // ctx.query.published_at_null = false;
+    const { paid } = ctx.query;
+    const year = where.year_eq || null;
+    const wanted = where.project_state_in
+      ? economicDetailStateMatch(
+          typeof where.project_state_in === 'string'
+            ? where.project_state_in.split(',').map((s) => parseInt(s))
+            : where.project_state_in,
+        )
+      : null;
 
-    const start = +new Date();
-
-    const { query, paid, document } = ctx.query;
-    // ctx.query = { _limit: -1 }
-
-    const promises = [];
-
-    //console.log('query', query, year)
-    const year = ctx.query && ctx.query._where && ctx.query._where.year_eq ? ctx.query._where.year_eq : null;
-
-    // `_where` on this endpoint carries its own control params — `year_eq`
-    // selects the reporting year and `project_state_in`/`_eq` the state filter.
-    // Neither is a column on `projects`, so the whole ctx.query must never be
-    // handed to adaptQuery: `year` reached the projects table as a field filter
-    // and answered "Unknown column 't0.year' in 'where clause'". Build the
-    // project query explicitly instead, on both branches.
-    const projectQuery = { _limit: -1, published_at_null: false };
-    let stateFilter = null;
-
-    // Handle project_state filtering
-    if (ctx.query && ctx.query._where) {
-      if (ctx.query._where.project_state_eq) {
-        projectQuery.project_state = ctx.query._where.project_state_eq;
-      } else if (ctx.query._where.project_state_in) {
-        // Convert comma-separated string to array of integers for Strapi _in filter
-        const stateIds =
-          typeof ctx.query._where.project_state_in === 'string'
-            ? ctx.query._where.project_state_in.split(',').map((s) => parseInt(s))
-            : ctx.query._where.project_state_in;
-        stateFilter = economicDetailStateFilter(stateIds);
-      }
+    const { rows, states } = await economicDetailRows();
+    const response = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (wanted && !wanted(states[i])) continue;
+      const r = rows[i];
+      if (year && r.year !== year) continue;
+      if (where.year_eq && r.year.toString() !== where.year_eq.toString()) continue;
+      if (paid != null && r.paid !== (paid === 'true')) continue;
+      // a copy: the kept rows are shared and the response sanitizer deletes fields
+      response.push({ ...r });
     }
-
-    // the state filter is ANDed apart: the `_q` search already uses `$or`
-    const withStates = (args) => (stateFilter ? { ...args, where: { $and: [args.where, stateFilter] } } : args);
-
-    if (ctx.query._q) {
-      promises.push(
-        strapi.db
-          .query('api::project.project')
-          .findMany(
-            withStates(
-              toDbArgs(
-                adaptQuery({ ...projectQuery, _q: ctx.query._q }, { searchFields: ['name'] }),
-                ECONOMIC_DETAIL_POPULATE,
-              ),
-            ),
-          )
-      );
-    } else {
-
-      // TODO check why this filter removes some projects that have activities in the given year
-      // if (year) {
-      //   projectQuery.activities = { date: { gte: `${year}-01-01`, lte: `${year}-12-31` } };
-      // }
-
-      promises.push(
-        strapi.db
-          .query('api::project.project')
-          .findMany(withStates(toDbArgs(adaptQuery(projectQuery), ECONOMIC_DETAIL_POPULATE))),
-      );
-    }
-
-    promises.push(
-      strapi.db
-        .query('api::daily-dedication.daily-dedication')
-        .findMany({ populate: { users_permissions_user: true } }),
-    );
-
-    promises.push(
-      strapi.db.query('api::festive.festive').findMany({ populate: { users_permissions_user: true } }),
-    );
-
-    const results = await Promise.all(promises);
-
-    let projects = results[0];
-    //const activities = results[1];
-    const dailyDedications = results[1];
-    const festives = results[2];
-
-    //projects = projects.filter((p) => p.published_at !== null);
-
-    // Filter out mother projects to avoid double-counting (children are already included)
-    projects = projects.filter((p) => !p.is_mother);
-
-    let response;
-
-    // executed hours per project and month (issues/060), summed by the
-    // database (issues/309)
-    const activitiesByProject = await loadActivitiesByProjectMonth(projects.map((p) => p.id));
-
-    const me = await getMe();
-    const fallback_deductible_vat_pct =
-      me.options && me.options.deductible_vat_pct ? me.options.deductible_vat_pct : 100.0;
-    const yearEntities = await strapi.db.query('api::year.year').findMany({});
-    const deductibleVatPctByYear = new Map(
-      (yearEntities || [])
-        .filter((y) => y && y.year)
-        .map((y) => [String(y.year), parseFloat(y.deductible_vat_pct || 100)]),
-    );
-
-    // Shared context handed to the projectFinancials engine for every project.
-    const financialsCtx = {
-      dailyDedications,
-      festives,
-      deductibleVatPctByYear,
-      fallback_deductible_vat_pct,
-      activitiesByProject,
-      fiscalYearStartMonth: fiscalYearStartMonth(me),
-    };
-
-    // Delegate all per-project row construction to the shared engine so
-    // the pivot view cannot drift from the form's RESUM FINANCER.
-    const projectResponses = await Promise.all(projects.map((p) => buildProjectRows(p, financialsCtx)));
-
-    // Flatten all project responses into a single array. The rows' `document`
-    // (the whole linked invoice) is left out: the reports drop it on arrival
-    // and it was a third of the response (issues/309).
-    response = [];
-    for (const rows of projectResponses) {
-      for (const { document: _document, ...row } of rows) response.push(row);
-    }
-
-    if (year) {
-      response = response.filter((r) => r.year === year);
-    }
-
-    if (ctx.query && ctx.query._where && ctx.query._where.year_eq) {
-      response = response.filter((r) => r.year.toString() === ctx.query._where.year_eq.toString());
-    }
-
-    if (paid != null) {
-      response = response.filter((r) => r.paid === (paid === 'true'));
-    }
-
-    // By date within each year: with a fiscal year starting in September,
-    // sorting by month put January before the September that opens the year.
-    const returnData = _.sortBy(response, ['year', 'date', 'name']);
-
-    // Removing some info
-    // const newArray = projects.map(({ phases, activities, emitted_invoices, received_invoices, tickets, diets, emitted_grants, received_grants, quotes, original_phases, incomes, expenses, strategies, estimated_hours, intercooperations, clients, received_expenses, received_incomes, ...item }) => item)
-    return returnData;
+    return response;
   },
 
   // Read-only diagnostic: compares the persisted total_* columns on `project`
@@ -1183,14 +1217,9 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         ),
     );
 
-    promises.push(
-      strapi.db
-        .query('api::daily-dedication.daily-dedication')
-        .findMany({ populate: { users_permissions_user: true } }),
-    );
-    promises.push(
-      strapi.db.query('api::festive.festive').findMany({ populate: { users_permissions_user: true } }),
-    );
+    // the calendars from the read cache, shared with the other reports (issues/307)
+    promises.push(getDailyDedications());
+    promises.push(getFestives());
 
     const results = await Promise.all(promises);
 

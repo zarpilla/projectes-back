@@ -35,7 +35,7 @@ describe('project findOne documents (issues/120)', () => {
     jest.resetModules();
     jest.doMock('@strapi/strapi', () => ({ factories: { createCoreController: (uid, build) => build } }));
     jest.doMock('../src/services/me-settings', () => ({ getMe: async () => ({ options: {} }) }));
-    jest.doMock('../src/api/project/services/projectCache', () => ({
+    jest.doMock('../src/services/calendars', () => ({
       getDailyDedications: async () => [],
       getFestives: async () => [],
     }));

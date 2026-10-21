@@ -15,7 +15,7 @@
 
 const { getReadCache } = require('../services/read-cache');
 const { stripUserSecrets } = require('./strip-user-secrets');
-const { callerOf, routeCacheKey, routeTables } = require('../services/read-cache/routes');
+const { callerOf, routeCacheKey, routeTables, ROUTE_MAX_BYTES } = require('../services/read-cache/routes');
 
 const isJsonBody = (body) =>
   body !== null &&
@@ -43,6 +43,7 @@ module.exports = (_config, { strapi }) =>
       {
         tables: routeTables(strapi, ctx.state.route),
         keep: (value) => ctx.status === 200 && isJsonBody(value),
+        maxBytes: ROUTE_MAX_BYTES,
       },
     );
     ctx.body = body;

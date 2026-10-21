@@ -96,6 +96,35 @@ table (`OWN_TABLE_ONLY`): declaring all of a project's link tables would drop
 role's scope in `middlewares/app-permissions.js` (members' filters go into the
 query, so each member has her own entry; cleaning per person happens after).
 
+Also the gantts of Informes (`projects/dedications`, Previsió dedicació;
+`projects/real-dedications`, % Dedicació real) and `projects/estimated-totals`
+(Justificacions): built from the query string and the data only, no scope of
+app-permissions. The gantts depend on the day too (the current year by
+default; % Dedicació real leaves the periods to come empty), so their key
+carries it (`DATED_ROUTES`). A route keeps no answer above 4 MB
+(`ROUTE_MAX_BYTES`): each hit is a copy, and the few bigger answers (the
+Excel rows of Previsió dedicació, every year's estimated totals) are rare.
+
+### Datasets kept by the controllers
+
+Frozen and shared (`frozen: true`), filtered per request:
+
+- Tresoreria (`treasuries/forecast`) and Informes › Dedicació
+  (`projects/phases-both`): what they load, unfiltered (issues/309).
+- Ingressos/Despeses and Preu hora (`projects/economic-detail`): the rows of
+  every published, non-mother project, computed once and kept in the order of
+  the answers with each project's state; a request filters them by state, year
+  and paid and answers copies. The current year is in the key (undated
+  projects take it). A search by name (`_q`) or one state
+  (`_where[project_state_eq]`) is computed as before.
+- Everyone's daily dedications and festives (`services/calendars.js`), shared
+  by those reports, the estimated totals and the project form. They replaced
+  `projectCache.js`, which change detection couldn't see and which went stale
+  (dirty marks in `before` hooks, no *Many hooks, raw SQL).
+
+On resilience (the biggest tenant) all of it takes ~50 MB of the 64 MB cap;
+raise `READ_CACHE_MAX_MB` if `/read-cache/stats` shows evictions.
+
 ### Per request: the user and her app permissions
 
 Every authenticated request read the user and her role
@@ -125,7 +154,8 @@ verification compares with sorted keys (`canonicalJson`).
 - `GET /api/read-cache/stats` (app admins): entries, bytes, hits, misses, why
   answers were not kept or were dropped, verification results, what the
   tracker and the stamps saw.
-- `POST /api/read-cache/clear` (app admins): «Buida la memòria cau».
+- `POST /api/read-cache/clear` (app admins): «Buida la memòria cau», the button
+  of Configuració general › Memòria cau, which also shows the stats.
 
 ## Tests
 

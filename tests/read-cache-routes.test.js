@@ -26,6 +26,7 @@ const {
   tablesOf,
   uidOfRoute,
   CACHED_ROUTES,
+  DATED_ROUTES,
   PERMISSION_TABLES,
   MIDDLEWARE,
 } = routesModule;
@@ -81,11 +82,28 @@ describe('registerReadCacheRoutes', () => {
     expect(CACHED_ROUTES['user-festive']).toBeUndefined();
     for (const actions of Object.values(CACHED_ROUTES)) {
       for (const a of actions)
-        expect(['find', 'findOne', 'getBasic', 'basic', 'forOrders', 'findWithBasicInfo']).toContain(a);
+        expect([
+          'find',
+          'findOne',
+          'getBasic',
+          'basic',
+          'forOrders',
+          'findWithBasicInfo',
+          // reviewed 2026-10-21 (issues/307): query string and data only, no
+          // app-permissions scope, no ctx.state.user; the gantts are dated
+          'findDedications',
+          'findRealDedications',
+          'findEstimatedTotalsByDay',
+        ]).toContain(a);
     }
     // the delicate ones: only these reads, nothing else of contacts or projects
     expect(CACHED_ROUTES.contact).toEqual(['basic', 'forOrders']);
-    expect(CACHED_ROUTES.project).toEqual(['findWithBasicInfo']);
+    expect(CACHED_ROUTES.project).toEqual([
+      'findWithBasicInfo',
+      'findDedications',
+      'findRealDedications',
+      'findEstimatedTotalsByDay',
+    ]);
   });
 
   it('every listed api exists, and its custom reads are GET routes', () => {
@@ -298,6 +316,20 @@ describe('the read-cache middleware', () => {
     expect(controllerRuns).toBe(3);
   });
 
+  // issues/307: a big answer (the Excel rows of Previsió dedicació, ~10 MB)
+  // would be copied on every hit and push the datasets out of the cap
+  it('keeps no answer above ROUTE_MAX_BYTES, and still answers it', async () => {
+    const { ROUTE_MAX_BYTES } = require('../src/services/read-cache/routes');
+    const big = { data: [{ id: 1, text: 'x'.repeat(ROUTE_MAX_BYTES + 1) }] };
+    const a = request();
+    await middleware(a, controller(a, big));
+    const b = request();
+    await middleware(b, controller(b, big));
+    expect(controllerRuns).toBe(2);
+    expect(b.body.data[0].text.length).toBe(ROUTE_MAX_BYTES + 1);
+    expect(cache.entries.size).toBe(0);
+  });
+
   it('keeps answers without the users’ secrets', async () => {
     const a = request();
     await middleware(
@@ -357,5 +389,37 @@ describe('the read-cache middleware', () => {
       await middleware(r, controller(r));
     }
     expect(controllerRuns).toBe(2);
+  });
+});
+
+// issues/307 (2026-10-21): the gantts of Informes and the estimated totals of
+// Justificacions are answered from the read cache too. The gantts depend on
+// the day (current year by default, % Dedicació real leaves the periods to
+// come empty): their key carries it, or yesterday's answer would be served.
+describe('dated routes', () => {
+  const ctx = (handler, path) => ({ params: {}, query: { year: '2026' }, state: { route: { method: 'GET', path, handler } } });
+  const keyOn = (day, handler, path) => routeCacheKey(ctx(handler, path), 'role:1', () => day);
+
+  it.each([
+    ['project.findDedications', '/projects/dedications'],
+    ['project.findRealDedications', '/projects/real-dedications'],
+    ['api::project.project.findDedications', '/projects/dedications'],
+  ])('%s: another day, another key', (handler, path) => {
+    expect(keyOn('2026-10-21', handler, path)).not.toBe(keyOn('2026-10-22', handler, path));
+  });
+
+  it.each([
+    ['project.findEstimatedTotalsByDay', '/projects/estimated-totals'],
+    ['project.findWithBasicInfo', '/projects/basic'],
+    ['api::city.city.find', '/cities'],
+  ])('%s: the same key every day', (handler, path) => {
+    expect(keyOn('2026-10-21', handler, path)).toBe(keyOn('2026-10-22', handler, path));
+  });
+
+  it('the gantts and the estimated totals are cached project reads', () => {
+    expect(CACHED_ROUTES.project).toEqual(
+      expect.arrayContaining(['findDedications', 'findRealDedications', 'findEstimatedTotalsByDay']),
+    );
+    expect(DATED_ROUTES.project.every((action) => CACHED_ROUTES.project.includes(action))).toBe(true);
   });
 });

@@ -125,9 +125,10 @@ describe('projects/phases-both from the read cache (issues/309)', () => {
     await ask({ _where: { project_state_in: '2' }, year: '2026' });
 
     expect(cache.keys().sort()).toEqual([
+      // the calendars shared with the other reports (services/calendars.js)
+      'calendars:daily-dedications',
+      'calendars:festives',
       'project.phases-both:activities',
-      'project.phases-both:dedications',
-      'project.phases-both:festives',
       'project.phases-both:projects',
     ]);
     const projectLoads = calls.filter(([uid]) => uid === 'api::project.project');

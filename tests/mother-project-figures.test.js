@@ -33,8 +33,11 @@ describe('mother project figures', () => {
     }));
     global.strapi = {
       db: {
-        query: () => ({
+        query: (uid) => ({
           findMany: async (args) => {
+            // no calendars: they are shared frozen by the read cache
+            // (services/calendars.js), and these rows share their phases
+            if (uid === 'api::daily-dedication.daily-dedication' || uid === 'api::festive.festive') return [];
             if (args.where && args.where.mother) {
               childrenQueries++;
               return CHILDREN.map((c) => ({ ...c }));
