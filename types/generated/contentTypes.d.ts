@@ -873,6 +873,7 @@ export interface ApiEmittedInvoiceEmittedInvoice extends Struct.CollectionTypeSc
     code: Schema.Attribute.String;
     comments: Schema.Attribute.RichText;
     comments_internal: Schema.Attribute.RichText;
+    concept: Schema.Attribute.String;
     contact: Schema.Attribute.Relation<'oneToOne', 'api::contact.contact'>;
     contact_info: Schema.Attribute.Component<'contact.contact-data', false>;
     contact_invoice_number: Schema.Attribute.String;

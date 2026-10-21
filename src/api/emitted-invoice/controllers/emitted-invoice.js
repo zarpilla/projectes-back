@@ -446,7 +446,8 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
             },
           ],
           legal,
-          details: { header: detailsHeader, parts, total },
+          // the invoice's concept, above the lines (issues/312); only emitted invoices have it
+          details: { concept: doc === 'emitted-invoice' ? invoice.concept : null, header: detailsHeader, parts, total },
         },
       },
     });

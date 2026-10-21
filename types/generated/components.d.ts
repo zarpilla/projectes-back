@@ -313,6 +313,7 @@ export interface OptionsOrdersOptions extends Struct.ComponentSchema {
     singularName: 'orders_options';
   };
   attributes: {
+    invoice_concept: Schema.Attribute.String;
     multidelivery_discount: Schema.Attribute.Decimal;
     next_day_limit_hour: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<14>;
   };

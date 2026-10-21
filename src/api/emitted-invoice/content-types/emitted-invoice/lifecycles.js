@@ -112,6 +112,8 @@ module.exports = {
       if (invoice.user_real) data.user_real = invoice.user_real;
       if (invoice.user_draft) data.user_draft = invoice.user_draft;
       data.comments = invoice.comments;
+      // printed on the PDF like the comments (issues/312)
+      data.concept = invoice.concept ?? null;
       data.code = invoice.code;
     }
 

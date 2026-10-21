@@ -528,6 +528,18 @@ module.exports = class Microinvoice {
 
     this.setCursor('y', _startY);
 
+    // The invoice's concept, above the lines (issues/312)
+    const concept = this.options.data.invoice.details.concept;
+    if (concept) {
+      this.setCursor('x', this.options.style.document.marginLeft);
+      this.setText('\n');
+      this.setText(`Concepte: ${concept}`, {
+        fontWeight: 'bold',
+        colorCode: 'primary',
+        maxWidth: this.document.page.width - this.options.style.document.marginLeft - this.options.style.document.marginRight,
+      });
+    }
+
     // Mark that we're entering the table section
     this.storage.table.inTableSection = true;
 

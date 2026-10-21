@@ -13,6 +13,9 @@
     "next_day_limit_hour": {
       "type": "integer",
       "default": 14
+    },
+    "invoice_concept": {
+      "type": "string"
     }
   }
 }

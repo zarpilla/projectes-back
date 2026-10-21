@@ -16,7 +16,7 @@ const { resolvePdfLogo } = require('../../../services/pdf-logo');
 const crypto = require('crypto');
 const moment = require('moment');
 const { toQueryDay } = require('../../../services/date-fields');
-const { orderLineConcept, invoiceConcept } = require('../services/invoice-line-concept');
+const { orderLineConcept, invoiceConcept, invoicePdfConcept } = require('../services/invoice-line-concept');
 const sharp = require('sharp');
 const QRCode = require('qrcode');
 const { PDFDocument } = require('pdf-lib');
@@ -867,6 +867,10 @@ async function invoiceRun(ctx) {
   const paymentMethods = await strapi.db.query('api::payment-method.payment-method').findMany({});
   const paymentMethod = paymentMethods.length > 0 ? paymentMethods[0].id : null;
 
+  // the text of the concept printed on the PDF (Configuració, issues/312)
+  const meSettings = await getMe({ orders_options: true });
+  const pdfConceptText = meSettings?.orders_options?.invoice_concept;
+
   // `users_permissions_user` is the field the owner lookup below matches on,
   // so it has to be populated for the same reason as the orders above.
   const allContacts = await strapi.db.query('api::contact.contact').findMany({
@@ -926,6 +930,7 @@ async function invoiceRun(ctx) {
           verifactu: verifactuEnabled,
           payment_method: paymentMethod,
           document_concept: documentConcept,
+          concept: invoicePdfConcept(contactOrders, pdfConceptText),
           lines: contactOrders.map((o) => ({
             concept: orderLineConcept(o),
             // base and discount from the shared formula (issues/145)
