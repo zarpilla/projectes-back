@@ -25,6 +25,10 @@
  * (Justificacions): heavy, built from the query string and the data only (no
  * scope of app-permissions, no `ctx.state.user`; workers' answers are cleaned
  * after, on the copy). The gantts also depend on the day (DATED_ROUTES).
+ *
+ * And `phase-incomes/assigned`, `phase-expenses/assigned`: the ids of the
+ * documents assigned to budget lines, asked by Ingressos and Despeses on every
+ * change of filter; no scope of app-permissions, no user.
  */
 
 const moment = require('moment');
@@ -66,6 +70,11 @@ const CACHED_ROUTES = {
   // the lists read on almost every page (issues/307): only these reads
   contact: ['basic', 'forOrders'],
   project: ['findWithBasicInfo', 'findDedications', 'findRealDedications', 'findEstimatedTotalsByDay'],
+  // which incomes, expenses and invoices are assigned to a budget line: the
+  // ids only, from the query and the data (Ingressos, Despeses, on every
+  // change of filter)
+  'phase-income': ['findAssigned'],
+  'phase-expense': ['findAssigned'],
 };
 
 /**

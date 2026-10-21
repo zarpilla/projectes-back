@@ -94,6 +94,8 @@ describe('registerReadCacheRoutes', () => {
           'findDedications',
           'findRealDedications',
           'findEstimatedTotalsByDay',
+          // reviewed 2026-10-21 (issues/307): ids only, from the query and the data
+          'findAssigned',
         ]).toContain(a);
     }
     // the delicate ones: only these reads, nothing else of contacts or projects
@@ -414,6 +416,11 @@ describe('dated routes', () => {
     ['api::city.city.find', '/cities'],
   ])('%s: the same key every day', (handler, path) => {
     expect(keyOn('2026-10-21', handler, path)).toBe(keyOn('2026-10-22', handler, path));
+  });
+
+  it('the documents assigned to budget lines are cached reads', () => {
+    expect(CACHED_ROUTES['phase-income']).toEqual(['findAssigned']);
+    expect(CACHED_ROUTES['phase-expense']).toEqual(['findAssigned']);
   });
 
   it('the gantts and the estimated totals are cached project reads', () => {
