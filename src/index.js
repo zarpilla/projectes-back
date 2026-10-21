@@ -35,6 +35,7 @@ const { fillDeliveryPointTradeNames } = require('./services/fill-delivery-point-
 const { clearDanglingMotherLinks } = require('./services/clear-dangling-mother-links');
 const { removeUntypedProjectComponentLinks } = require('./services/remove-untyped-project-component-links');
 const { refreshTotalHoursTotals } = require('./services/refresh-total-hours-totals');
+const { addOfficialFestives } = require('./services/add-official-festives');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
@@ -172,6 +173,8 @@ module.exports = {
       ['removeUntypedProjectComponentLinks', removeUntypedProjectComponentLinks, { runOnce: true }],
       // issues/259: «Total» planned hours under ~15 days were missing from the stored totals.
       ['refreshTotalHoursTotals', refreshTotalHoursTotals, { runOnce: true }],
+      // issues/310: the official holidays of 2027 (dates in the seed's FESTIVES).
+      ['addOfficialFestives2027', () => addOfficialFestives(2027), { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

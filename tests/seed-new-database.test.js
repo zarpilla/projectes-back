@@ -103,16 +103,27 @@ describe('seedNewDatabase', () => {
     const types = created.filter((c) => c.uid === 'api::festive-type.festive-type');
     const typeId = (name) => created.indexOf(types.find((t) => t.data.name === name)) + 1;
     const festives = rowsOf('api::festive.festive');
-    expect(festives).toHaveLength(12);
+    // this year's and next year's (issues/310)
+    expect(festives).toHaveLength(24);
     expect(festives).toContainEqual({ date: '2026-09-11', festive_type: typeId('Festiu Catalunya') });
     expect(festives).toContainEqual({ date: '2026-12-25', festive_type: typeId('Festiu Estatal') });
+    expect(festives).toContainEqual({ date: '2027-03-29', festive_type: typeId('Festiu Catalunya') });
+    expect(festives).toContainEqual({ date: '2027-11-01', festive_type: typeId('Festiu Estatal') });
   });
 
   it('skips holidays of past years', async () => {
     jest.setSystemTime(new Date('2027-01-15T10:00:00Z'));
     await seedNewDatabase();
-    expect(rowsOf('api::festive.festive')).toEqual([]);
+    const festives = rowsOf('api::festive.festive');
+    expect(festives).toHaveLength(12);
+    expect(festives.every((f) => f.date.startsWith('2027-'))).toBe(true);
     expect(rowsOf(YEAR)[0].year).toBe(2027);
+  });
+
+  it('seeds no holidays once the listed years are past', async () => {
+    jest.setSystemTime(new Date('2099-01-15T10:00:00Z'));
+    await seedNewDatabase();
+    expect(rowsOf('api::festive.festive')).toEqual([]);
   });
 
   it('creates no user without SEED_USER_EMAIL and SEED_USER_PASSWORD', async () => {

@@ -114,7 +114,9 @@ const YEAR_DEFAULTS = { working_hours: 1760, deductible_vat_pct: 100 };
 const SERIE_DEFAULTS = { leadingZeros: 3, emitted_invoice_number: 0 };
 
 // Global holidays: [date, festive type name]. Only those of the current year
-// or later are created, so an old list never seeds past dates.
+// or later are created, so an old list never seeds past dates. Existing
+// tenants get a new year's dates from the run-once addOfficialFestives<year>
+// in bootstrap (issues/310): add the year here and register it there.
 const FESTIVES = [
   ['2026-01-01', 'Festiu Estatal'],
   ['2026-01-06', 'Festiu Estatal'],
@@ -128,6 +130,19 @@ const FESTIVES = [
   ['2026-12-08', 'Festiu Estatal'],
   ['2026-12-25', 'Festiu Estatal'],
   ['2026-12-26', 'Festiu Catalunya'],
+  // Calendari oficial de festes laborals a Catalunya 2027 (issues/310)
+  ['2027-01-01', 'Festiu Estatal'],
+  ['2027-01-06', 'Festiu Estatal'],
+  ['2027-03-26', 'Festiu Estatal'],
+  ['2027-03-29', 'Festiu Catalunya'],
+  ['2027-05-01', 'Festiu Estatal'],
+  ['2027-06-24', 'Festiu Catalunya'],
+  ['2027-09-11', 'Festiu Catalunya'],
+  ['2027-10-12', 'Festiu Estatal'],
+  ['2027-11-01', 'Festiu Estatal'],
+  ['2027-12-06', 'Festiu Estatal'],
+  ['2027-12-08', 'Festiu Estatal'],
+  ['2027-12-25', 'Festiu Estatal'],
 ];
 
 // `me` single type (Configuració General). front_url is added by the seed.
