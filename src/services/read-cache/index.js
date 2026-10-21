@@ -26,8 +26,11 @@
  *   READ_CACHE_STAMPS_MS=2000   how old the stamps of MySQL may be when an
  *                               answer is served (writes from outside the
  *                               process are seen within this, + 2 s)
- *   READ_CACHE_VERIFY=0         share of hits loaded again and compared
- *                               (0..1); a difference is logged as an error
+ *   READ_CACHE_VERIFY=0.05      share of hits loaded again and compared
+ *                               (0..1); a difference is logged as an error.
+ *                               5 % for the first weeks in production
+ *                               (2026-10-21); then 0. Big datasets set
+ *                               their own 0 (a check would redo the load).
  *   READ_CACHE_LOG_SLOW_MS=1000 a load someone waits this long or more is
  *                               logged («[read-cache] slow load: …»)
  */
@@ -39,6 +42,11 @@ const { loadSchema } = require('./schema');
 const { CACHED_ROUTES, PERMISSION_TABLES, tablesOf } = require('./routes');
 
 const KEY = Symbol.for('esstrapis.readCache.cache');
+
+// the share of hits checked against the database when READ_CACHE_VERIFY isn't
+// set: on for the first weeks in production, to see a detection failure in
+// the logs («[read-cache] STALE entry») if there is one
+const DEFAULT_VERIFY_RATE = 0.05;
 
 const number = (value, fallback) => {
   const n = Number(value);
@@ -54,7 +62,7 @@ function getReadCache() {
       tracker: getTracker(),
       maxBytes: number(process.env.READ_CACHE_MAX_MB, 64) * MB,
       ttlMs: number(process.env.READ_CACHE_TTL_S, 600) * 1000,
-      verifyRate: Math.min(1, number(process.env.READ_CACHE_VERIFY, 0)),
+      verifyRate: Math.min(1, number(process.env.READ_CACHE_VERIFY, DEFAULT_VERIFY_RATE)),
       slowLoadMs: number(process.env.READ_CACHE_LOG_SLOW_MS, 1000),
     });
   }
