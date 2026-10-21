@@ -4,7 +4,7 @@
 const moment = require('moment');
 const _ = require('lodash');
 const { capacityForMonth, capacityForWeek, weekLabel } = require('./ganttCapacity');
-const { calculateEstimatedTotals, dayNumber, dayInfo } = require('./projectFinancials');
+const { calculateEstimatedTotals, dayNumber, dayNumberOf, dayInfo } = require('./projectFinancials');
 
 const DAY_MS = 86400000;
 
@@ -18,7 +18,7 @@ function isoWeekOf(n) {
     const dow = dayInfo(n).dow || 7;
     const thursday = n + 4 - dow;
     const year = new Date(thursday * DAY_MS).getUTCFullYear();
-    const week = Math.floor((thursday - Date.UTC(year, 0, 1) / DAY_MS) / 7) + 1;
+    const week = Math.floor((thursday - dayNumberOf(year, 1, 1)) / 7) + 1;
     w = { year, week };
     isoWeekCache.set(n, w);
   }

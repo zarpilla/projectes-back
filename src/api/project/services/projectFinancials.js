@@ -169,20 +169,32 @@ const lineExportFields = (line, type, amount) => {
 const DAY_MS = 86400000;
 const pad2 = (n) => (n < 10 ? `0${n}` : String(n));
 
+/**
+ * Day number of the calendar day y-m-d (month 1–12), or NaN when it doesn't
+ * exist. Date.UTC turns the years 0–99 into 1900–1999 (a «0026-05-01» typo
+ * became 1926 while moment reads year 26); setUTCFullYear doesn't.
+ */
+const dayNumberOf = (y, m, d) => {
+  const t = new Date(0);
+  t.setUTCFullYear(y, m - 1, d);
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d
+    ? t.getTime() / DAY_MS
+    : NaN;
+};
+
 /** Day number of a 'YYYY-MM-DD' date (or Date); NaN when moment finds it invalid. */
 const dayNumber = (value) => {
   if (value instanceof Date) {
-    return Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()) / DAY_MS;
+    return dayNumberOf(value.getFullYear(), value.getMonth() + 1, value.getDate());
   }
   const m = typeof value === 'string' && /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  // 2026-02-30 is invalid for moment, not 2 March
   if (m) {
-    const t = Date.UTC(+m[1], +m[2] - 1, +m[3]);
-    const d = new Date(t);
-    // 2026-02-30 is invalid for moment, not 2 March
-    if (d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3]) return t / DAY_MS;
+    const n = dayNumberOf(+m[1], +m[2], +m[3]);
+    if (!Number.isNaN(n)) return n;
   }
   const mm = moment(value, 'YYYY-MM-DD');
-  return mm.isValid() ? Date.UTC(mm.year(), mm.month(), mm.date()) / DAY_MS : NaN;
+  return mm.isValid() ? dayNumberOf(mm.year(), mm.month() + 1, mm.date()) : NaN;
 };
 
 const daysBetween = (from, to) => to - from;
@@ -1369,7 +1381,7 @@ const verifyStoredTotals = async (ids, epsilon = 0.01) => {
  * Returns a plain object keyed by year (string) with:
  *   { forecast_incomes, forecast_expenses, forecast_expenses_vat }
  */
-const buildEstimatedForecastByYear = (
+const buildEstimatedForecastByYearFromRows = (
   projects,
   deductibleVatPctByYear,
   fallback_deductible_vat_pct,
@@ -1433,11 +1445,118 @@ const buildEstimatedForecastByYear = (
   return map;
 };
 
+/**
+ * The «prevista» forecast per year of Previsió econòmica (treasuries/forecast):
+ * { year: { forecast_incomes, forecast_expenses, forecast_expenses_vat } }.
+ *
+ * Same result, bit for bit, as building the plan's economic-detail rows and
+ * aggregating them with aggregateRowsByYear (buildEstimatedForecastByYearFromRows,
+ * kept as the reference of the tests), without creating those rows: the same
+ * values are added per year in the same order (issues/309: thousands of rows
+ * with every project field were built on every call only to add three sums).
+ * The undated year is dropped when everything in it, real amounts included, is 0.
+ */
+const buildEstimatedForecastByYear = (
+  projects,
+  deductibleVatPctByYear,
+  fallback_deductible_vat_pct,
+  periodification = 'no',
+) => {
+  const usePeriodification = periodification === 'prevista' || periodification === 'real';
+  const byYear = new Map();
+  // lodash sumBy: the first value, then + each next one
+  const plus = (a, v) => (a === undefined ? v : a + v);
+  const add = (year, v) => {
+    let y = byYear.get(year);
+    if (!y) {
+      y = {};
+      byYear.set(year, y);
+    }
+    // as aggregateRowsByYear reads a row's field: absent → 0, else parseFloat
+    for (const k of ['inc', 'exp', 'vat', 'realInc', 'realExp', 'realVat']) {
+      y[k] = plus(y[k], v[k] !== undefined && v[k] !== null ? parseFloat(v[k]) : 0);
+    }
+  };
+
+  for (let i = 0; i < (projects || []).length; i++) {
+    const p = projects[i];
+    const getDeductibleRatio = makeGetDeductibleRatioForDate(
+      deductibleVatPctByYear,
+      fallback_deductible_vat_pct,
+      getProjectDefaultYear(p),
+    );
+    const phases = p.project_phases || [];
+
+    // pushEstimatedIncomeRows
+    for (const ph of phases) {
+      for (const sph of ph.incomes || []) {
+        if (!(sph.quantity && sph.amount)) continue;
+        const document = sph.income || sph.expense || sph.invoice;
+        add(rowYear(sph.date_estimate_document || sph.date), { inc: lineTotal(sph) });
+        if (sph.paid && document && document.emitted) {
+          add(rowYear(document.emitted), { realInc: lineTotal(sph) });
+        }
+      }
+    }
+
+    // pushEstimatedExpenseRows
+    for (const ph of phases) {
+      for (const sph of ph.expenses || []) {
+        if (!(sph.quantity && sph.amount)) continue;
+        const document = sph.invoice || sph.expense;
+        const estimate_date = sph.date_estimate_document || sph.date;
+        const vat_pct = expenseVatPct(sph);
+        const estimatedDeductibleRatio = getDeductibleRatio(estimate_date);
+        add(rowYear(estimate_date), {
+          exp: -1 * lineTotal(sph),
+          vat: (-1 * estimatedDeductibleRatio * lineTotal(sph) * vat_pct) / 100.0,
+        });
+        if (sph.paid && document && document.emitted) {
+          const real_date = document.emitted;
+          const calculated_vat = (lineTotal(sph) * vat_pct) / 100.0;
+          const expense_vat =
+            sph.invoice && sph.invoice.total_vat !== undefined ? sph.invoice.total_vat : calculated_vat;
+          add(rowYear(real_date), {
+            realExp: -1 * lineTotal(sph),
+            realVat: -1 * expense_vat * getDeductibleRatio(real_date),
+          });
+        }
+      }
+    }
+
+    if (usePeriodification && p.periodification && p.periodification.length) {
+      for (const pp of p.periodification) {
+        const inc = periodification === 'prevista' ? pp.incomes || 0 : pp.real_incomes || 0;
+        const exp = periodification === 'prevista' ? pp.expenses || 0 : pp.real_expenses || 0;
+        add(pp.year.toString(), { inc });
+        add(pp.year.toString(), { exp: -1 * exp });
+      }
+    }
+  }
+
+  // the group order of aggregateRowsByYear: lodash groupBy's object keys
+  const order = Object.keys(Object.fromEntries([...byYear.keys()].map((y) => [y, true])));
+  const map = {};
+  for (const year of order) {
+    const y = byYear.get(year);
+    const totals = [y.inc, -y.exp, -y.vat, y.realInc, -y.realExp, -y.realVat];
+    if (year === UNDATED_YEAR && totals.every((v) => v === 0)) continue;
+    map[year] = {
+      forecast_incomes: y.inc,
+      forecast_expenses: -y.exp,
+      forecast_expenses_vat: -y.vat,
+    };
+  }
+  return map;
+};
+
+
 module.exports = {
   buildProjectRows,
   lineVatPct,
   aggregateRowsByYear,
   buildEstimatedForecastByYear,
+  buildEstimatedForecastByYearFromRows,
   buildSingleProjectActivitiesMap,
   calculateEstimatedTotals,
   getProjectDefaultYear,
@@ -1454,6 +1573,7 @@ module.exports = {
   groupTotalsByYearMonth,
   groupLeanTotalsByYearMonth,
   dayNumber,
+  dayNumberOf,
   dayInfo,
   buildPlannedHoursByMonth,
   // Stored-totals migration (step 1 — not yet wired into lifecycles):

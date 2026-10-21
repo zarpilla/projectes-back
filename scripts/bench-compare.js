@@ -56,6 +56,7 @@ function diff(a, b, at, out) {
   if (Array.isArray(a) && a.length !== b.length) out.push(`${at}: length ${a.length} != ${b.length}`);
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const k of keys) {
+    if (out.length > 20) return;
     if (!(k in a)) { out.push(`${at}.${k}: missing before`); continue; }
     if (!(k in b)) { out.push(`${at}.${k}: missing after`); continue; }
     diff(a[k], b[k], `${at}.${k}`, out);
