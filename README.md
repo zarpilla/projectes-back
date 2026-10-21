@@ -26,13 +26,13 @@ ESSTRAPIS is used by cooperatives such as Resilience Earth, Arran de Terra, La D
 
 ## Stack
 
-- Strapi 5 on Node 20
+- Strapi 5 on Node 22
 - MySQL
 - Jest for tests
 
 ## Getting started
 
-You need Node 20 (`nvm use` reads `.nvmrc`) and a MySQL database.
+You need Node 22 (`nvm use` reads `.nvmrc`) and a MySQL database.
 
 ```bash
 npm install
