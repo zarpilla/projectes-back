@@ -152,7 +152,15 @@ describeDb('read cache on MySQL', () => {
       const [regions] = await knex.raw('SELECT name FROM regions ORDER BY id');
       return { types: types.map((t) => t.name), regions: regions.map((r) => r.name) };
     },
+    // the same join, kept frozen (one shared object, no copies)
+    frozenItems: () =>
+      knex('items as i')
+        .leftJoin('items_type_lnk as l', 'l.item_id', 'i.id')
+        .leftJoin('types as t', 't.id', 'l.type_id')
+        .select('i.id', 'i.name', 't.name as type')
+        .orderBy(['i.id', 't.name']),
   };
+  const FROZEN = new Set(['frozenItems']);
   const KEYS = Object.keys(LOADERS);
   const plain = (v) => JSON.parse(JSON.stringify(v));
   // reads through the cache, and loads that reached the database, per key
@@ -161,10 +169,14 @@ describeDb('read cache on MySQL', () => {
   const cached = (key) => {
     reads[key] = (reads[key] || 0) + 1;
     return cache
-      .get(key, () => {
-        loads[key] = (loads[key] || 0) + 1;
-        return LOADERS[key]();
-      })
+      .get(
+        key,
+        () => {
+          loads[key] = (loads[key] || 0) + 1;
+          return LOADERS[key]();
+        },
+        { frozen: FROZEN.has(key) },
+      )
       .then(plain);
   };
   // straight from the database, on the unwatched connection
@@ -185,6 +197,7 @@ describeDb('read cache on MySQL', () => {
           'SELECT t.id, COUNT(l.id) AS n FROM types t LEFT JOIN items_type_lnk l ON l.type_id = t.id GROUP BY t.id ORDER BY t.id',
         )
       ).map((r) => ({ id: r.id, n: Number(r.n) }));
+    if (key === 'frozenItems') return direct('itemsWithType');
     if (key === 'nested') {
       const types = await run('SELECT name FROM types ORDER BY id');
       const regions = await run('SELECT name FROM regions ORDER BY id');
@@ -239,6 +252,36 @@ describeDb('read cache on MySQL', () => {
       expect(cache.counts.hits).toBe(hits + 2);
       // only a stamps reading may have run (at most once per interval)
       expect(tracker.stats.statements - queries).toBeLessThanOrEqual(6);
+    });
+
+    it('a write that changes no row keeps what is kept (MySQL reports 0 changed)', async () => {
+      await sleep(2100); // the starting rows' stamps settle (see the first test)
+      await stamps.check();
+      await warm();
+      const { misses } = cache.counts;
+      const current = (await direct('types'))[0].name;
+      await knex('types').where({ id: 1 }).update({ name: current }); // same value
+      await knex('types').where({ id: 999 }).update({ name: 'nobody' }); // no row
+      await knex.raw('DELETE FROM items_type_lnk WHERE id = ?', [999999]); // no row
+      await knex.transaction(async (trx) => trx('regions').where({ id: 1 }).update({ name: 'r1' }));
+      await expectAllFresh();
+      expect(cache.counts.misses).toBe(misses);
+      expect(tracker.stats.unchangedWrites).toBeGreaterThanOrEqual(4);
+      // a real change still reloads
+      await knex('types')
+        .where({ id: 1 })
+        .update({ name: `${current}!` });
+      await expectAllFresh();
+      expect(cache.counts.misses).toBeGreaterThan(misses);
+    });
+
+    it('frozen answers are shared and cannot be changed', async () => {
+      const a = await cache.get('frozenItems', LOADERS.frozenItems, { frozen: true });
+      const b = await cache.get('frozenItems', LOADERS.frozenItems, { frozen: true });
+      expect(b).toBe(a);
+      expect(() => {
+        a[0].name = 'changed';
+      }).toThrow(TypeError);
     });
 
     it('knex builder update', async () => {
@@ -312,14 +355,16 @@ describeDb('read cache on MySQL', () => {
       await trx('types').where({ id: 1 }).update({ name: 'during' });
       // a slow load: starts before the commit, reads after it
       const slow = cache.get('slow-types', async () => {
-        await knex.raw('SELECT SLEEP(0.3)');
-        return knex('types').select('id', 'name').orderBy('id');
+        await knex('types').count('* as n'); // reads before the commit...
+        await sleep(300); // (in JS: SELECT SLEEP would read no table, never kept anyway)
+        return knex('types').select('id', 'name').orderBy('id'); // ...and after it
       });
       await sleep(50);
       await trx.commit();
       const result = plain(await slow);
       expect(result.find((t) => t.id === 1).name).toBe('during');
       expect(cache.entries.has('slow-types')).toBe(false);
+      expect(cache.counts.notStored['changed while loading']).toBeGreaterThanOrEqual(1);
       await expectAllFresh();
     });
 
@@ -395,6 +440,41 @@ describeDb('read cache on MySQL', () => {
         await sleep(100);
       }
     }
+
+    describe('tables the stamps read for the first time after a load', () => {
+      // a cache whose stamps watch nothing yet: every table is new to them
+      async function freshCache() {
+        stamps = new TableStamps({ tracker, read: stampReader(knex), intervalMs: 100 });
+        cache = new ReadCache({ tracker, stamps, log: { warn: () => {}, error: () => {} } });
+        cache.enable();
+        await sleep(2100); // the starting rows were written 2 s before the next reading
+        await stamps.check();
+      }
+
+      it('a result is served from its second read on (no second load)', async () => {
+        await freshCache();
+        await cached('types');
+        await cached('types');
+        expect(loads.types).toBe(1);
+        expect(cache.counts.invalid['stamps not read before the load']).toBeUndefined();
+      });
+
+      it('a write from outside during that first load is still noticed', async () => {
+        await freshCache();
+        const slow = cache.get('slowTypes', async () => {
+          const rows = await knex('types').select('id', 'name').orderBy('id');
+          await sleep(400); // in JS: SELECT SLEEP would read no table, never kept anyway
+          return rows;
+        });
+        await sleep(100);
+        await outside.query("UPDATE types SET name = 'during the load' WHERE id = 1");
+        expect(plain(await slow)[0].name).not.toBe('during the load'); // read before the write
+        const next = plain(
+          await cache.get('slowTypes', () => knex('types').select('id', 'name').orderBy('id')),
+        );
+        expect(next[0].name).toBe('during the load');
+      });
+    });
 
     it('a plain update is noticed within a few seconds', async () => {
       await warm();

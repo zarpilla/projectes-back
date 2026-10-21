@@ -248,6 +248,7 @@ describe('ReadCache.get', () => {
       cache.stamps = {
         fresh: async () => Promise.reject(new Error('stamps down')),
         completed: () => 0,
+        completedAt: () => null,
         watch() {},
       };
       cache.stamps.coveredSince = () => true;
@@ -260,7 +261,13 @@ describe('ReadCache.get', () => {
 
     it('when the stamps had not read a table before the load began', async () => {
       let covered = false;
-      cache.stamps = { fresh: async () => {}, completed: () => 0, watch() {}, coveredSince: () => covered };
+      cache.stamps = {
+        fresh: async () => {},
+        completed: () => 0,
+        completedAt: () => null,
+        watch() {},
+        coveredSince: () => covered,
+      };
       const load = loaderOf(['cities']);
       await cache.get('k', load);
       await cache.get('k', load);
@@ -270,10 +277,34 @@ describe('ReadCache.get', () => {
       expect(load).toHaveBeenCalledTimes(2);
     });
 
+    it('the declared tables’ stamps are read before the load begins', async () => {
+      const order = [];
+      const watched = new Set();
+      cache.stamps = {
+        fresh: async () => order.push('stamps read'),
+        completed: () => 0,
+        completedAt: () => null,
+        watch: (tables) => tables.forEach((t) => watched.add(t)),
+        coveredSince: () => false,
+      };
+      await cache.get(
+        'k',
+        async () => {
+          order.push('load');
+          sql('select * from `cities`');
+          return 1;
+        },
+        { tables: ['Up_Permissions'] },
+      );
+      expect(order).toEqual(['stamps read', 'load']);
+      expect(watched.has('up_permissions')).toBe(true);
+    });
+
     it('when the stamps reading reports a change', async () => {
       cache.stamps = {
         fresh: async () => tracker.externalChange(['cities']),
         completed: () => 0,
+        completedAt: () => null,
         watch() {},
         coveredSince: () => true,
       };
@@ -418,6 +449,114 @@ describe('ReadCache.get', () => {
       await cache.get('k', load);
       expect(cache.counts.mismatches).toBe(0);
     });
+  });
+
+  describe('frozen: one shared, deep-frozen object (big read-only datasets)', () => {
+    const big = () => ({
+      rows: [
+        { id: 2, contact: { name: 'b' } },
+        { id: 1, contact: { name: 'a' } },
+      ],
+      when: new Date(0),
+    });
+
+    it('every caller gets the same frozen object, the first one included', async () => {
+      const load = loaderOf(['cities'], big);
+      const first = await cache.get('k', load, { frozen: true });
+      const second = await cache.get('k', load, { frozen: true });
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(second).toBe(first);
+      expect(Object.isFrozen(first)).toBe(true);
+      expect(Object.isFrozen(first.rows[0].contact)).toBe(true);
+      expect(() => {
+        first.rows[0].contact.name = 'changed';
+      }).toThrow(TypeError);
+      expect(() => first.rows.sort((x, y) => x.id - y.id)).toThrow(TypeError);
+    });
+
+    it('requests loading together share the same object', async () => {
+      const load = loaderOf(['cities'], big);
+      const [a, b] = await Promise.all([
+        cache.get('k', load, { frozen: true }),
+        cache.get('k', load, { frozen: true }),
+      ]);
+      expect(a).toBe(b);
+    });
+
+    it('is frozen also when the cache is off, skipped or the answer not kept', async () => {
+      cache.disable();
+      expect(
+        Object.isFrozen((await cache.get('a', loaderOf(['cities'], big), { frozen: true })).rows[0]),
+      ).toBe(true);
+      cache.enable();
+      cache.inTransaction = () => true;
+      expect(Object.isFrozen((await cache.get('b', loaderOf(['cities'], big), { frozen: true })).rows)).toBe(
+        true,
+      );
+      cache.inTransaction = () => false;
+      const notKept = await cache.get('c', loaderOf(['cities'], big), { frozen: true, keep: () => false });
+      expect(Object.isFrozen(notKept.rows)).toBe(true);
+    });
+
+    it('a write still makes it load again', async () => {
+      const load = loaderOf(['cities'], big);
+      await cache.get('k', load, { frozen: true });
+      sql('update `cities` set x = 1');
+      await cache.get('k', load, { frozen: true });
+      expect(load).toHaveBeenCalledTimes(2);
+    });
+
+    it('a result holding a buffer or a Map is not kept', async () => {
+      await cache.get(
+        'k',
+        loaderOf(['cities'], () => ({ m: new Map() })),
+        { frozen: true },
+      );
+      await cache.get(
+        'j',
+        loaderOf(['cities'], () => ({ b: Buffer.from('x') })),
+      );
+      expect(cache.entries.size).toBe(0);
+      expect(cache.counts.notStored['not copyable']).toBe(2);
+    });
+  });
+
+  describe('per call', () => {
+    it('maxBytes keeps a result bigger than a quarter of the cap, never more than the cap', async () => {
+      cache.maxBytes = 1000;
+      const text = () => 'z'.repeat(600);
+      await cache.get('a', loaderOf(['cities'], text));
+      expect(cache.entries.has('a')).toBe(false);
+      await cache.get('a', loaderOf(['cities'], text), { maxBytes: 800 });
+      expect(cache.entries.has('a')).toBe(true);
+      await cache.get(
+        'b',
+        loaderOf(['cities'], () => 'z'.repeat(1200)),
+        { maxBytes: 5000 },
+      );
+      expect(cache.entries.has('b')).toBe(false);
+    });
+
+    it('verifyRate 0 turns verification off for that call', async () => {
+      cache.verifyRate = 1;
+      cache.random = () => 0;
+      const load = loaderOf(['cities']);
+      await cache.get('k', load, { verifyRate: 0 });
+      await cache.get('k', load, { verifyRate: 0 });
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(cache.counts.verified).toBe(0);
+    });
+  });
+
+  it('measure() approximates the JSON size without building it', () => {
+    const { measure } = require('../src/services/read-cache/read-cache');
+    const value = {
+      rows: Array.from({ length: 100 }, (_, i) => ({ id: i, name: `name ${i}`, ok: true, at: null })),
+    };
+    const json = JSON.stringify(value).length;
+    const m = measure(value);
+    expect(m).toBeGreaterThan(json * 0.8);
+    expect(m).toBeLessThan(json * 1.5);
   });
 
   it('stats() describes the cache', async () => {

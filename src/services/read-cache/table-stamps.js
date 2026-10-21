@@ -27,7 +27,11 @@
  * A cached result is trusted by this layer only if every table it depends on
  * had been read at least once before its load began (`coveredSince`):
  * otherwise a write between the load and the first reading would be taken as
- * the starting point.
+ * the starting point. A table read for the first time after the load began is
+ * accepted when that first reading shows its last commit (and its creation)
+ * at least 2 s before the reading the load followed: both times come from
+ * MySQL's clock, so the load saw that commit, and any later one would have
+ * shown a newer stamp. Otherwise the result is loaded once more.
  */
 
 const DEFAULT_INTERVAL_MS = 2000;
@@ -47,8 +51,9 @@ class TableStamps {
     this.intervalMs = intervalMs;
     this.clock = clock;
     this.watched = new Set();
-    this.seen = new Map(); // table -> { value, updated, recheckAt, sinceSeq }
+    this.seen = new Map(); // table -> { value, updated, recheckAt, sinceSeq, firstUpdated, firstCreated }
     this.seq = 0; // readings completed
+    this.lastNow = null; // MySQL's clock (s) at the last completed reading
     this.lastStartedAt = -Infinity;
     this.inFlight = null;
     this.unread = false;
@@ -71,11 +76,24 @@ class TableStamps {
     }
   }
 
-  /** True if every table had been read by reading number `seq`. */
-  coveredSince(tables, seq) {
+  /** MySQL's clock at the last completed reading: a load records it too. */
+  completedAt() {
+    return this.lastNow;
+  }
+
+  /**
+   * True if a load that began after reading number `seq` (MySQL clock `now`
+   * at that reading) is covered for these tables: each was read by then, or
+   * its first reading showed nothing committed since 2 s before `now`.
+   */
+  coveredSince(tables, seq, now = null) {
     for (const t of tables) {
       const s = this.seen.get(t);
-      if (!s || s.sinceSeq > seq) return false;
+      if (!s) return false;
+      if (s.sinceSeq <= seq) continue;
+      if (now === null || now === undefined) return false;
+      if (s.firstUpdated === null || s.firstUpdated > now - 2) return false;
+      if (s.firstCreated === null || s.firstCreated > now - 2) return false;
     }
     return true;
   }
@@ -141,12 +159,19 @@ class TableStamps {
       const before = this.seen.get(t);
 
       if (!before) {
-        this.seen.set(t, { value, updated, recheckAt, sinceSeq: seq });
+        this.seen.set(t, {
+          value,
+          updated,
+          recheckAt,
+          sinceSeq: seq,
+          firstUpdated: updated,
+          firstCreated: created,
+        });
         continue;
       }
       if (before.value !== value) {
         changed.push(t);
-        this.seen.set(t, { value, updated, recheckAt, sinceSeq: before.sinceSeq });
+        this.seen.set(t, { ...before, value, updated, recheckAt });
         continue;
       }
       if (before.recheckAt !== null && now >= before.recheckAt) {
@@ -160,6 +185,7 @@ class TableStamps {
       this.tracker.externalChange(changed);
     }
     this.seq = seq;
+    this.lastNow = now;
   }
 }
 

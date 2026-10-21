@@ -22,7 +22,11 @@
  * When change detection itself fails, nothing is served from memory.
  *
  * Callers never share objects with the cache: the kept value is a private copy,
- * and each answer is a fresh copy of it.
+ * and each answer is a fresh copy of it. For big read-only datasets, where a
+ * copy per answer costs too much, `frozen: true` deep-freezes the result once
+ * and hands the same object to every caller (also when the cache is off or
+ * skipped, so code that changes it fails the same way everywhere: a TypeError
+ * in strict mode).
  *
  * Requests that miss together share one load, but only if nothing they depend
  * on changed while it ran; otherwise each loads for itself.
@@ -38,6 +42,60 @@
 const MB = 1024 * 1024;
 
 const copy = (value) => structuredClone(value);
+
+/**
+ * The approximate size of a value in its JSON form (strings, numbers, keys),
+ * walked without building the JSON. With `freeze`, also freezes everything it
+ * holds. Throws for what can be neither frozen nor sized: buffers, Maps, Sets.
+ * Memory in the heap is about 2–3 times this (measured: 18 MB of JSON → 48 MB).
+ */
+function measure(value, freeze = false) {
+  let bytes = 0;
+  const seen = new WeakSet();
+  const stack = [value];
+  while (stack.length) {
+    const v = stack.pop();
+    if (v === null || v === undefined) {
+      bytes += 4;
+      continue;
+    }
+    const type = typeof v;
+    if (type === 'string') {
+      bytes += v.length + 2;
+      continue;
+    }
+    if (type !== 'object') {
+      bytes += 8;
+      continue;
+    }
+    if (seen.has(v)) continue;
+    seen.add(v);
+    if (ArrayBuffer.isView(v) || v instanceof ArrayBuffer || v instanceof Map || v instanceof Set) {
+      throw new TypeError('read-cache: results hold plain data only (no buffers, Maps or Sets)');
+    }
+    if (freeze) Object.freeze(v);
+    if (v instanceof Date) {
+      bytes += 26;
+      continue;
+    }
+    bytes += 2;
+    if (Array.isArray(v)) {
+      bytes += v.length;
+      for (let i = 0; i < v.length; i++) stack.push(v[i]);
+    } else {
+      for (const key of Object.keys(v)) {
+        bytes += key.length + 4;
+        stack.push(v[key]);
+      }
+    }
+  }
+  return bytes;
+}
+
+const deepFreeze = (value) => {
+  measure(value, true);
+  return value;
+};
 
 class ReadCache {
   constructor({
@@ -100,16 +158,27 @@ class ReadCache {
    * @template T
    * @param {string} key everything the result depends on besides the tables
    * @param {() => Promise<T>} loader
-   * @param {{ tables?: string[], ttlMs?: number, keep?: (value: T) => boolean }} [options]
+   * @param {{ tables?: string[], ttlMs?: number, keep?: (value: T) => boolean, frozen?: boolean, maxBytes?: number, verifyRate?: number }} [options]
    *   tables: what the result depends on beyond what the loader reads
    *   keep: false for a result that must not be kept (an error page...)
+   *   frozen: one deep-frozen object shared by every caller instead of copies
+   *   maxBytes: the largest result kept (default a quarter of the cap, never more than the cap)
+   *   verifyRate: this call's share of hits verified (default the cache's)
    * @returns {Promise<T>}
    */
   async get(key, loader, options = {}) {
     if (!this.isOn() || this.inTransaction()) {
       this.counts.bypassed++;
-      return loader();
+      if (!options.frozen) return loader();
+      const value = await loader();
+      try {
+        return deepFreeze(value);
+      } catch {
+        return value;
+      }
     }
+    const answer = (value) => (options.frozen ? value : copy(value));
+    const verifyRate = options.verifyRate === undefined ? this.verifyRate : options.verifyRate;
 
     const entry = this.entries.get(key);
     if (entry) {
@@ -122,10 +191,10 @@ class ReadCache {
       if (invalid) this.counts.invalid[invalid] = (this.counts.invalid[invalid] || 0) + 1;
       if (!invalid && this.entries.get(key) === entry) {
         this.touch(key, entry);
-        if (this.verifyRate > 0 && this.random() < this.verifyRate) return this.verify(key, entry, loader);
+        if (verifyRate > 0 && this.random() < verifyRate) return this.verify(key, entry, loader, options);
         this.counts.hits++;
         this.tracker.noteRead(entry.tables);
-        return copy(entry.value);
+        return answer(entry.value);
       }
       if (this.entries.get(key) === entry) this.remove(key, null);
     }
@@ -137,7 +206,7 @@ class ReadCache {
         this.counts.shared++;
         this.tracker.noteRead(result.tables);
         // from the kept copy: the first caller may already be changing its own
-        return copy(result.kept);
+        return answer(result.kept);
       }
     }
 
@@ -151,7 +220,9 @@ class ReadCache {
     if (this.tracker.changedSince(entry.tables, entry.started)) return 'changed';
     if (this.stamps) {
       await this.tracker.capture.exit(() => this.stamps.fresh());
-      if (!this.stamps.coveredSince(entry.tables, entry.stampSeq)) return 'stamps not read before the load';
+      if (!this.stamps.coveredSince(entry.tables, entry.stampSeq, entry.stampNow)) {
+        return 'stamps not read before the load';
+      }
       if (this.tracker.changedSince(entry.tables, entry.started)) return 'changed (stamps)';
     }
     return null;
@@ -168,10 +239,23 @@ class ReadCache {
   }
 
   async load(key, loader, options) {
-    const started = this.tracker.now();
-    const stampSeq = this.stamps ? this.stamps.completed() : 0;
-
     const run = (async () => {
+      // the declared tables' stamps are read before the load, so its result
+      // is covered by the stamps from the start
+      if (this.stamps && options.tables && options.tables.length) {
+        const declared = options.tables.map((t) => String(t).toLowerCase());
+        this.stamps.watch(declared);
+        if (!this.stamps.coveredSince(declared, this.stamps.completed(), this.stamps.completedAt())) {
+          try {
+            await this.tracker.capture.exit(() => this.stamps.fresh());
+          } catch {
+            // not covered then: the result is loaded again on its next read
+          }
+        }
+      }
+      const started = this.tracker.now();
+      const stampSeq = this.stamps ? this.stamps.completed() : 0;
+      const stampNow = this.stamps ? this.stamps.completedAt() : null;
       const { result, store } = await this.tracker.captureReads(loader);
       const tables = [
         ...new Set([...(options.tables || []).map((t) => String(t).toLowerCase()), ...store.tables]),
@@ -183,18 +267,27 @@ class ReadCache {
       this.tracker.noteRead(tables, store.uncacheable);
       if (reason) {
         this.counts.notStored[reason] = (this.counts.notStored[reason] || 0) + 1;
+        if (options.frozen) {
+          try {
+            deepFreeze(result);
+          } catch {
+            // left as it is: not kept anyway
+          }
+        }
         return { value: result, stored: false, tables, started };
       }
       let kept;
       let bytes;
       try {
-        kept = copy(result);
-        bytes = Buffer.byteLength(JSON.stringify(result) || '');
+        // frozen: the loader's own object, frozen and shared; otherwise a private copy
+        bytes = measure(result, Boolean(options.frozen));
+        kept = options.frozen ? result : copy(result);
       } catch {
         this.counts.notStored['not copyable'] = (this.counts.notStored['not copyable'] || 0) + 1;
         return { value: result, stored: false, tables, started };
       }
-      if (bytes > this.maxBytes / 4) {
+      const limit = Math.min(options.maxBytes || this.maxBytes / 4, this.maxBytes);
+      if (bytes > limit) {
         this.counts.notStored['too big'] = (this.counts.notStored['too big'] || 0) + 1;
         return { value: result, stored: false, tables, started };
       }
@@ -208,6 +301,7 @@ class ReadCache {
         tables,
         started,
         stampSeq,
+        stampNow,
         bytes,
         expiresAt: this.clock() + (options.ttlMs || this.ttlMs),
       });
@@ -240,7 +334,7 @@ class ReadCache {
   }
 
   /** A sampled hit: load again and compare with what is kept. */
-  async verify(key, entry, loader) {
+  async verify(key, entry, loader, options = {}) {
     this.counts.verified++;
     const started = this.tracker.now();
     const { result, store } = await this.tracker.captureReads(loader);
@@ -260,6 +354,13 @@ class ReadCache {
         `(${entry.tables.join(', ')}); entry dropped`;
       if (this.log && this.log.error) this.log.error(message);
       if (this.entries.get(key) === entry) this.remove(key, 'dropped');
+    }
+    if (options.frozen) {
+      try {
+        deepFreeze(result);
+      } catch {
+        // returned as it is
+      }
     }
     return result;
   }
@@ -345,4 +446,4 @@ class ReadCache {
   }
 }
 
-module.exports = { ReadCache, MB };
+module.exports = { ReadCache, MB, deepFreeze, measure };

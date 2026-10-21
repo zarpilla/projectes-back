@@ -25,9 +25,11 @@ function fakeTracker() {
       this.calls.push(['start', sql, values]);
       return { sql };
     },
-    statementEnded(conn, statement) {
+    statementEnded(conn, statement, error, result) {
       this.calls.push(['end', statement && statement.sql]);
+      this.answers.push({ error, result });
     },
+    answers: [],
     connectionClosed() {
       this.calls.push(['closed']);
     },
@@ -64,6 +66,24 @@ describe('watchConnection', () => {
       }),
     );
     expect(tracker.calls).toEqual([['start', 'COMMIT;', []], ['end', 'COMMIT;'], ['callback']]);
+  });
+
+  it('hands the driver’s error and answer to the tracker (rows changed)', async () => {
+    const tracker = fakeTracker();
+    const conn = watchConnection(fakeConnection(), tracker);
+    await new Promise((r) => conn.query('update t set a = 1', [], () => r()));
+    expect(tracker.answers).toEqual([{ error: null, result: [{ ok: 1 }] }]);
+  });
+
+  it('a statement that throws hands its error over', () => {
+    const tracker = fakeTracker();
+    const conn = fakeConnection();
+    conn.query = () => {
+      throw new Error('closed');
+    };
+    watchConnection(conn, tracker);
+    expect(() => conn.query('update t set a = 1', () => {})).toThrow('closed');
+    expect(tracker.answers[0].error.message).toBe('closed');
   });
 
   it('passes the answer through untouched', async () => {

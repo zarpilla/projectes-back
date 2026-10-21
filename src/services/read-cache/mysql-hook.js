@@ -53,13 +53,14 @@ function watchConnection(connection, tracker = getTracker()) {
       }
 
       let ended = false;
-      const end = () => {
+      // the driver's error and answer tell how many rows a write changed
+      const end = (error, result) => {
         if (ended) return;
         ended = true;
         try {
-          tracker.statementEnded(id, statement);
-        } catch (error) {
-          tracker.fail(error);
+          tracker.statementEnded(id, statement, error, result);
+        } catch (failure) {
+          tracker.fail(failure);
         }
       };
 
@@ -69,13 +70,13 @@ function watchConnection(connection, tracker = getTracker()) {
       if (last >= 0 && typeof args[last] === 'function') {
         const callback = args[last];
         args[last] = function watchedCallback(...results) {
-          end();
+          end(results[0], results[1]);
           return callback.apply(this, results);
         };
         try {
           return original.apply(this, args);
         } catch (error) {
-          end();
+          end(error);
           throw error;
         }
       }
@@ -83,14 +84,15 @@ function watchConnection(connection, tracker = getTracker()) {
       try {
         command = original.apply(this, args);
       } catch (error) {
-        end();
+        end(error);
         throw error;
       }
+      // no callback: the rows changed are unknown, so a write counts as a change
       if (command && typeof command.once === 'function') {
-        command.once('end', end);
-        command.once('error', end);
+        command.once('end', () => end(null, undefined));
+        command.once('error', (error) => end(error || new Error('query error')));
       } else {
-        end();
+        end(null, undefined);
       }
       return command;
     };

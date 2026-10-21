@@ -214,6 +214,47 @@ describe('TableStamps', () => {
     expect(stamps.coveredSince(['cities'], seq)).toBe(true);
   });
 
+  describe('a table read for the first time after the load began', () => {
+    // the load began after reading 1 (MySQL clock 5000); the table is first read at reading 2
+    async function firstReadAfterLoad(row) {
+      const stamps = make();
+      stamps.watch(['cities']);
+      await stamps.check(); // reading 1
+      const seq = stamps.completed();
+      const at = stamps.completedAt();
+      answer.rows.push(row);
+      stamps.watch([row.table]);
+      answer.now = 5003;
+      await stamps.check(); // reading 2: first sight of row.table
+      return stamps.coveredSince([row.table], seq, at);
+    }
+
+    it('is covered when its last commit and creation are 2 s or more before the reading the load followed', async () => {
+      expect(await firstReadAfterLoad({ table: 'projects_cmps', updated: 4998, created: 10 })).toBe(true);
+    });
+
+    it('is not covered when it was committed in the 2 s before that reading or after', async () => {
+      expect(await firstReadAfterLoad({ table: 'projects_cmps', updated: 4999, created: 10 })).toBe(false);
+      expect(await firstReadAfterLoad({ table: 'projects_cmps', updated: 5002, created: 10 })).toBe(false);
+    });
+
+    it('is not covered when its stamp is NULL (TRUNCATE, ALTER, never written since a restart)', async () => {
+      expect(await firstReadAfterLoad({ table: 'projects_cmps', updated: null, created: 10 })).toBe(false);
+    });
+
+    it('is not covered when it was created recently (re-created)', async () => {
+      expect(await firstReadAfterLoad({ table: 'projects_cmps', updated: 100, created: 4999 })).toBe(false);
+    });
+
+    it('is not covered without the clock of the reading the load followed', async () => {
+      const stamps = make();
+      stamps.watch(['cities']);
+      await stamps.check();
+      expect(stamps.coveredSince(['cities'], 0, null)).toBe(false);
+      expect(stamps.coveredSince(['cities'], 0, 5000)).toBe(true); // 4000 ≤ 4998
+    });
+  });
+
   describe('fresh()', () => {
     it('reads once per interval, shared by callers', async () => {
       const stamps = make(2000);

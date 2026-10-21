@@ -25,6 +25,9 @@ Rules that keep it safe (`change-tracker.js`, `read-cache.js`):
 - A statement is a harmless read only when it clearly is one. Anything not
   recognised, a write naming no known table, and any DDL count as a change of
   every table.
+- A write counts only if MySQL reports rows changed (`changedRows` of an
+  UPDATE, `affectedRows` otherwise): `set dirty = 1` on a row already dirty
+  changes nothing. A failed write, or one without a readable answer, counts.
 - Every table a connection writes stays pending until its COMMIT/ROLLBACK, and
   is stamped again then. Savepoints and other connections never clear it.
 - A result remembers the change counter at which its load began. It is served
@@ -57,6 +60,17 @@ const rows = await getReadCache().get(
   result uses it. **Never** the per-user cleaning: cache the raw data and clean
   per request after `get`.
 - `keep: (value) => boolean` refuses to keep a result (an error answer).
+- `frozen: true` for big read-only datasets: the result is deep-frozen once
+  and the same object goes to every caller (no copy on store or on hit). It is
+  frozen also when the cache is off, so code that changes it (in-place
+  `sort`, adding or deleting fields) throws the same way everywhere: copy what
+  you change. Only plain data (no buffers, Maps or Sets).
+- `maxBytes`: the largest result kept (default a quarter of
+  `READ_CACHE_MAX_MB`, never more than it). The size is the JSON size; the
+  heap holds about 2–3 times that.
+- `verifyRate`: this call's share of verified hits (0 for expensive loads).
+- Declaring `tables` also reads their MySQL stamps before the first load, so
+  the first result is served from its second read on.
 - A loader may call `get` for another key: the outer result depends on the
   inner one's tables too.
 - Don't cache results that depend on the clock (unless the date is in the key),

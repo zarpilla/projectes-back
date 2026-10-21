@@ -468,3 +468,99 @@ describe('watchStatements', () => {
     ]);
   });
 });
+
+describe('a write that changed no row changes nothing (MySQL says so)', () => {
+  const { changedRowsOf } = require('../src/services/read-cache/change-tracker');
+  // mysql2 answers: an UPDATE's message says "Changed: N"; inserts and deletes
+  // get changedRows 0 whatever happened, so only affectedRows counts for them
+  const updateAnswer = (matched, changed) => ({
+    affectedRows: matched,
+    changedRows: changed,
+    info: `Rows matched: ${matched}  Changed: ${changed}  Warnings: 0`,
+  });
+  const insertAnswer = (n) => ({ affectedRows: n, changedRows: 0, info: '', insertId: 7 });
+  const answered = (conn, sql, error, result) =>
+    tracker.statementEnded(conn, tracker.statementStarted(conn, sql), error, result);
+
+  it('changedRowsOf reads the right number', () => {
+    expect(changedRowsOf(updateAnswer(1, 0))).toBe(0);
+    expect(changedRowsOf(updateAnswer(3, 2))).toBe(2);
+    expect(changedRowsOf(insertAnswer(1))).toBe(1); // not the 0 of changedRows
+    expect(changedRowsOf({ affectedRows: 0, changedRows: 0, info: '' })).toBe(0);
+    expect(changedRowsOf({ affectedRows: '4' })).toBe(4);
+    expect(changedRowsOf(undefined)).toBeNull();
+    expect(changedRowsOf([{ affectedRows: 0 }])).toBeNull();
+    expect(changedRowsOf({ rows: [] })).toBeNull();
+  });
+
+  it('an UPDATE that changed no row (same value) stamps nothing', () => {
+    const at = load();
+    answered('c1', 'update `projects` set `dirty` = ? where `id` in (?)', null, updateAnswer(1, 0));
+    expect(stale(['projects'], at)).toBe(false);
+    expect(tracker.stats.unchangedWrites).toBe(1);
+  });
+
+  it('a delete that matched nothing stamps nothing, cascades included', () => {
+    const at = load();
+    answered('c1', 'delete from `projects` where `id` = ?', null, { affectedRows: 0, info: '' });
+    expect(stale(['projects', 'projects_cmps', 'components_project_phases'], at)).toBe(false);
+  });
+
+  it('an INSERT (changedRows 0, affectedRows 1) stamps', () => {
+    const at = load();
+    answered('c1', 'insert into `cities` (`name`) values (?)', null, insertAnswer(1));
+    expect(stale(['cities'], at)).toBe(true);
+  });
+
+  it('an UPDATE that changed rows stamps', () => {
+    const at = load();
+    answered('c1', 'update `cities` set `name` = ?', null, updateAnswer(2, 1));
+    expect(stale(['cities'], at)).toBe(true);
+  });
+
+  it('a failed write stamps, whatever its answer', () => {
+    const at = load();
+    answered('c1', 'update `cities` set `name` = ?', new Error('deadlock'), updateAnswer(0, 0));
+    expect(stale(['cities'], at)).toBe(true);
+  });
+
+  it('a write without a readable answer stamps', () => {
+    const at = load();
+    answered('c1', 'update `cities` set `name` = ?', null, undefined);
+    expect(stale(['cities'], at)).toBe(true);
+  });
+
+  it('inside a transaction: only writes that changed rows are stamped at the COMMIT', () => {
+    run('c1', 'BEGIN;');
+    answered('c1', 'update `projects` set `dirty` = ?', null, updateAnswer(5, 0));
+    answered('c1', 'update `cities` set `name` = ?', null, updateAnswer(1, 1));
+    const at = load();
+    run('c1', 'COMMIT;');
+    expect(stale(['projects'], at)).toBe(false);
+    expect(stale(['cities'], at)).toBe(true);
+  });
+
+  it('a write to an unknown table inside a transaction: everything again at the COMMIT', () => {
+    run('c1', 'BEGIN;');
+    answered('c1', 'insert into `brand_new_table` values (1)', null, insertAnswer(1));
+    const at = load();
+    run('c1', 'COMMIT;');
+    expect(stale(['regions'], at)).toBe(true);
+  });
+
+  it('an unknown statement inside a transaction: everything again at the COMMIT', () => {
+    run('c1', 'BEGIN;');
+    run('c1', 'CALL refresh()');
+    const at = load();
+    run('c1', 'COMMIT;');
+    expect(stale(['regions'], at)).toBe(true);
+  });
+
+  it('a write is stamped when it ends, not when it starts', () => {
+    const at = load();
+    const w = tracker.statementStarted('c1', 'update `cities` set `name` = ?');
+    expect(stale(['cities'], at)).toBe(false);
+    tracker.statementEnded('c1', w, null, updateAnswer(1, 1));
+    expect(stale(['cities'], at)).toBe(true);
+  });
+});
