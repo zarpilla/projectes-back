@@ -97,7 +97,8 @@ describe('project controller loaders populate the calendar/festive user', () => 
     expect(calls.length).toBeGreaterThan(0);
     calls.forEach((rest) => {
       const call = rest.slice(0, rest.indexOf(')') + 1);
-      expect(call).toMatch(/populate:\s*\{\s*users_permissions_user:\s*true/);
+      // the whole user, or its id (the read cache keeps no password hash, issues/309)
+      expect(call).toMatch(/populate:\s*\{\s*users_permissions_user:\s*(true|\{\s*select:\s*\['id'\])/);
     });
   });
 });

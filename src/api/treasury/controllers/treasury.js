@@ -139,7 +139,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
     const payrolls = await forecastData('payrolls', () =>
       strapi.db.query('api::payroll.payroll').findMany({
-        populate: { bank_account: true, year: true, month: true, users_permissions_user: true },
+        // the person's name only: kept in memory, never the whole user (password hash)
+        populate: { bank_account: true, year: true, month: true, users_permissions_user: { select: ['id', 'username'] } },
       }),
     );
 

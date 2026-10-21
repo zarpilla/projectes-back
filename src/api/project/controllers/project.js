@@ -781,13 +781,16 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     let festives = null;
     if (plannedHours === 'true' || plannedHours === true) {
       [dailyDedications, festives] = await Promise.all([
+        // the person's id only: kept in memory, never the whole user
         phasesBothData('dedications', () =>
           strapi.db
             .query('api::daily-dedication.daily-dedication')
-            .findMany({ populate: { users_permissions_user: true } }),
+            .findMany({ populate: { users_permissions_user: { select: ['id'] } } }),
         ),
         phasesBothData('festives', () =>
-          strapi.db.query('api::festive.festive').findMany({ populate: { users_permissions_user: true } }),
+          strapi.db
+            .query('api::festive.festive')
+            .findMany({ populate: { users_permissions_user: { select: ['id'] } } }),
         ),
       ]);
     }
