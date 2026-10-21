@@ -2,10 +2,10 @@
 # Zero-downtime deploy of a backend image to the Docker tenants (blue/green).
 #
 #   ./deploy.sh v5-<40-hex sha> [tenant ...]     e.g. ./deploy.sh v5-8b48003... buida
-#   ./deploy.sh redesign-<40-hex sha> tenant ...  a build of the redesign branch
+#   ./deploy.sh diligencia-test-<40-hex sha> tenant ...  a build of a preview branch (diligencia-test, redesign)
 #
-# Pinned tenants (pinned.conf: <tenant> <tag>) are on a redesign build: a deploy
-# without a tenant list skips them. Deploying redesign-<sha> to a tenant pins it,
+# Pinned tenants (pinned.conf: <tenant> <tag>) are on a preview build: a deploy
+# without a tenant list skips them. Deploying a preview build (diligencia-test-<sha>, redesign-<sha>) to a tenant pins it,
 # deploying a v5-<sha> to it by name unpins it (back to main). The canary can't be
 # pinned. Going back is not free: main's schema sync may drop the columns only the
 # redesign has.
@@ -31,7 +31,9 @@ LOG=deploy.log
 
 if [ -n "${SSH_ORIGINAL_COMMAND:-}" ]; then read -r -a ARGS <<<"$SSH_ORIGINAL_COMMAND"; else ARGS=("$@"); fi
 TAG="${ARGS[0]:-}"
-[[ "$TAG" =~ ^(v5|redesign)-[0-9a-f]{40}$ ]] || { echo "Usage: deploy.sh v5-<40-hex sha> [tenant ...] | redesign-<40-hex sha> tenant ..."; exit 2; }
+# Preview builds (a branch that is not main/master) are pinned to the tenants they go to.
+PREVIEW='^(redesign|diligencia-test)-'
+[[ "$TAG" =~ ^(v5|redesign|diligencia-test)-[0-9a-f]{40}$ ]] || { echo "Usage: deploy.sh v5-<40-hex sha> [tenant ...] | redesign|diligencia-test-<40-hex sha> tenant ..."; exit 2; }
 
 declare -A PORT
 ALL=()
@@ -49,9 +51,9 @@ if [ -f pinned.conf ]; then
     PINNED[$name]=$tag
   done < pinned.conf
 fi
-if [[ "$TAG" == redesign-* ]]; then
-  [ ${#ONLY[@]} -gt 0 ] || { echo "A redesign build goes only to the tenants you name"; exit 2; }
-  for t in "${ONLY[@]}"; do [ "$t" != "$CANARY" ] || { echo "The canary ($CANARY) can't be pinned to a redesign build"; exit 2; }; done
+if [[ "$TAG" =~ $PREVIEW ]]; then
+  [ ${#ONLY[@]} -gt 0 ] || { echo "A preview build goes only to the tenants you name"; exit 2; }
+  for t in "${ONLY[@]}"; do [ "$t" != "$CANARY" ] || { echo "The canary ($CANARY) can't be pinned to a preview build"; exit 2; }; done
 fi
 
 exec 9>.deploy.lock
@@ -148,9 +150,9 @@ if [ ${#ONLY[@]} -eq 0 ]; then
   { grep -v '^BACK_TAG=' .env 2>/dev/null || true; echo "BACK_TAG=$TAG"; } > .env.new && mv .env.new .env
 else
   for t in "${ONLY[@]}"; do
-    if [[ "$TAG" == redesign-* ]]; then PINNED[$t]=$TAG; else unset "PINNED[$t]"; fi
+    if [[ "$TAG" =~ $PREVIEW ]]; then PINNED[$t]=$TAG; else unset "PINNED[$t]"; fi
   done
-  { echo "# <tenant> <tag>: on a redesign build, skipped by deploys to every tenant (written by deploy.sh)"
+  { echo "# <tenant> <tag>: on a preview build, skipped by deploys to every tenant (written by deploy.sh)"
     for t in "${!PINNED[@]}"; do echo "$t ${PINNED[$t]}"; done; } > pinned.conf.new && mv pinned.conf.new pinned.conf
 fi
 
