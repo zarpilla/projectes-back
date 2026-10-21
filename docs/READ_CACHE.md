@@ -152,8 +152,11 @@ verification compares with sorted keys (`canonicalJson`).
 ## Administration
 
 - `GET /api/read-cache/stats` (app admins): entries, bytes, hits, misses, why
-  answers were not kept or were dropped, verification results, what the
-  tracker and the stamps saw.
+  answers were not kept or were dropped (`evicted`: pushed out by the cap),
+  verification results, what the tracker and the stamps saw, and the
+  process's memory (`memory`: RSS, heap used, heap limit, the container's
+  limit) to size `READ_CACHE_MAX_MB` per tenant: the kept bytes are a
+  JSON-size estimate, the heap holds about 2.5 times that.
 - `POST /api/read-cache/clear` (app admins): «Buida la memòria cau», the button
   of Configuració general › Memòria cau, which also shows the stats.
 
