@@ -17,6 +17,7 @@ const { getMe } = require('../../../services/me-settings');
 const { fiscalYearStartMonth } = require('../../../services/fiscal-year');
 const { documentsOfProject, mergeDocuments, refreshLineWarnings } = require('../../../services/refresh-line-warnings');
 const { loadActivitiesByProjectMonth } = require('../services/economic-detail-activities');
+const { getReadCache } = require('../../../services/read-cache');
 const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDocuments');
 const { lineTotal, invalidLineValueMessage } = require('../../../services/budget-line');
 const { touchesDates, projectDatesError } = require('../../../services/project-dates');
@@ -267,6 +268,25 @@ const ECONOMIC_DETAIL_POPULATE = {
   project_phases: ECONOMIC_DETAIL_PHASES,
   project_original_phases: ECONOMIC_DETAIL_PHASES,
 };
+
+// What projects/phases-both keeps of every project (issues/309): the planned
+// hours need the phase trees, the report the dimensions.
+const PHASES_BOTH_PHASES = {
+  populate: {
+    incomes: {
+      populate: { estimated_hours: { populate: { users_permissions_user: { select: ['id'] } } } },
+    },
+  },
+};
+const PHASES_BOTH_POPULATE = {
+  project_phases: PHASES_BOTH_PHASES,
+  project_original_phases: PHASES_BOTH_PHASES,
+  project_state: true,
+  leader: { select: ['id', 'username'] },
+  project_scope: true,
+  default_dedication_type: true,
+};
+const phasesBothData = (name, loader) => getReadCache().get(`project.phases-both:${name}`, loader);
 
 // State filter of projects/economic-detail (Ingressos/Despeses, Preu hora).
 // The id 0 is the «Sense estat» chip: projects without a project_state
@@ -674,100 +694,123 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   //   plannedHours=true                (optional, add `planned_hours`: the
   //                                     project's hours by person and month,
   //                                     computed like its stored total; issues/067)
+  // Informes › Dedicació (DedicationEstPivot). The projects, their logged hours,
+  // the calendars and the festives are loaded once without any filter and kept
+  // by the read cache (issues/307, 309); the query string filters them on every
+  // request: _where[project_state_in], and optionally `year` (calendar year of
+  // the hours), `user` and `project`, which the report applied after
+  // downloading everything (4.6 s and 6.4 MB on resilience).
+  // The answer leaves out the phase trees (only used here to compute
+  // `planned_hours`) and keeps of each activity what the report reads.
   async findWithPhasesBoth(ctx) {
-    let projects;
-    const { published_at_null, _limit, activities, plannedHours, hoursType, ...where } = ctx.query;
-
-    const project_state_in = (where._where && where._where.project_state_in) || where.project_state_in;
-
-    // v5: Bookshelf withRelated replaced by nested db.query populate (both
-    // phase collections with the full incomes -> estimated_hours -> user nest).
-    const phasePopulate = {
-      populate: {
-        incomes: {
-          populate: {
-            estimated_hours: {
-              populate: { users_permissions_user: true },
-            },
-          },
-        },
-      },
-    };
-    const populate = {
-      project_phases: phasePopulate,
-      project_original_phases: phasePopulate,
-      // Pivot dimensions: Estat / Líder / Àmbit, plus the dedication-type
-      // column. v3 never loaded these either — its withRelated held only the
-      // two phase trees — so DedicationEstPivot's
-      // `p.project_state ? p.project_state.name : '-'` has always fallen
-      // through to '-'. They are relations, so they belong in `populate`;
-      // naming them in the `select` below would ask for columns that no longer
-      // exist in v5.
-      project_state: true,
-      leader: true,
-      project_scope: true,
-      default_dedication_type: true,
-    };
-
-    // the dedication report groups the logged hours by person, dedication type and
-    // function: load them with the activities (`true` left them out)
-    if (activities) {
-      populate.activities = {
-        populate: { users_permissions_user: true, activity_type: true, dedication_type: true },
-      };
-    }
+    const { activities, plannedHours } = ctx.query;
+    const where = ctx.query._where || {};
+    const project_state_in = where.project_state_in || ctx.query.project_state_in;
 
     if (ctx.query._q) {
       // v3 parity: the _q branch ignored the search term and only populated
       // the phase collections one level.
-      projects = await strapi.db.query('api::project.project').findMany({
+      return strapi.db.query('api::project.project').findMany({
         populate: { project_phases: true, project_original_phases: true },
       });
-    } else {
-      const stateIds = project_state_in
-        ? String(project_state_in)
-            .split(',')
-            .map((s) => parseInt(s.trim(), 10))
-            .filter((n) => !isNaN(n))
-        : [];
+    }
 
-      projects = await strapi.db.query('api::project.project').findMany({
+    const stateIds = project_state_in
+      ? String(project_state_in)
+          .split(',')
+          .map((s) => parseInt(s.trim(), 10))
+          .filter((n) => !isNaN(n))
+      : [];
+    const year = parseInt(ctx.query.year, 10) > 0 ? String(parseInt(ctx.query.year, 10)) : null;
+    const userId = parseInt(ctx.query.user, 10) > 0 ? parseInt(ctx.query.user, 10) : null;
+    const projectId = parseInt(ctx.query.project, 10) > 0 ? parseInt(ctx.query.project, 10) : null;
+
+    const all = await phasesBothData('projects', () =>
+      strapi.db.query('api::project.project').findMany({
         // date_start / createdAt back the pivot's "Any" dimension, which reads
-        // `p.date_start || p.created_at`. Both were outside the v3 select too,
-        // so that column rendered "Invalid date".
+        // `p.date_start || p.created_at`.
         select: ['id', 'name', 'trashed', 'date_start', 'createdAt'],
-        ...(stateIds.length ? { where: { project_state: { $in: stateIds } } } : {}),
-        populate,
-      });
-    }
+        populate: PHASES_BOTH_POPULATE,
+      }),
+    );
+    const projects = all.filter(
+      (p) =>
+        p.trashed !== true &&
+        (!stateIds.length || (p.project_state && stateIds.includes(p.project_state.id))) &&
+        (!projectId || p.id === projectId),
+    );
 
-    projects = projects.filter((p) => p.trashed !== true);
-
-    // their relations as ids, like with-activities (what DedicationEstPivot reads)
-    const idOf = (relation) => (relation && relation.id) || null;
-    for (const p of projects) {
-      if (!Array.isArray(p.activities)) continue;
-      p.activities = p.activities.map((a) => ({
-        ...a,
-        users_permissions_user: idOf(a.users_permissions_user),
-        activity_type: idOf(a.activity_type),
-        dedication_type: idOf(a.dedication_type),
-      }));
-    }
-
-    if (plannedHours === 'true' || plannedHours === true) {
-      const [dailyDedications, festives] = await Promise.all([
-        strapi.db
-          .query('api::daily-dedication.daily-dedication')
-          .findMany({ populate: { users_permissions_user: true } }),
-        strapi.db.query('api::festive.festive').findMany({ populate: { users_permissions_user: true } }),
-      ]);
-      for (const p of projects) {
-        p.planned_hours = await buildPlannedHoursByMonth(p, dailyDedications, festives);
+    let activitiesByProject = null;
+    if (activities) {
+      // their relations as ids, like with-activities (what DedicationEstPivot reads)
+      const rows = await phasesBothData('activities', () =>
+        strapi.db.query('api::activity.activity').findMany({
+          select: ['id', 'date', 'hours', 'cost_by_hour'],
+          populate: {
+            project: { select: ['id'] },
+            users_permissions_user: { select: ['id'] },
+            activity_type: { select: ['id'] },
+            dedication_type: { select: ['id'] },
+          },
+        }),
+      );
+      const idOf = (relation) => (relation && relation.id) || null;
+      activitiesByProject = new Map();
+      for (const a of rows) {
+        const pid = idOf(a.project);
+        if (!pid) continue;
+        if (year && !(a.date && a.date.substring(0, 4) === year)) continue;
+        const uid = idOf(a.users_permissions_user);
+        if (userId && uid !== userId) continue;
+        if (!activitiesByProject.has(pid)) activitiesByProject.set(pid, []);
+        activitiesByProject.get(pid).push({
+          id: a.id,
+          date: a.date,
+          hours: a.hours,
+          cost_by_hour: a.cost_by_hour,
+          users_permissions_user: uid,
+          activity_type: idOf(a.activity_type),
+          dedication_type: idOf(a.dedication_type),
+        });
       }
     }
 
-    return projects;
+    let dailyDedications = null;
+    let festives = null;
+    if (plannedHours === 'true' || plannedHours === true) {
+      [dailyDedications, festives] = await Promise.all([
+        phasesBothData('dedications', () =>
+          strapi.db
+            .query('api::daily-dedication.daily-dedication')
+            .findMany({ populate: { users_permissions_user: true } }),
+        ),
+        phasesBothData('festives', () =>
+          strapi.db.query('api::festive.festive').findMany({ populate: { users_permissions_user: true } }),
+        ),
+      ]);
+    }
+
+    // New objects only: the kept data is shared between requests, and the
+    // response sanitizer (app-permissions) deletes fields of what it answers.
+    const copyOf = (relation) => (relation ? { ...relation } : relation);
+    const out = [];
+    for (const p of projects) {
+      const { project_phases: _phases, project_original_phases: _original, ...rest } = p;
+      const row = {
+        ...rest,
+        project_state: copyOf(p.project_state),
+        leader: copyOf(p.leader),
+        project_scope: copyOf(p.project_scope),
+        default_dedication_type: copyOf(p.default_dedication_type),
+      };
+      if (activitiesByProject) row.activities = activitiesByProject.get(p.id) || [];
+      if (dailyDedications) {
+        const planned = await buildPlannedHoursByMonth(p, dailyDedications, festives);
+        row.planned_hours = planned.filter((h) => (!year || h.year === year) && (!userId || h.user === userId));
+      }
+      out.push(row);
+    }
+    return out;
   },
 
   // precomputed cells) plus the per-day dedications rows used by the Excel

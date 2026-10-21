@@ -249,7 +249,11 @@ const calculateEstimatedTotals = async (
   dailyDedications,
   festives,
   real, // or estimated
-  opts, // { lean: true } → `day` as 'YYYY-MM-DD' and no totalsByYear (issues/309)
+  // { lean: true } → `day` as 'YYYY-MM-DD' and no totalsByYear (issues/309)
+  // { pure: true }  → the lines are not written to (total_amount,
+  //   total_expenses_vat, total_estimated_hours): for data shared through the
+  //   read cache, which is frozen (issues/307)
+  opts,
 ) => {
   var total_estimated_hours = 0;
   var total_incomes = 0;
@@ -267,6 +271,7 @@ const calculateEstimatedTotals = async (
   // the per-day row's `day`: a 'YYYY-MM-DD' string in lean mode, else a moment
   const dayValue = lean ? (d) => d.str : (d) => moment(d.str, 'YYYY-MM-DD');
   const pushYear = lean ? () => {} : (row) => rowsByYear.push(row);
+  const keep = opts && opts.pure ? () => {} : (line, field, value) => { line[field] = value; };
 
   const { festiveOn, dedicationsByUser } = calendarLookups(festives, dailyDedications);
 
@@ -280,18 +285,18 @@ const calculateEstimatedTotals = async (
           const subphase = phase.incomes[j];
           var subphase_estimated_hours = 0;
 
-          subphase.total_amount =
-            lineTotal(subphase);
+          const subphaseAmount = lineTotal(subphase);
+          keep(subphase, 'total_amount', subphaseAmount);
           total_incomes +=
             lineTotal(subphase);
 
           const ey = getEstimateYear(subphase, projectDefaultYear);
-          pushYear({ year: ey, total_incomes: subphase.total_amount });
+          pushYear({ year: ey, total_incomes: subphaseAmount });
 
           if (subphase.estimated_hours) {
             for (var k = 0; k < subphase.estimated_hours.length; k++) {
               const hours = subphase.estimated_hours[k];
-              hours.total_amount = 0;
+              let hoursAmount = 0;
               if (hours.from && hours.to && hours.users_permissions_user && hours.users_permissions_user.id) {
                 let mdiff = 1;
                 const userId = hours.users_permissions_user.id;
@@ -312,7 +317,7 @@ const calculateEstimatedTotals = async (
 
                     const dd = userDedications.find((d) => d.from <= day.str && d.to >= day.str);
                     const costByHour = dd && dd.costByHour ? dd.costByHour : 0;
-                    hours.total_amount += q * costByHour;
+                    hoursAmount += q * costByHour;
                     total_estimated_hours_price += q * costByHour;
 
                     totalsByDay.push({
@@ -334,7 +339,7 @@ const calculateEstimatedTotals = async (
                   const dd = userDedications.find((d) => d.from <= hours.from && d.to >= hours.from);
                   const costByHour = dd && dd.costByHour ? dd.costByHour : 0;
 
-                  hours.total_amount = (hours.quantity ? hours.quantity : 0) * mdiff * costByHour;
+                  hoursAmount = (hours.quantity ? hours.quantity : 0) * mdiff * costByHour;
                   total_estimated_hours_price += (hours.quantity ? hours.quantity : 0) * mdiff * costByHour;
 
                   // issues/259: a «Total» amount is spread evenly over the
@@ -370,8 +375,9 @@ const calculateEstimatedTotals = async (
                   }
                 }
               }
+              keep(hours, 'total_amount', hoursAmount);
             }
-            subphase.total_estimated_hours = subphase_estimated_hours;
+            keep(subphase, 'total_estimated_hours', subphase_estimated_hours);
           }
           if (subphase.paid) {
             total_real_incomes +=
@@ -394,19 +400,20 @@ const calculateEstimatedTotals = async (
         for (let j = 0; j < phase.expenses.length; j++) {
           const expense = phase.expenses[j];
 
-          expense.total_amount =
-            lineTotal(expense);
+          const expenseAmount = lineTotal(expense);
+          keep(expense, 'total_amount', expenseAmount);
           total_expenses += lineTotal(expense);
 
-          expense.total_expenses_vat = (expense.total_amount * expenseVatPct(expense)) / 100.0;
+          const expenseVat = (expenseAmount * expenseVatPct(expense)) / 100.0;
+          keep(expense, 'total_expenses_vat', expenseVat);
 
-          total_expenses_vat += expense.total_expenses_vat;
+          total_expenses_vat += expenseVat;
 
           const ey = getEstimateYear(expense, projectDefaultYear);
           pushYear({
             year: ey,
-            total_expenses: expense.total_amount,
-            total_expenses_vat: expense.total_expenses_vat,
+            total_expenses: expenseAmount,
+            total_expenses_vat: expenseVat,
           });
 
           if (expense.paid) {
@@ -422,11 +429,11 @@ const calculateEstimatedTotals = async (
                   lineTotal(expense),
                 total_real_expenses_vat: expense.invoice
                   ? expense.invoice.total_vat || 0
-                  : expense.total_expenses_vat || 0,
+                  : expenseVat || 0,
               });
               total_real_expenses_vat += expense.invoice
                 ? expense.invoice.total_vat || 0
-                : expense.total_expenses_vat || 0;
+                : expenseVat || 0;
             }
           }
         }
@@ -821,7 +828,8 @@ const buildPlannedHoursByMonth = async (p, dailyDedications, festives, today = m
       dailyDedications,
       festives,
       real,
-      { lean: true },
+      // the project may come frozen from the read cache (issues/307)
+      { lean: true, pure: true },
     );
     for (const t of totalsByDay) {
       const year = t.day.substring(0, 4);

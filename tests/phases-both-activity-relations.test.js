@@ -5,11 +5,14 @@
  * put them all under «Sense assignar». The activities now come with those
  * relations as ids, as `with-activities` gives them (issues/016) and the report
  * expects.
+ *
+ * issues/309: they are loaded apart (all of them, kept by the read cache) with
+ * only the fields the report reads, and grouped under their project.
  */
 
 describe('phases-both activities', () => {
   let controller;
-  let projectQuery;
+  let calls;
 
   beforeEach(() => {
     jest.resetModules();
@@ -18,21 +21,27 @@ describe('phases-both activities', () => {
         createCoreController: (uid, build) => (args) => build(args),
       },
     }));
-    projectQuery = jest.fn(async () => [
-      {
-        id: 1,
-        name: 'A',
-        project_phases: [],
-        project_original_phases: [],
-        activities: [
-          { id: 10, hours: 2, date: '2026-01-05', users_permissions_user: { id: 7 }, activity_type: { id: 3 }, dedication_type: null },
-          { id: 11, hours: 1, date: '2026-01-06', users_permissions_user: null, activity_type: null, dedication_type: { id: 4 } },
-        ],
-      },
-    ]);
+    calls = {};
+    const rows = {
+      'api::project.project': [
+        { id: 1, name: 'A', project_state: { id: 1 }, project_phases: [], project_original_phases: [] },
+      ],
+      'api::activity.activity': [
+        { id: 10, hours: 2, date: '2026-01-05', cost_by_hour: 20, project: { id: 1 }, users_permissions_user: { id: 7 }, activity_type: { id: 3 }, dedication_type: null },
+        { id: 11, hours: 1, date: '2026-01-06', cost_by_hour: null, project: { id: 1 }, users_permissions_user: null, activity_type: null, dedication_type: { id: 4 } },
+        { id: 12, hours: 5, date: '2026-01-07', cost_by_hour: 20, project: { id: 2 }, users_permissions_user: { id: 7 }, activity_type: null, dedication_type: null },
+      ],
+    };
     global.strapi = {
       contentType: () => ({ attributes: {} }),
-      db: { query: () => ({ findMany: projectQuery }) },
+      db: {
+        query: (uid) => ({
+          findMany: async (args) => {
+            calls[uid] = args;
+            return rows[uid] || [];
+          },
+        }),
+      },
     };
     controller = require('../src/api/project/controllers/project')({ strapi: global.strapi });
   });
@@ -43,16 +52,22 @@ describe('phases-both activities', () => {
 
   it('loads the person, dedication type and function of each activity', async () => {
     await controller.findWithPhasesBoth({ query: { activities: 'true', _where: { project_state_in: '1' } } });
-    expect(projectQuery.mock.calls[0][0].populate.activities).toEqual({
-      populate: { users_permissions_user: true, activity_type: true, dedication_type: true },
+    expect(calls['api::activity.activity']).toEqual({
+      select: ['id', 'date', 'hours', 'cost_by_hour'],
+      populate: {
+        project: { select: ['id'] },
+        users_permissions_user: { select: ['id'] },
+        activity_type: { select: ['id'] },
+        dedication_type: { select: ['id'] },
+      },
     });
   });
 
-  it('gives them as ids', async () => {
+  it('gives them as ids, under their project', async () => {
     const [project] = await controller.findWithPhasesBoth({ query: { activities: 'true' } });
     expect(project.activities).toEqual([
-      { id: 10, hours: 2, date: '2026-01-05', users_permissions_user: 7, activity_type: 3, dedication_type: null },
-      { id: 11, hours: 1, date: '2026-01-06', users_permissions_user: null, activity_type: null, dedication_type: 4 },
+      { id: 10, hours: 2, date: '2026-01-05', cost_by_hour: 20, users_permissions_user: 7, activity_type: 3, dedication_type: null },
+      { id: 11, hours: 1, date: '2026-01-06', cost_by_hour: null, users_permissions_user: null, activity_type: null, dedication_type: 4 },
     ]);
   });
 });

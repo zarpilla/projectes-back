@@ -16,7 +16,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..');
+// BENCH_ROOT: another checkout to boot (to measure the code of another branch)
+const ROOT = process.env.BENCH_ROOT ? path.resolve(process.env.BENCH_ROOT) : path.resolve(__dirname, '..');
 
 const CASES = (year) => [
   ['economic-detail-all', 'api::project.project', 'findWithEconomicDetail', { _limit: '-1' }],
@@ -29,6 +30,13 @@ const CASES = (year) => [
   ['dedications-month-norows', 'api::project.project', 'findDedications', { _where: { project_state_in: '1,2,3,5,6,7' }, hoursType: 'previstes', year, view: 'month', rows: 'false' }],
   ['forecast-year', 'api::treasury.treasury', 'forecast', { _limit: '-1', year, periodification: 'prevista' }],
   ['forecast-real', 'api::treasury.treasury', 'forecast', { _limit: '-1', year, periodification: 'real' }],
+  // Tresoreria as called in production (10 s on resilience, 2026-10-21)
+  ['forecast-tresoreria', 'api::treasury.treasury', 'forecast', { _limit: '-1', project_states: '1,2', year, periodification: 'null', bank_account_id: '1,3,2' }],
+  // Informes › Dedicació (4.6 s, 6.4 MB on resilience)
+  ['phases-both', 'api::project.project', 'findWithPhasesBoth', { _where: { project_state_in: '1' }, _limit: '-1', activities: 'true', plannedHours: 'true' }],
+  ['phases-both-year', 'api::project.project', 'findWithPhasesBoth', { _where: { project_state_in: '1' }, _limit: '-1', activities: 'true', plannedHours: 'true', year }],
+  ['projects-basic', 'api::project.project', 'findWithBasicInfo', { _limit: '-1', _sort: 'name:ASC' }],
+  ['contacts-basic', 'api::contact.contact', 'basic', { _limit: '-1', _sort: 'name:ASC' }],
 ];
 
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
@@ -39,7 +47,7 @@ async function main() {
   if (!outDir) throw new Error('usage: bench-heavy-endpoints.js <outDir> [passes]');
   fs.mkdirSync(outDir, { recursive: true });
 
-  const { createStrapi } = require('@strapi/strapi');
+  const { createStrapi } = require(require.resolve('@strapi/strapi', { paths: [ROOT] }));
   const app = await createStrapi({ appDir: ROOT, distDir: ROOT }).load();
   let queries = 0;
   app.db.connection.on('query', () => { queries += 1; });
@@ -69,6 +77,11 @@ async function main() {
       const res = await app.controller(uid)[action](ctx);
       times.push(Number(process.hrtime.bigint() - t) / 1e6);
       body = ctx.body !== undefined ? ctx.body : res;
+    }
+    if (process.env.BENCH_CACHE_STATS) {
+      const { getReadCache } = require(path.join(ROOT, 'src/services/read-cache'));
+      const c = getReadCache().counts;
+      console.log(`  read-cache ${name}: ${JSON.stringify({ hits: c.hits, misses: c.misses, stored: c.stored, notStored: c.notStored, invalid: c.invalid, dropped: c.dropped })}`);
     }
     const json = JSON.stringify(body);
     fs.writeFileSync(path.join(outDir, `${name}.json`), json);

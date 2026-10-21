@@ -19,7 +19,22 @@ const SLIM_PROJECT = (p) => ({
   mother: p.mother ? { id: p.mother.id, name: p.mother.name } : null,
 });
 
+// projects/phases-both keeps of each project and activity what the report reads (issues/309)
+const ACTIVITY_FIELDS = ['id', 'date', 'hours', 'cost_by_hour', 'users_permissions_user', 'activity_type', 'dedication_type'];
+const phasesBothProject = ({ project_phases, project_original_phases, ...p }) => ({
+  ...p,
+  leader: p.leader ? { id: p.leader.id, username: p.leader.username } : p.leader,
+  ...(p.activities
+    ? {
+        activities: p.activities
+          .map((a) => Object.fromEntries(ACTIVITY_FIELDS.map((f) => [f, a[f]])))
+          .sort((x, y) => x.id - y.id),
+      }
+    : {}),
+});
+
 function normalize(name, body) {
+  if (name.startsWith('phases-both') && Array.isArray(body)) return body.map(phasesBothProject);
   if (Array.isArray(body)) return body.map(({ document, ...row }) => row);
   if (body && Array.isArray(body.projects)) return { ...body, projects: body.projects.map(SLIM_PROJECT) };
   return body;
