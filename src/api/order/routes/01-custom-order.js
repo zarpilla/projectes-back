@@ -24,6 +24,12 @@ module.exports = {
       path: '/orders/table',
       handler: 'order.table',
     },
+    // issues/317: what «Facturar» needs of the delivered orders, not populate=*
+    {
+      method: 'GET',
+      path: '/orders/for-invoicing',
+      handler: 'order.forInvoicing',
+    },
     // issues/177: the figures above the orders list, over every matching order
     {
       method: 'GET',

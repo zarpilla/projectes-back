@@ -50,6 +50,21 @@ const { isAfternoonSlot, isLateDelivery, isLatePickup, lateRules } = require('..
 const TABLE_POPULATE = ['route', 'owner', 'contact', 'pickup', 'delivery_type', 'contact_legal_form', 'route_rate'];
 // emitted_invoice by id only: the quick edit doesn't reprice an order still on
 // an invoice (issues/287)
+// What «Facturar» reads of an order: the fields of invoicedPrice and its totals (issues/317)
+const FOR_INVOICING_SELECT = [
+  'id',
+  'status',
+  'estimated_delivery_date',
+  'route_date',
+  'price',
+  'volume_discount',
+  'late_order',
+  'late_surcharge',
+  'multidelivery_discount',
+  'contact_pickup_discount',
+  'units',
+  'kilograms',
+];
 const TABLE_POPULATE_SELECT = { collection_point: { select: ['id'] }, emitted_invoice: { select: ['id'] } };
 
 // The permissions that skip the delivery date rules: the logistics office and
@@ -296,6 +311,25 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     // `finalPrice`. v3 got it from an afterFind hook that ran on every query;
     // without this the column showed "?" on every row.
     return applyFinalPriceToAll(entities);
+  },
+
+  /**
+   * GET /api/orders/for-invoicing — the delivered orders «Facturar» groups by
+   * member and month: their amounts, the member and the invoice they are still
+   * linked to, nothing else. It read `orders?populate=*` (1.3 s for 661 orders
+   * locally, 8–10 s on the VPS), which held up every request after it, like the
+   * invoice opened next (issues/317).
+   */
+  async forInvoicing() {
+    return strapi.db.query('api::order.order').findMany({
+      where: { status: 'delivered' },
+      select: FOR_INVOICING_SELECT,
+      populate: {
+        owner: { select: ['id', 'username', 'fullname'] },
+        emitted_invoice: { select: ['id', 'state', 'code'] },
+      },
+      orderBy: [{ route_date: 'desc' }, { id: 'desc' }],
+    });
   },
 
   /**

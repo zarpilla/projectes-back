@@ -226,6 +226,7 @@ async function importSeedPermissions() {
       'delete',
       'createCSV',
       'invoice',
+      'forInvoicing',
       'infoAll',
       'pdfmultiple',
       'checkMultidelivery',
