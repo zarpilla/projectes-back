@@ -39,4 +39,19 @@ describe('walkBalances', () => {
     ]);
     expect(out.map((r) => [r.subtotal, r.account_subtotal])).toEqual([[10, 10], [7, 7]]);
   });
+
+  // issues/316: Miceli has one account («-») and no default; the documents had
+  // no account and the «saldo real» of 1/1 was on «-», so the adjustment was
+  // worked out from 0 and added to the 103.883,70 € of 2025 (149.174,84 €).
+  test('the rows without an account count in the default account', () => {
+    const miceli = () => [
+      { bank_account: null, total_amount: 103883.7 },
+      { bank_account: '-', is_real_balance_adjustment: true, desired_balance: 45291.14, total_amount: 0 },
+      { bank_account: null, total_amount: -12 },
+    ];
+    const out = walkBalances(miceli(), { defaultAccount: '-' });
+    expect(out[1].total_amount).toBe(-58592.56);
+    expect(out.map((r) => r.subtotal)).toEqual([103883.7, 45291.14, 45279.14]);
+    expect(out.map((r) => r.account_subtotal)).toEqual([103883.7, 45291.14, 45279.14]);
+  });
 });

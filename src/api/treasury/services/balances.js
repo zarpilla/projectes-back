@@ -11,6 +11,11 @@
  * balance noted for one account replaced the total of all of them.
  *
  * A real-balance adjustment sets its row's amount to the difference (as before).
+ *
+ * Rows without an account belong to `defaultAccount` (the default bank account,
+ * or the only one). Miceli has one account and no default: its documents had no
+ * account and the «saldo real» of 1/1/2026 was on that account, so the
+ * adjustment was worked out from 0 and added to the balance of 2025 (issues/316).
  */
 // Balances to cents: summing floats left saldos like 16976.9743000003 in the
 // Tresoreria export (issues/277).
@@ -30,11 +35,11 @@ const applyRowToBalance = (row, currentAccountBalance) => {
   return { accountBalance: round2(currentAccountBalance + row.total_amount), delta: row.total_amount };
 };
 
-const walkBalances = (rows) => {
+const walkBalances = (rows, { defaultAccount = null } = {}) => {
   const balanceByAccount = {};
   let subtotal = 0;
   return rows.map((row) => {
-    const account = row.bank_account || 'default';
+    const account = row.bank_account || defaultAccount || 'default';
     if (balanceByAccount[account] === undefined) balanceByAccount[account] = 0;
     const { accountBalance, delta } = applyRowToBalance(row, balanceByAccount[account]);
     balanceByAccount[account] = accountBalance;

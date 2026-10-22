@@ -1152,8 +1152,13 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
     const treasuryData = sortRows(treasury2);
 
-    // running balance per bank account and in total (services/balances)
-    const treasuryDataX = walkBalances(treasuryData).map((t) => ({
+    // running balance per bank account and in total (services/balances); the
+    // rows without an account count in the default one, or in the only one
+    // when there is no default (issues/316)
+    const defaultAccount =
+      (me.bank_account_default && me.bank_account_default.name) ||
+      (bankAccounts.length === 1 ? bankAccounts[0].name : null);
+    const treasuryDataX = walkBalances(treasuryData, { defaultAccount }).map((t) => ({
       ...t,
       datex: treasuryDisplayDate(t.datef),
     }));
@@ -1197,7 +1202,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
           // Recalculate the balances over the selected accounts only: one
           // balance per account, the total as their sum (services/balances)
-          filteredTreasuryDataX = walkBalances(filteredTreasuryDataX);
+          filteredTreasuryDataX = walkBalances(filteredTreasuryDataX, { defaultAccount });
         }
       }
     }
