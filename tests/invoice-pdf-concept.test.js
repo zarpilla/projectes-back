@@ -196,7 +196,7 @@ describe('the PDF prints the invoice concept (issues/312)', () => {
     doc.storage.seller = { height: 0 };
     doc.setText = (t) => texts.push(t);
     doc.generateTableRow = (type) => texts.push(`<${type}>`);
-    doc.document = { page: { width: 595, height: 842 }, y: 0, addPage: () => {} };
+    doc.document = { page: { width: 595, height: 842, maxY: () => 770 }, y: 0, addPage: () => {} };
     doc.generateParts();
     expect(texts.indexOf('Concepte: Serveis de Transport i Logística_Octubre_2026')).toBeGreaterThanOrEqual(0);
     expect(texts.indexOf('Concepte: Serveis de Transport i Logística_Octubre_2026')).toBeLessThan(texts.indexOf('<header>'));
