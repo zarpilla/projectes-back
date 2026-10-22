@@ -626,7 +626,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
           invoice: {
             name: 'COMANDA',
             header: [...invoiceHeader],
-            currency: 'EUR',
+            currency: '€',
             customer: [
               { label: '', value: [order.estimated_delivery_date], fontSize: 20 },
               { label: '', value: [order.contact?.trade_name], fontSize: 28 },

@@ -312,7 +312,8 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     const showVat = true;
     const showIrpf = invoice.lines?.find((l) => l.irpf > 0) !== undefined;
     const showDiscount = invoice.lines?.find((l) => l.discount > 0) !== undefined;
-    const euro = 'EUR';
+    // the PDF font has the € glyph; «EUR» made the cells wrap (issues/318)
+    const euro = '€';
 
     let conceptWidth = 0.35;
     const totalExtra =
@@ -425,7 +426,7 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
         invoice: {
           name,
           header: invoiceHeader,
-          currency: 'EUR',
+          currency: '€',
           customer: [
             {
               label: doc !== 'emitted-invoice' && doc !== 'quote' ? 'PROVEÏDOR/A' : 'CLIENT/A',

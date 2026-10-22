@@ -4,7 +4,7 @@ const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
 const _merge = require('lodash.merge');
-const { printableText } = require('./pdf-text');
+const { printableText, fontHasAll } = require('./pdf-text');
 
 /**
  * Invoice
@@ -185,6 +185,11 @@ module.exports = class Microinvoice {
 
     // Return default font if not special chars are found
     if (!_normalRange.test((value || '').toString())) {
+      return this.options.style.fonts[type].name;
+    }
+
+    // Return default font if it can draw every character (€, ’, “…)
+    if (fontHasAll(value, this.options.style.fonts[type].path)) {
       return this.options.style.fonts[type].name;
     }
 

@@ -27,4 +27,18 @@ const printableText = (value, fontPath) => {
   return out;
 };
 
-module.exports = { printableText };
+/**
+ * Whether the font has a glyph for every character of the text: such text keeps
+ * its own font (bold included) instead of the fallback, e.g. «TOTAL 363,00 €».
+ */
+const fontHasAll = (value, fontPath) => {
+  if (value === null || value === undefined || !fontPath) return false;
+  const font = openFont(fontPath);
+  for (const ch of value.toString()) {
+    const cp = ch.codePointAt(0);
+    if (cp >= 0x20 && !font.hasGlyphForCodePoint(cp)) return false;
+  }
+  return true;
+};
+
+module.exports = { printableText, fontHasAll };
