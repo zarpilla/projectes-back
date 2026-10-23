@@ -24,6 +24,17 @@ module.exports = {
       path: '/orders/table',
       handler: 'order.table',
     },
+    // issues/319: the list's total and status tabs, without populate=*
+    {
+      method: 'GET',
+      path: '/orders/table/count',
+      handler: 'order.tableCount',
+    },
+    {
+      method: 'GET',
+      path: '/orders/table/status-counts',
+      handler: 'order.tableStatusCounts',
+    },
     // issues/317: what «Facturar» needs of the delivered orders, not populate=*
     {
       method: 'GET',

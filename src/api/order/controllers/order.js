@@ -72,6 +72,9 @@ const TABLE_POPULATE_SELECT = {
   incidences: { select: ['id', 'state'] },
 };
 
+// The states the orders list has a tab for (issues/324)
+const TAB_STATUSES = ['pending', 'processed', 'delivered', 'invoiced', 'cancelled'];
+
 // The permissions that skip the delivery date rules: the logistics office and
 // the entity's staff.
 const DATE_RULES_EXEMPT = ['orders_admin', 'projects', 'admin'];
@@ -250,8 +253,23 @@ const FINAL_PRICE_SQL =
  * matching ids are found in SQL and the filter becomes `id_in`.
  */
 async function adaptFinalPriceFilter(query) {
-  const where = query && query._where;
-  if (!where || typeof where !== 'object' || !('final_price_contains' in where)) return;
+  for (const where of finalPriceWheres(query && query._where)) await adaptFinalPriceWhere(where);
+}
+
+/**
+ * The `_where` objects carrying the Preu filter: the top level, or inside the
+ * `_and` the members' scope wraps the list's filters in (app-permissions
+ * narrowQuery). There it was never translated, and a member's count or totals
+ * with the Preu filter answered 400 (issues/319).
+ */
+function finalPriceWheres(where) {
+  if (!where || typeof where !== 'object') return [];
+  const own = 'final_price_contains' in where ? [where] : [];
+  const and = where._and && typeof where._and === 'object' ? Object.values(where._and) : [];
+  return own.concat(...and.map(finalPriceWheres));
+}
+
+async function adaptFinalPriceWhere(where) {
   let typed = String(where.final_price_contains ?? '').replace(/\s|€/g, '');
   // «1.234,56»: the points group thousands when there is a comma
   if (typed.includes(',')) typed = typed.replace(/\./g, '').replace(',', '.');
@@ -316,6 +334,38 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     // `finalPrice`. v3 got it from an afterFind hook that ran on every query;
     // without this the column showed "?" on every row.
     return applyFinalPriceToAll(entities);
+  },
+
+  /**
+   * GET /api/orders/table/count — how many orders /orders/table gives for the
+   * same filters: the orders list's total and the counts of its status tabs.
+   * They read `orders/count`, emulated as a one-row core find with populate=*
+   * (seven per load of the list, ~2,700 in three days on diligencia, median
+   * 1.5 s, up to 12 s), which held up the requests after them (issues/319).
+   * Same filters as /orders/table, the Preu filter included (the core find
+   * ignored it for the office and refused it for a member).
+   */
+  async tableCount(ctx) {
+    await adaptFinalPriceFilter(ctx.query);
+    const opts = adaptQuery(ctx.query);
+    return strapi.db.query('api::order.order').count({ where: opts.filters || {} });
+  },
+
+  /**
+   * GET /api/orders/table/status-counts — the numbers of the orders list's
+   * status tabs in one request: every order matching the filters (`all`) and
+   * those of each state, as the seven `orders/count` did (issues/319, 324).
+   * The caller leaves its own status filter out, as it did for the tabs.
+   */
+  async tableStatusCounts(ctx) {
+    await adaptFinalPriceFilter(ctx.query);
+    const filters = adaptQuery(ctx.query).filters || {};
+    const orders = strapi.db.query('api::order.order');
+    const [all, ...byStatus] = await Promise.all([
+      orders.count({ where: filters }),
+      ...TAB_STATUSES.map((status) => orders.count({ where: { $and: [filters, { status }] } })),
+    ]);
+    return TAB_STATUSES.reduce((counts, status, i) => ({ ...counts, [status]: byStatus[i] }), { all });
   },
 
   /**

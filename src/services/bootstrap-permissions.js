@@ -233,6 +233,8 @@ async function importSeedPermissions() {
       'collectionPointRoutes',
       'table',
       'totals',
+      'tableCount',
+      'tableStatusCounts',
       'history',
     ],
     'orders-imports': ['create', 'find', 'findOne', 'update'],
