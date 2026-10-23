@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/309 (2026-10-20): Informes › Ingressos/Despeses took 40 s on
  * resilience (projects/economic-detail, 5.7 s on a local copy) and Tresoreria /
@@ -222,6 +224,7 @@ describe('forecast projects', () => {
     jest.doMock('@strapi/strapi', () => ({ factories: { createCoreController: (uid, build) => build } }));
     global.strapi = {
       db: {
+        ...treasuryDb(),
         query: (uid) => ({
           findMany: async () =>
             uid === 'api::project.project'

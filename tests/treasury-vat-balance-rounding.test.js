@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/277 follow-up (2026-10-20): the treasury's «IVA executat pendent de
  * saldar» (and «IVA previst pendent de saldar») rows carried the raw float
@@ -33,6 +35,7 @@ const invoice = (id, total_vat) => ({
 function stubStrapi(rows) {
   global.strapi = {
     db: {
+      ...treasuryDb(),
       query: (uid) => ({
         findMany: async () => rows[uid] || [],
         findOne: async () => null,

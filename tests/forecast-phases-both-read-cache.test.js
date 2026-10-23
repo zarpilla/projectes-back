@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/309 (2026-10-21): after the first fixes, production resilience still
  * took 10 s for Tresoreria (treasuries/forecast) and 4.6 s / 6.4 MB for
@@ -191,6 +193,7 @@ describe('treasuries/forecast from the read cache (issues/309)', () => {
     };
     global.strapi = {
       db: {
+        ...treasuryDb(),
         query: (uid) => ({
           findMany: async (args) => {
             calls.push([uid, args]);

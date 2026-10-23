@@ -25,6 +25,8 @@ describe('treasury forecast projects shape', () => {
     expect(start).toBeGreaterThan(-1);
     const populate = controller.slice(start, controller.indexOf('};', start));
     expect(populate).toMatch(/\bmother:\s*true\b/);
-    expect(controller).toMatch(/query\('api::project\.project'\)\.findMany\(\{ populate: PROJECT_FORECAST_POPULATE \}\)/);
+    expect(controller).toMatch(
+      /query\('api::project\.project'\)\.findMany\(\{\s*select: projectColumnsWithoutTotals\(\),\s*populate: PROJECT_FORECAST_POPULATE,?\s*\}\)/,
+    );
   });
 });

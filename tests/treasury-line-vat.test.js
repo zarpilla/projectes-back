@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/143 (2026-10-18) — the treasury forecast took an unpaid budget line's
  * VAT from two places: the expected payment added the line's own VAT (none
@@ -53,6 +55,7 @@ const project = {
 function stubStrapi(rows) {
   global.strapi = {
     db: {
+      ...treasuryDb(),
       query: (uid) => ({
         findMany: async () => rows[uid] || [],
         findOne: async () => null,

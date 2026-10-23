@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/268 (2026-10-20): IVA and Tresoreria dropped every document linked
  * only to a mother project (La Diligència, project 2 «Logística»: 176 emitted
@@ -27,6 +29,7 @@ const archived = { id: 4, name: 'Arxivat', is_mother: true, project_state: { id:
 function stubStrapi(rows) {
   global.strapi = {
     db: {
+      ...treasuryDb(),
       query: (uid) => ({ findMany: async () => rows[uid] || [], findOne: async () => null, count: async () => 0 }),
     },
     log: { info() {}, warn() {}, error() {}, debug() {} },
