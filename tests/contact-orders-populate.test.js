@@ -54,6 +54,7 @@ describe('contacts/withorders', () => {
   it('populates the contact relations the table renders', () => {
     // ContactsTable pushes contacts from this endpoint that /basic did not
     // return, and they go through the same columns.
-    expect(controller).toContain('populate: { contact: { populate: BASIC_POPULATE } }');
+    // issues/326: the contacts are read once each, no longer through the orders
+    expect(controller).toContain('contactsWithOrders(strapi, ctx.state.user.id, ctx.query.contact_id, BASIC_POPULATE)');
   });
 });

@@ -16,6 +16,7 @@ const {
   SOCIES_POPULATE,
   forOrdersWhere,
 } = require('../services/for-orders');
+const { contactsWithOrders } = require('../services/with-orders');
 const { contactSnapshot, loadContact } = require('../../order/services/contact-snapshot');
 
 const ORDER = 'api::order.order';
@@ -140,33 +141,13 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
   /**
    * GET /api/contacts/withorders
    * Contacts that have orders owned by the current user, with order counts.
+   * One grouped query, then each contact once (issues/326, services/with-orders).
    */
   async withorders(ctx) {
-    const where = { owner: ctx.state.user.id };
-    if (ctx.query.contact_id) {
-      where.contact = ctx.query.contact_id;
-    }
-    const orders = await strapi.db.query('api::order.order').findMany({
-      where,
-      // ContactsTable pushes any contact from here that the /basic list did
-      // not already contain, so these rows are rendered by the same columns
-      // and need the same relations.
-      populate: { contact: { populate: BASIC_POPULATE } },
-    });
-
-    const contacts = [];
-    for (const order of orders) {
-      if (!order.contact) continue;
-      let contact = contacts.find((c) => c.id === order.contact.id);
-      if (!contact) {
-        contact = { ...order.contact, num_orders: 1 };
-        contacts.push(contact);
-      } else {
-        contact.num_orders = (contact.num_orders || 0) + 1;
-      }
-      contact.can_edit = contact.can_edit || ['delivered', 'invoiced'].includes(order.status);
-    }
-    return contacts;
+    // ContactsTable pushes any contact from here that the /basic list did
+    // not already contain, so these rows are rendered by the same columns
+    // and need the same relations.
+    return contactsWithOrders(strapi, ctx.state.user.id, ctx.query.contact_id, BASIC_POPULATE);
   },
 
   /**
