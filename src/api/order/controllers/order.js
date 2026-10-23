@@ -65,7 +65,12 @@ const FOR_INVOICING_SELECT = [
   'units',
   'kilograms',
 ];
-const TABLE_POPULATE_SELECT = { collection_point: { select: ['id'] }, emitted_invoice: { select: ['id'] } };
+// incidences by id and state: the «Senyals» icon, red while one is open
+const TABLE_POPULATE_SELECT = {
+  collection_point: { select: ['id'] },
+  emitted_invoice: { select: ['id'] },
+  incidences: { select: ['id', 'state'] },
+};
 
 // The permissions that skip the delivery date rules: the logistics office and
 // the entity's staff.

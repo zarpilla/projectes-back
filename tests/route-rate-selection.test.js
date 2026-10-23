@@ -99,6 +99,16 @@ describe('orders/table gives what the quick edit needs to pick a rate (issues/15
     const table = src.slice(src.indexOf('const TABLE_POPULATE'), src.indexOf('const DATE_RULES_EXEMPT'));
     expect(table).toMatch(/emitted_invoice: \{ select: \['id'\] \}/);
   });
+
+  // the «Senyals» icon of an incidence: red while one is still open
+  it('gives the incidences of an order, by id and state only', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'api', 'order', 'controllers', 'order.js'),
+      'utf8',
+    );
+    const table = src.slice(src.indexOf('const TABLE_POPULATE'), src.indexOf('const DATE_RULES_EXEMPT'));
+    expect(table).toMatch(/incidences: \{ select: \['id', 'state'\] \}/);
+  });
 });
 
 describe('repairCollectionOrderRates (issues/151)', () => {
