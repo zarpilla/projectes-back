@@ -180,6 +180,9 @@
     },
     "document_concept": {
       "type": "string"
+    },
+    "concept": {
+      "type": "string"
     }
   }
 }

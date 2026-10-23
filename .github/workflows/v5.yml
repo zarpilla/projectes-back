@@ -8,11 +8,17 @@ name: Build and Publish Backend Docker image (v5)
 #
 # The v3 backend (zarpilla/projectes) is a different repository, so this needs
 # no branch of its own: `main` here IS v5.
+#
+# The `diligencia-test` branch is tested, published as esstrapis-back:diligencia-test
+# (and diligencia-test-<sha>) and deployed only to ladili_test (ladili.esstrapis.org,
+# a copy of diligencia), which deploy.sh then pins to it. Pair it with the front's
+# `diligencia-test`.
 
 on:
   push:
     branches:
       - main
+      - diligencia-test
     # Server scripts and docs don't change the image: no build, no deploy.
     paths-ignore:
       - 'deploy/**'
@@ -56,10 +62,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Use Node 20
+      - name: Use Node 22
         uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -78,7 +84,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     env:
-      IMAGE_TAG: v5
+      IMAGE_TAG: ${{ github.ref == 'refs/heads/diligencia-test' && 'diligencia-test' || 'v5' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -106,8 +112,14 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/esstrapis-back:${{ env.IMAGE_TAG }}
             ${{ secrets.DOCKERHUB_USERNAME }}/esstrapis-back:${{ env.IMAGE_TAG }}-${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # The build cache lives in the registry, next to the image: with it the
+          # node_modules layer is reused while package-lock.json doesn't change,
+          # so the VPS already has it and a deploy pulls only the code layers
+          # (Dockerfile). The GitHub Actions cache missed it (npm ci ran again
+          # with an unchanged lockfile), and then every deploy pulled ~870 MB.
+          # Pull requests read it but have no credentials to write it.
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/esstrapis-back:buildcache
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/esstrapis-back:buildcache,mode=max,image-manifest=true,oci-mediatypes=true', secrets.DOCKERHUB_USERNAME) || '' }}
 
   # Deploys the image just built to every tenant on the VPS (deploy/docker/deploy.sh:
   # canary first, two at a time, automatic rollback). The SSH key can only run that
@@ -116,15 +128,19 @@ jobs:
   # Add required reviewers to the `production` environment to approve each deploy.
   deploy:
     needs: build-and-push
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/diligencia-test')
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 40
     concurrency:
       group: deploy-production
       cancel-in-progress: false
+    env:
+      # diligencia-test goes only to ladili_test (a copy of diligencia), which it pins:
+      # deploys of main to every tenant then skip it.
+      DEPLOY_ARGS: ${{ github.ref == 'refs/heads/diligencia-test' && format('diligencia-test-{0} ladili_test', github.sha) || format('v5-{0}', github.sha) }}
     steps:
-      - name: Deploy v5-${{ github.sha }} to the VPS
+      - name: Deploy ${{ env.DEPLOY_ARGS }} to the VPS
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -140,7 +156,7 @@ jobs:
           echo "::notice title=target::${VPS_USER:-<empty VPS_USER>}@${VPS_HOST:-<empty VPS_HOST>}"
           set +e
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o ServerAliveInterval=30 "$VPS_USER@$VPS_HOST" "v5-${GITHUB_SHA}" 2> >(tee ssh-stderr.log >&2)
+            -o ServerAliveInterval=30 "$VPS_USER@$VPS_HOST" "$DEPLOY_ARGS" 2> >(tee ssh-stderr.log >&2)
           rc=$?
           if [ $rc -ne 0 ]; then
             echo "::error title=deploy failed (exit $rc)::$(tail -3 ssh-stderr.log | tr '\n' ' ')"

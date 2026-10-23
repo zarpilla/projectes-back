@@ -71,7 +71,7 @@ describe('PDF line amounts (issues/243)', () => {
     const data = await render(invoice);
 
     expect(cells(data, 'Subtotal')[0]).toBe(165.9);
-    expect(cells(data, 'IVA')[0]).toBe('15,08 EUR (10%)');
+    expect(cells(data, 'IVA')[0]).toBe('15,08 € (10%)');
     const sum = cells(data, 'Subtotal').reduce((s, v) => s + v, 0);
     expect(Math.round(sum * 100) / 100).toBe(totalOf(data, 'TOTAL'));
   });
@@ -92,7 +92,7 @@ describe('PDF line amounts (issues/243)', () => {
     const discount = totalOf(data, 'Descompte');
 
     expect(Math.round((without - discount) * 100) / 100).toBe(totalOf(data, 'Base imposable'));
-    expect(cells(data, 'Descompte')[0]).toBe('27,09 EUR (12,5%)'); // 216,67 − 189,58;
+    expect(cells(data, 'Descompte')[0]).toBe('27,09 € (12,5%)'); // 216,67 − 189,58;
   });
 
   it('prints quantities and percentages with a decimal comma', async () => {

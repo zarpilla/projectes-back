@@ -4,7 +4,7 @@ const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
 const _merge = require('lodash.merge');
-const { printableText } = require('./pdf-text');
+const { printableText, fontHasAll } = require('./pdf-text');
 
 /**
  * Invoice
@@ -194,6 +194,11 @@ module.exports = class MicroinvoiceOrder {
 
     // Return default font if not special chars are found
     if (!_normalRange.test((value || '').toString())) {
+      return this.options.style.fonts[type].name;
+    }
+
+    // Return default font if it can draw every character (€, ’, “…)
+    if (fontHasAll(value, this.options.style.fonts[type].path)) {
       return this.options.style.fonts[type].name;
     }
 
@@ -605,6 +610,43 @@ module.exports = class MicroinvoiceOrder {
     });
   }
 
+  /**
+   * «COMANDA EXPRESS» of a late order (issues/315): a warning triangle and the
+   * words in a thick frame, in black so it prints on any printer, in the free
+   * corner right of the pickup box.
+   */
+  generateExpress() {
+    if (!this.options.data.invoice.express) return;
+    const x = 300;
+    const y = 292;
+    const width = 275;
+    const height = 62;
+    const doc = this.document;
+    doc.save();
+    doc.lineWidth(3).rect(x, y, width, height).stroke('#000000');
+    // the triangle: 46 wide, a rounded outline with a «!» inside
+    const tx = x + 12;
+    const ty = y + 9;
+    doc
+      .lineWidth(4)
+      .lineJoin('round')
+      .moveTo(tx + 23, ty)
+      .lineTo(tx + 46, ty + 42)
+      .lineTo(tx, ty + 42)
+      .closePath()
+      .stroke('#000000');
+    doc.lineWidth(4).lineCap('round').moveTo(tx + 23, ty + 14).lineTo(tx + 23, ty + 28).stroke('#000000');
+    doc.circle(tx + 23, ty + 35, 2.4).fill('#000000');
+    // as big as fits on one line
+    const label = 'COMANDA EXPRESS';
+    const room = width - 80;
+    doc.fillColor('#000000').font(this.getFontOrFallback('bold', label));
+    let size = 26;
+    while (size > 12 && doc.fontSize(size).widthOfString(label) > room) size -= 1;
+    doc.fontSize(size).text(label, x + 70, y + (height - size) / 2, { lineBreak: false });
+    doc.restore();
+  }
+
   generateRectangle(x, y, width, height, color) {
     this.document.rect(x, y, width, height).stroke(color);
   }
@@ -796,6 +838,7 @@ module.exports = class MicroinvoiceOrder {
       this.generateLegal();
       this.generatePartsLines(i);
       this.generateRectangle(20, 260, 222, 80, this.options.style.text.primaryColor);
+      this.generateExpress();
       this.generateFooter();
       if (i < this.options.data.pages - 1) {
         this.storage.cursor.y = 0;

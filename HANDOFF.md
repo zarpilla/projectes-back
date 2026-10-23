@@ -16,7 +16,7 @@ the diligencia dataset; per-screen browser testing is the next step).
 | v5 (rebuild) | `/home/jordi/Documents/work/webcoop/projectes/projectes-v5` | Strapi 5.51.1, JS (no TS), clean-room rebuild. **All new work goes here.** |
 | Vue frontend | `/home/jordi/Documents/work/webcoop/projectes/projectes-front` | Vue 2 + buefy, 189 `.vue` files, calls the API through `src/service/index.js`. **P9 work is on branch `p9/strapi-v5-api-compat`.** |
 
-Node 20 is required (`.nvmrc` present; npm scripts fail fast with a clear
+Node 22 is required (`.nvmrc` present; npm scripts fail fast with a clear
 message on older Node — node-ical 0.26 crashes on Node 18).
 
 ## 2. What is DONE (verified, committed)
@@ -194,7 +194,7 @@ scripts (`scripts/templates/pm2-app.config.js.template`, Dockerfile,
 
 ## 4. v5 conventions & gotchas (learned the hard way)
 
-- **Node 20** (`nvm use` picks up `.nvmrc`). Port 1337 conflicts from stale
+- **Node 22** (`nvm use` picks up `.nvmrc`). Port 1337 conflicts from stale
   processes: `pkill -f "stra[p]i"` (bracket avoids self-match).
 - **Data access**: `strapi.db.query(uid)` = raw repo, `{where, populate, orderBy,
   limit}` args, NO lifecycles (use for internal writes — the v3 `_internal` flag

@@ -1153,6 +1153,8 @@ const updateCollectionOrderAggregates = async (collectionOrderId) => {
     units: totalUnits,
     kilograms: totalKilograms,
     refrigerated: isRefrigerated,
+    // red when one of its orders was entered too late for the pickup (issues/315)
+    late_pickup: relatedOrders.some((o) => o.late_pickup === true),
     // comments: concatenatedComments,
     contact_pickup_discount: updatedPickupDiscount,
     _internal: true,

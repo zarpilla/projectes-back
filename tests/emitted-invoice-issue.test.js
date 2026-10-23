@@ -302,6 +302,13 @@ describe('an issued invoice', () => {
     });
   });
 
+  // issues/312: the concept is printed on the PDF, like the comments
+  it('keeps the concept printed on the PDF', async () => {
+    db.invoice.concept = 'Serveis de Transport i Logística_Octubre_2026';
+    const data = await update({ concept: 'changed', paid: true });
+    expect(data).toMatchObject({ concept: 'Serveis de Transport i Logística_Octubre_2026', paid: true });
+  });
+
   it('takes no new number', async () => {
     await update({ state: 'real', code: 'ESBORRANY' });
 

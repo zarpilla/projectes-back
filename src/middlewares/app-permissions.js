@@ -81,6 +81,10 @@ const PICKUP_POINT_FIELDS = new Set(['lines', 'picked_up', 'incidences', '_track
 // always in her name.
 const OFFICE_ORDER_FIELDS = [
   'price',
+  // set by the server when she is late, unchecked only by the office (issues/315)
+  'late_order',
+  'late_surcharge',
+  'late_pickup',
   'multidelivery_discount',
   'volume_discount',
   'contact_pickup_discount',

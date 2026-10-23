@@ -4,7 +4,7 @@ const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
 const _merge = require('lodash.merge');
-const { printableText } = require('./pdf-text');
+const { printableText, fontHasAll } = require('./pdf-text');
 
 /**
  * Invoice
@@ -185,6 +185,11 @@ module.exports = class Microinvoice {
 
     // Return default font if not special chars are found
     if (!_normalRange.test((value || '').toString())) {
+      return this.options.style.fonts[type].name;
+    }
+
+    // Return default font if it can draw every character (€, ’, “…)
+    if (fontHasAll(value, this.options.style.fonts[type].path)) {
       return this.options.style.fonts[type].name;
     }
 
@@ -381,17 +386,12 @@ module.exports = class Microinvoice {
    * @return void
    */
   checkPageBreakAndAddHeaders(requiredSpace = 50) {
-    const currentY = this.storage.cursor.y;
-    const pageHeight = this.document.page.height;
-    const marginBottom = 50; // Leave some margin at the bottom
-
-    // Check if we need a new page
-    if (currentY + requiredSpace > pageHeight - marginBottom) {
-      // Add new page
+    // pdfkit breaks pages by itself at its bottom margin (page.maxY()); breaking
+    // before it keeps a row or section whole on one page (issues/318)
+    if (this.storage.cursor.y + requiredSpace > this.document.page.maxY()) {
       this.document.addPage();
-
-      // Reset cursor to top of new page
       this.setCursor('y', this.options.style.document.marginTop);
+      this.document.y = this.storage.cursor.y;
 
       // Add table headers on the new page
       if (this.storage.table.inTableSection) {
@@ -399,8 +399,24 @@ module.exports = class Microinvoice {
       }
     }
   }
+
+  /**
+   * Height of a text drawn with setText's options, without drawing it
+   *
+   * @private
+   */
+  measureText(text, { fontWeight = 'normal', maxWidth } = {}) {
+    this.document.font(this.getFontOrFallback(fontWeight, text));
+    this.document.fontSize(this.options.style.text.regularSize);
+    return this.document.heightOfString(this.valueOrTransliterate(text), { width: maxWidth });
+  }
+
   /**
    * Generates a row
+   *
+   * Every cell is measured first: the row is as tall as its tallest cell, the
+   * next row starts below it (a wrapped discount overlapped the next row), and
+   * a row that does not fit goes whole to the next page (issues/318).
    *
    * @private
    * @param  {string} type
@@ -408,93 +424,54 @@ module.exports = class Microinvoice {
    * @return void
    */
   generateTableRow(type, columns) {
-    let _fontWeight = 'normal',
-      _colorCode = 'secondary';
+    const header = type === 'header';
+    const _fontWeight = header ? 'bold' : 'normal';
+    const _colorCode = header ? 'primary' : 'secondary';
 
-    // Check for page break before adding row (except for headers)
-    if (type !== 'header') {
-      this.checkPageBreakAndAddHeaders(40); // Estimate row height
-    }
-
-    this.storage.cursor.y = this.document.y;
-
-    this.storage.cursor.y += this.options.style.table.lineHeight;
-
-    if (type === 'header') {
-      _fontWeight = 'bold';
-      _colorCode = 'primary';
-    }
-
-    let _start = this.options.style.document.marginLeft;
-    let _maxY = this.storage.cursor.y;
-
-    // Computes columns by giving an extra space for the last column \
-    //   It is used to keep a perfect alignement
     const totalMaxWidth =
       this.document.page.width -
       this.options.style.document.marginRight -
       this.options.style.document.marginLeft -
-      (columns.length - 1) * 10; //this.options.style.header.textPosition -
-    // _start -
-    // this.options.style.document.marginRight
+      (columns.length - 1) * 10;
 
-    let _maxWidth = totalMaxWidth / (columns.length - 2);
+    const cells = columns.map((column) => {
+      let value = column.value;
+      if (column.price === true) value = this.prettyPrice(value);
+      value = value === null || value === undefined ? '' : String(value);
+      const maxWidth = totalMaxWidth * column.width;
+      return { value, maxWidth, height: this.measureText(value, { fontWeight: _fontWeight, maxWidth }) };
+    });
+    const rowHeight = Math.max(...cells.map((c) => c.height));
+    const lineHeight = this.options.style.table.lineHeight;
 
-    columns.forEach((column, index) => {
-      let _value;
-      _maxWidth = totalMaxWidth * column.width;
+    if (!header) {
+      // the header's separator line takes ~10 pt more below the row
+      this.checkPageBreakAndAddHeaders(lineHeight + rowHeight);
+    }
+
+    this.storage.cursor.y += lineHeight;
+    const top = this.storage.cursor.y;
+
+    let _start = this.options.style.document.marginLeft;
+    cells.forEach((cell, index) => {
       this.setCursor('x', _start);
-
-      _value = column.value;
-
-      if (column.price === true) {
-        _value = this.prettyPrice(_value);
-      }
-
-      this.setText(_value, {
+      this.setCursor('y', top);
+      this.setText(cell.value, {
         colorCode: _colorCode,
-        maxWidth: _maxWidth,
+        maxWidth: cell.maxWidth,
         fontWeight: _fontWeight,
         align: index === 0 ? 'left' : 'right',
-        skipDown: true,
       });
-
-      _start += _maxWidth + 10;
-
-      // Increase y position in case of a line return
-      if (this.document.y >= _maxY) {
-        _maxY = this.document.y;
-      }
+      _start += cell.maxWidth + 10;
     });
 
-    const largeColumn = columns.find(
-      (column) => column.value && Math.ceil(column.value.toString().length / 55) > 1,
-    );
-    if (largeColumn) {
-      const rowLen = columns.length < 5 ? 55 : 40;
-      this.storage.cursor.y += 12.5 * (Math.ceil(largeColumn.value.toString().length / rowLen) - 1);
-      if (largeColumn.value.includes('\n')) {
-        this.storage.cursor.y += 12.5 * 2;
-      }
-      // const contains = largeColumn.value.includes('\n')
-      // console.log('contains', contains)
-
-      this.setText(' ', {
-        colorCode: _colorCode,
-        maxWidth: _maxWidth,
-        fontWeight: _fontWeight,
-        skipDown: false,
-      });
-    }
-
-    // Set y to the max y position
-    this.setCursor('y', _maxY - 5);
-
-    if (type === 'header') {
+    const bottom = top + rowHeight;
+    if (header) {
+      this.setCursor('y', bottom - 5);
       this.generateLine();
     }
-
-    this.setCursor('y', _maxY);
+    this.setCursor('y', bottom);
+    this.document.y = bottom;
   }
 
   /**
@@ -527,6 +504,18 @@ module.exports = class Microinvoice {
     let _leftMargin = 15;
 
     this.setCursor('y', _startY);
+
+    // The invoice's concept, above the lines (issues/312)
+    const concept = this.options.data.invoice.details.concept;
+    if (concept) {
+      this.setCursor('x', this.options.style.document.marginLeft);
+      this.setText('\n');
+      this.setText(`Concepte: ${concept}`, {
+        fontWeight: 'bold',
+        colorCode: 'primary',
+        maxWidth: this.document.page.width - this.options.style.document.marginLeft - this.options.style.document.marginRight,
+      });
+    }
 
     // Mark that we're entering the table section
     this.storage.table.inTableSection = true;
@@ -601,7 +590,21 @@ module.exports = class Microinvoice {
    */
   generateLegal() {
     // Check if we have enough space for the legal section
-    const legalSectionHeight = (this.options.data.invoice.legal || []).length * 25 + 60;
+    const legalSectionHeight =
+      40 +
+      (this.options.data.invoice.legal || []).reduce(
+        (sum, legal) =>
+          sum +
+          20 +
+          this.measureText(legal.value, {
+            fontWeight: legal.weight,
+            maxWidth:
+              this.document.page.width -
+              this.options.style.document.marginLeft -
+              this.options.style.document.marginRight,
+          }),
+        0,
+      );
     this.checkPageBreakAndAddHeaders(legalSectionHeight);
 
     this.storage.cursor.y += 40;

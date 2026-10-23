@@ -20,6 +20,12 @@
       "type": "relation",
       "relation": "oneToOne",
       "target": "api::route.route"
+    },
+    "time_from": {
+      "type": "time"
+    },
+    "time_to": {
+      "type": "time"
     }
   }
 }

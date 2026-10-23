@@ -17,8 +17,8 @@ if (major < MIN_MAJOR) {
   console.error('[projectes-v5] Strapi 5 (and node-ical 0.26 in particular) crash on older Node');
   console.error('[projectes-v5] with "SyntaxError: Invalid regular expression flags".');
   console.error('');
-  console.error('Fix: run the app with Node 20, e.g.');
-  console.error('  nvm use 20       # this repo ships a .nvmrc pinned to 20');
+  console.error('Fix: run the app with Node 22, e.g.');
+  console.error('  nvm use 22       # this repo ships a .nvmrc pinned to 22');
   console.error('  npm run dev');
   console.error('');
   process.exit(1);

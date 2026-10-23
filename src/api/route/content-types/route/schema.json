@@ -55,6 +55,12 @@
       "target": "api::route-rate.route-rate",
       "mappedBy": "routes"
     },
+    "pickup_notices": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::route-pickup-notice.route-pickup-notice",
+      "mappedBy": "routes"
+    },
     "pickup": {
       "type": "relation",
       "relation": "oneToOne",
@@ -85,6 +91,12 @@
       "type": "relation",
       "relation": "oneToOne",
       "target": "plugin::users-permissions.user"
+    },
+    "time_from": {
+      "type": "time"
+    },
+    "time_to": {
+      "type": "time"
     }
   }
 }

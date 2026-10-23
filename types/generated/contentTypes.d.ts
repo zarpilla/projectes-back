@@ -490,6 +490,8 @@ export interface ApiCityRouteCityRoute extends Struct.CollectionTypeSchema {
       Schema.Attribute.Private;
     publishedAt: Schema.Attribute.DateTime;
     route: Schema.Attribute.Relation<'oneToOne', 'api::route.route'>;
+    time_from: Schema.Attribute.Time;
+    time_to: Schema.Attribute.Time;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
   };
@@ -873,6 +875,7 @@ export interface ApiEmittedInvoiceEmittedInvoice extends Struct.CollectionTypeSc
     code: Schema.Attribute.String;
     comments: Schema.Attribute.RichText;
     comments_internal: Schema.Attribute.RichText;
+    concept: Schema.Attribute.String;
     contact: Schema.Attribute.Relation<'oneToOne', 'api::contact.contact'>;
     contact_info: Schema.Attribute.Component<'contact.contact-data', false>;
     contact_invoice_number: Schema.Attribute.String;
@@ -1405,6 +1408,9 @@ export interface ApiOrderOrder extends Struct.CollectionTypeSchema {
     is_collection_order: Schema.Attribute.Boolean;
     kilograms: Schema.Attribute.Decimal;
     last_mile: Schema.Attribute.Boolean;
+    late_order: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    late_pickup: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    late_surcharge: Schema.Attribute.Decimal;
     lines: Schema.Attribute.Component<'orders.lines', true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::order.order'> & Schema.Attribute.Private;
@@ -2280,6 +2286,32 @@ export interface ApiRouteFestiveRouteFestive extends Struct.CollectionTypeSchema
   };
 }
 
+export interface ApiRoutePickupNoticeRoutePickupNotice extends Struct.CollectionTypeSchema {
+  collectionName: 'route_pickup_notices';
+  info: {
+    displayName: 'RoutePickupNotice';
+    pluralName: 'route-pickup-notices';
+    singularName: 'route-pickup-notice';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::route-pickup-notice.route-pickup-notice'> &
+      Schema.Attribute.Private;
+    message: Schema.Attribute.Text & Schema.Attribute.Required;
+    name: Schema.Attribute.String;
+    pickup: Schema.Attribute.Relation<'oneToOne', 'api::pickup.pickup'>;
+    publishedAt: Schema.Attribute.DateTime;
+    routes: Schema.Attribute.Relation<'manyToMany', 'api::route.route'>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
 export interface ApiRouteRateRouteRate extends Struct.CollectionTypeSchema {
   collectionName: 'route_rates';
   info: {
@@ -2343,6 +2375,7 @@ export interface ApiRouteRoute extends Struct.CollectionTypeSchema {
     name: Schema.Attribute.String;
     order: Schema.Attribute.Integer;
     pickup: Schema.Attribute.Relation<'oneToOne', 'api::pickup.pickup'>;
+    pickup_notices: Schema.Attribute.Relation<'manyToMany', 'api::route-pickup-notice.route-pickup-notice'>;
     project: Schema.Attribute.Relation<'oneToOne', 'api::project.project'>;
     publishedAt: Schema.Attribute.DateTime;
     route_rates: Schema.Attribute.Relation<'manyToMany', 'api::route-rate.route-rate'>;
@@ -2350,6 +2383,8 @@ export interface ApiRouteRoute extends Struct.CollectionTypeSchema {
     short_name: Schema.Attribute.String;
     sunday: Schema.Attribute.Boolean;
     thursday: Schema.Attribute.Boolean;
+    time_from: Schema.Attribute.Time;
+    time_to: Schema.Attribute.Time;
     transfer_pickup: Schema.Attribute.Relation<'oneToOne', 'api::pickup.pickup'>;
     tuesday: Schema.Attribute.Boolean;
     updatedAt: Schema.Attribute.DateTime;
@@ -3446,6 +3481,7 @@ declare module '@strapi/strapi' {
       'api::received-invoice.received-invoice': ApiReceivedInvoiceReceivedInvoice;
       'api::region.region': ApiRegionRegion;
       'api::route-festive.route-festive': ApiRouteFestiveRouteFestive;
+      'api::route-pickup-notice.route-pickup-notice': ApiRoutePickupNoticeRoutePickupNotice;
       'api::route-rate.route-rate': ApiRouteRateRouteRate;
       'api::route.route': ApiRouteRoute;
       'api::sector.sector': ApiSectorSector;

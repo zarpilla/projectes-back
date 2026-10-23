@@ -13,6 +13,23 @@
     "next_day_limit_hour": {
       "type": "integer",
       "default": 14
+    },
+    "invoice_concept": {
+      "type": "string"
+    },
+    "pickup_same_day_limit_hour": {
+      "type": "integer",
+      "default": 10
+    },
+    "late_surcharge": {
+      "type": "decimal",
+      "default": 25
+    },
+    "late_order_message": {
+      "type": "text"
+    },
+    "late_pickup_message": {
+      "type": "text"
     }
   }
 }
