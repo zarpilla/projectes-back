@@ -1,6 +1,8 @@
 'use strict';
 /* global strapi */
 
+const { markDirty } = require('../api/project/services/project-totals');
+
 /**
  * Startup script: bring "Hores executades" up to date (issues/012).
  *
@@ -65,7 +67,7 @@ async function backfillActivityCosts() {
   const projectColumn = joinTable.inverseJoinColumn.name;
   const projectIds = (await strapi.db.connection(joinTable.name).distinct(projectColumn)).map((r) => r[projectColumn]);
   if (projectIds.length) {
-    await strapi.db.connection('projects').whereIn('id', projectIds).update({ dirty: true });
+    await markDirty(projectIds);
   }
 
   strapi.log.info(

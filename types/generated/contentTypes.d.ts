@@ -1896,7 +1896,6 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
   attributes: {
     activities: Schema.Attribute.Relation<'oneToMany', 'api::activity.activity'>;
     activity_types: Schema.Attribute.Relation<'oneToMany', 'api::activity-type.activity-type'>;
-    balance: Schema.Attribute.Decimal;
     clients: Schema.Attribute.Relation<'manyToMany', 'api::contact.contact'>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
@@ -1908,12 +1907,9 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     default_dedication_type: Schema.Attribute.Relation<'oneToOne', 'api::dedication-type.dedication-type'>;
     description: Schema.Attribute.RichText;
     diets: Schema.Attribute.Relation<'oneToMany', 'api::diet.diet'>;
-    dirty: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted_grants: Schema.Attribute.Relation<'oneToMany', 'api::emitted-grant.emitted-grant'>;
     emitted_invoices: Schema.Attribute.Relation<'oneToMany', 'api::emitted-invoice.emitted-invoice'>;
-    estimated_balance: Schema.Attribute.Decimal & Schema.Attribute.DefaultTo<0>;
-    estimated_incomes_expenses: Schema.Attribute.Decimal;
     global_activity_types: Schema.Attribute.Relation<'manyToMany', 'api::activity-type.activity-type'>;
     grantable: Schema.Attribute.Boolean;
     grantable_amount: Schema.Attribute.Decimal;
@@ -1929,7 +1925,6 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     grantable_structural_expenses: Schema.Attribute.Decimal;
     grantable_structural_expenses_justify_invoices: Schema.Attribute.Decimal;
     grantable_years: Schema.Attribute.Component<'grantable.grantable-year', true>;
-    incomes_expenses: Schema.Attribute.Decimal;
     intercooperations: Schema.Attribute.Relation<'manyToMany', 'api::contact.contact'>;
     internal_notes: Schema.Attribute.Text;
     invoice_hours_price: Schema.Attribute.Decimal & Schema.Attribute.DefaultTo<0>;
@@ -1950,7 +1945,6 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::project.project'> & Schema.Attribute.Private;
     mother: Schema.Attribute.Relation<'oneToOne', 'api::project.project'>;
     name: Schema.Attribute.String & Schema.Attribute.Required & Schema.Attribute.Unique;
-    original_incomes_expenses: Schema.Attribute.Decimal;
     periodification: Schema.Attribute.Component<'periodification.periodification', true>;
     project_likelihood: Schema.Attribute.Relation<'oneToOne', 'api::project-likelihood.project-likelihood'>;
     project_original_phases: Schema.Attribute.Relation<
@@ -1973,26 +1967,6 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     structural_expenses: Schema.Attribute.Boolean;
     structural_expenses_pct: Schema.Attribute.Decimal;
     tickets: Schema.Attribute.Relation<'oneToMany', 'api::ticket.ticket'>;
-    total_estimated_expenses: Schema.Attribute.Decimal;
-    total_estimated_expenses_vat: Schema.Attribute.Decimal;
-    total_estimated_hours: Schema.Attribute.Decimal;
-    total_estimated_hours_price: Schema.Attribute.Decimal;
-    total_estimated_incomes: Schema.Attribute.Decimal;
-    total_expenses: Schema.Attribute.Decimal;
-    total_expenses_hours: Schema.Attribute.Decimal;
-    total_expenses_vat: Schema.Attribute.Decimal;
-    total_incomes: Schema.Attribute.Decimal;
-    total_original_expenses: Schema.Attribute.Decimal;
-    total_original_expenses_vat: Schema.Attribute.Decimal;
-    total_original_hours: Schema.Attribute.Decimal;
-    total_original_hours_price: Schema.Attribute.Decimal;
-    total_original_incomes: Schema.Attribute.Decimal;
-    total_real_expenses: Schema.Attribute.Decimal;
-    total_real_expenses_vat: Schema.Attribute.Decimal;
-    total_real_hours: Schema.Attribute.Decimal;
-    total_real_hours_price: Schema.Attribute.Decimal;
-    total_real_incomes: Schema.Attribute.Decimal;
-    total_real_incomes_expenses: Schema.Attribute.Decimal;
     trashed: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     treasury_annotations: Schema.Attribute.Relation<'oneToMany', 'api::treasury.treasury'>;
     updatedAt: Schema.Attribute.DateTime;

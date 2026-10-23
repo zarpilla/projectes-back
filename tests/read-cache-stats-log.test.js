@@ -26,7 +26,7 @@ const STATS = {
   late: 0,
   invalid: { changed: 25 },
   notStored: { 'changed while loading': 1 },
-  tracker: { writes: 500, groupWrites: 320, everything: 1 },
+  tracker: { writes: 500, everything: 1 },
   reports: {
     'treasury.forecast': { hits: 80, shared: 1, firstLoads: 10, loadsAgain: 6, loadMsTotal: 30000, loadMsMax: 5000 },
     'GET /years': { hits: 300, shared: 0, firstLoads: 1, loadsAgain: 0, loadMsTotal: 20, loadMsMax: 20 },
@@ -37,7 +37,7 @@ const STATS = {
 describe('read-cache stats line', () => {
   it('summarises counters, memory and the costliest reports first', () => {
     const s = statsSummary(STATS, { rssMB: 500 });
-    expect(s).toMatchObject({ entries: 40, keptMB: 12.3, capMB: 64, hits: 900, misses: 120, evicted: 2, groupWrites: 320 });
+    expect(s).toMatchObject({ entries: 40, keptMB: 12.3, capMB: 64, hits: 900, misses: 120, evicted: 2, writes: 500 });
     expect(s.memory).toEqual({ rssMB: 500 });
     expect(Object.keys(s.reports)).toEqual(['treasury.forecast', 'project.economic-detail', 'GET /years']);
     expect(s.reports['treasury.forecast']).toEqual({ hits: 81, loads: 16, again: 6, loadMs: 30000, maxMs: 5000 });

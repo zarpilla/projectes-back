@@ -39,17 +39,6 @@
  *
  * Reads made inside `captureReads()` are recorded, so a cached result also
  * depends on every table its load actually read.
- *
- * Column groups (issues/328): some columns are rewritten all day without
- * changing what most readers use, like the stored totals of `projects`
- * (every hours entry sets `dirty`, the totals cron writes the totals). A
- * group gives them their own name, `<table>#<group>`. A plain
- * `UPDATE <table> SET <col> = ?, ...` whose columns are all in the group
- * stamps only that name; any other write stamps the table, and so does every
- * statement the strict pattern doesn't recognise (values written into the
- * text, expressions, joins, `??`). Every result that depends on the table
- * also depends on its groups (`withGroups`), unless its caller says its data
- * holds none of the group's columns: by default nothing changes.
  */
 
 const { AsyncLocalStorage } = require('node:async_hooks');
@@ -98,74 +87,7 @@ class ChangeTracker {
     this.failure = null; // set when the tracker itself failed: the cache is then off
     this.log = null;
     this.lastWarn = new Map();
-    this.stats = {
-      statements: 0,
-      writes: 0,
-      unchangedWrites: 0,
-      groupWrites: 0,
-      everything: 0,
-      everythingReasons: {},
-    };
-    this.groups = new Map(); // table -> [{ name: '<table>#<group>', columns: Set }]
-    this.groupNames = new Set();
-  }
-
-  /**
-   * Column groups per table (see the top of the file), e.g.
-   * `{ projects: { totals: ['dirty', 'balance', ...] } }`. A group may not
-   * hold `id`: a foreign key could cascade a change of it.
-   */
-  setColumnGroups(config) {
-    this.groups = new Map();
-    this.groupNames = new Set();
-    for (const [table, groups] of Object.entries(config || {})) {
-      const list = [];
-      for (const [group, columns] of Object.entries(groups)) {
-        const set = new Set(columns.map((c) => String(c).toLowerCase()));
-        if (set.has('id')) throw new Error(`read-cache: column group ${table}#${group} can't hold id`);
-        const name = `${String(table).toLowerCase()}#${group}`;
-        list.push({ name, columns: set });
-        this.groupNames.add(name);
-      }
-      this.groups.set(String(table).toLowerCase(), list);
-    }
-  }
-
-  /** A table of the database, or a column group of one. */
-  isTable(name) {
-    return this.known.has(name) || this.groupNames.has(name);
-  }
-
-  /**
-   * The tables plus the column groups of those that have them, except the
-   * groups in `ignore` (names like 'projects#totals').
-   */
-  withGroups(tables, ignore = []) {
-    const all = new Set(tables);
-    for (const t of tables) {
-      for (const g of this.groups.get(t) || []) if (!ignore.includes(g.name)) all.add(g.name);
-    }
-    return [...all];
-  }
-
-  /**
-   * The column group a write changes alone, or null. Only the plain form
-   * knex builds is recognised: UPDATE `table` SET `col` = ?, ... [WHERE ...].
-   */
-  groupOf(sql) {
-    if (!this.groups.size || typeof sql !== 'string') return null;
-    const m = /^\s*update\s+`([^`]+)`\s+set\s+([\s\S]+?)(?:\s+where\s[\s\S]*)?$/i.exec(sql);
-    if (!m) return null;
-    const groups = this.groups.get(m[1].toLowerCase());
-    if (!groups) return null;
-    const columns = [];
-    for (const part of m[2].split(',')) {
-      const a = /^\s*`([^`]+)`\s*=\s*\?\s*$/.exec(part);
-      if (!a) return null;
-      columns.push(a[1].toLowerCase());
-    }
-    const group = groups.find((g) => columns.every((c) => g.columns.has(c)));
-    return group ? group.name : null;
+    this.stats = { statements: 0, writes: 0, unchangedWrites: 0, everything: 0, everythingReasons: {} };
   }
 
   setLogger(log) {
@@ -349,10 +271,7 @@ class ChangeTracker {
       this.stats.writes++;
       const named = this.tablesIn(sql, values);
       statement.named = named;
-      const group = statement.kind === 'write' && named.length ? this.groupOf(sql) : null;
-      // a group's columns hold no key, so nothing cascades from them
-      statement.tables = group ? [group] : this.withCascades(named);
-      if (group) this.stats.groupWrites++;
+      statement.tables = this.withCascades(named);
       if (!named.length) {
         // before the schema is read (boot) every write is one of these
         if (this.schemaLoaded) {

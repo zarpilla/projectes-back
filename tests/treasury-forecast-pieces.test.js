@@ -2,11 +2,11 @@
 
 /**
  * issues/328 — Loki, 2026-10-23: on raiels the Tresoreria forecast was rebuilt
- * from the database 8 times in 26 minutes, up to 16 s per request. Two causes:
- *   - every hours entry writes `projects.dirty` and the totals cron writes the
- *     stored totals; the cached pieces held whole projects, so both dropped
- *     them (now: no piece holds those columns, and they ignore the column
- *     group `projects#totals`);
+ * from the database 8 times in 26 minutes, up to 16 s per request. Causes:
+ *   - every hours entry wrote `projects.dirty` and the totals cron the stored
+ *     totals (now: they live in project_totals, and no piece reads them: the
+ *     projects are read with an explicit select, so the lifecycles don't add
+ *     them);
  *   - the projects piece populated each budget line's document, so every new
  *     invoice, expense or income dropped the heaviest piece (now: the links
  *     come from the link tables, the documents from the document pieces).
@@ -15,7 +15,7 @@
 
 const { treasuryDb } = require('./helpers/treasury-db');
 const { withPhaseDocuments } = require('../src/api/treasury/services/phase-documents');
-const { PROJECT_TOTALS, PROJECT_TOTALS_COLUMNS } = require('../src/services/read-cache/column-groups');
+const { COLUMNS: PROJECT_TOTALS_COLUMNS } = require('../src/api/project/services/project-totals');
 
 const deepFreeze = (value, seen = new Set()) => {
   if (value === null || typeof value !== 'object' || seen.has(value)) return value;
@@ -157,14 +157,6 @@ describe('treasuries/forecast and the read cache (issues/328)', () => {
     ctx.request = { query: ctx.query };
     return actions.forecast(ctx);
   }
-
-  it('every forecast piece ignores the projects#totals column group', async () => {
-    stub({ inline: false });
-    await forecast();
-    const pieces = cacheCalls.filter(([key]) => key.startsWith('treasury.forecast:') && key !== 'treasury.forecast:phaseDocumentLinks');
-    expect(pieces.length).toBeGreaterThan(8);
-    for (const [key, options] of pieces) expect([key, options.ignoreGroups]).toEqual([key, [PROJECT_TOTALS]]);
-  });
 
   it('no piece reads a stored total or dirty; documents keep only their projects id and name', async () => {
     stub({ inline: false });

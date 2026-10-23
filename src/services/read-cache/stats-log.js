@@ -49,7 +49,6 @@ function statsSummary(stats, memory) {
     invalid: stats.invalid,
     notStored: stats.notStored,
     writes: stats.tracker && stats.tracker.writes,
-    groupWrites: stats.tracker && stats.tracker.groupWrites,
     everything: stats.tracker && stats.tracker.everything,
     memory,
     reports: Object.fromEntries(reports),

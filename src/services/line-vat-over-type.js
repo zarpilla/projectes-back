@@ -1,6 +1,8 @@
 'use strict';
 /* global strapi */
 
+const { markDirty } = require('../api/project/services/project-totals');
+
 /**
  * Startup script (issues/143): the project totals now take an expense line's
  * own VAT (its "IVA" in the form) before its type's.
@@ -55,7 +57,7 @@ async function lineVatOverType() {
     ? await projectIdsForPhaseRows(PHASE_EXPENSE, { id: { $in: changed } })
     : [];
   if (projectIds.length) {
-    await strapi.db.connection('projects').whereIn('id', projectIds).update({ dirty: true });
+    await markDirty(projectIds);
   }
 
   strapi.log.info(

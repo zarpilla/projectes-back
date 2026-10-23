@@ -1,5 +1,7 @@
 'use strict';
 
+const { mockMarkDirty } = require('./helpers/mark-dirty');
+
 /**
  * issues/142, issues/143 (2026-10-18) — Raiels: the "Exporta detall" file of
  * the economic detail had no forecast invoicing/payment dates, and its VAT
@@ -124,6 +126,7 @@ describe('lineVatOverType startup script (issues/143)', () => {
 
   function mockStrapi({ stale, lines, phaseRows }) {
     updates = [];
+    mockMarkDirty((ids) => updates.push({ table: 'project_totals', ids, data: { dirty: true } }));
     queries = [];
     global.strapi = {
       log: { info: jest.fn(), warn: jest.fn() },
@@ -173,7 +176,7 @@ describe('lineVatOverType startup script (issues/143)', () => {
     expect(queries[2]).toEqual({ uid: PHASE_EXPENSE, where: { id: { $in: [3, 6] } } });
     expect(updates).toEqual([
       { table: 'phase_expenses', ids: [1, 2], data: { vat_pct: 0 } },
-      { table: 'projects', ids: [10, 11], data: { dirty: true } },
+      { table: 'project_totals', ids: [10, 11], data: { dirty: true } },
     ]);
   });
 

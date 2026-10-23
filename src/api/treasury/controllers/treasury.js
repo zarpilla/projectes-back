@@ -27,7 +27,7 @@ const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { getMe } = require('../../../services/me-settings');
 const { getReadCache } = require('../../../services/read-cache');
 const { queryTables } = require('../../../services/query-tables');
-const { PROJECT_TOTALS, PROJECT_TOTALS_COLUMNS } = require('../../../services/read-cache/column-groups');
+const { COLUMNS: PROJECT_TOTALS_COLUMNS } = require('../../project/services/project-totals');
 const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { addExpectedVat, applyExpectedVatPct } = require('../services/vat-forecast');
@@ -81,9 +81,10 @@ const forecastProjectOption = (p) => ({
 // stamps are read before its first load (issues/307).
 //
 // No piece holds a project's stored totals or its `dirty` flag (issues/328):
-// the documents keep only their projects' id and name, and the projects are
-// read without those columns. So the writes of every hours entry and of the
-// totals cron (column group `projects#totals`) don't drop them.
+// they live in project_totals, rewritten by every hours entry and by the
+// totals cron. The projects are read with an explicit `select`, so the project
+// lifecycles don't add them, and the documents keep only their projects' id
+// and name.
 const forecastTables = new Map();
 const forecastData = (name, [uid, populate], loader) => {
   if (!forecastTables.has(name)) forecastTables.set(name, [...queryTables(strapi, uid, populate)]);
@@ -91,14 +92,13 @@ const forecastData = (name, [uid, populate], loader) => {
     frozen: true,
     verifyRate: 0,
     tables: forecastTables.get(name),
-    ignoreGroups: [PROJECT_TOTALS],
   });
 };
 
 // a document's project as the forecast reads it (see above)
 const PROJECT_REF = { select: ['id', 'name'] };
 
-// Every column of a project but the stored totals and `dirty`.
+// Every column of a project (named, so the stored totals aren't added).
 const projectColumnsWithoutTotals = () => {
   const { attributes } = strapi.db.metadata.get('api::project.project');
   const skip = new Set(PROJECT_TOTALS_COLUMNS);

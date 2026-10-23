@@ -231,8 +231,6 @@ class ReadCache {
    *   frozen: one deep-frozen object shared by every caller instead of copies
    *   maxBytes: the largest result kept (default a quarter of the cap, never more than the cap)
    *   verifyRate: this call's share of hits verified (default the cache's)
-   *   ignoreGroups: column groups ('projects#totals') whose writes don't touch
-   *     this result: only for a result that holds none of their columns
    * @returns {Promise<T>}
    */
   async get(key, loader, options = {}) {
@@ -291,17 +289,12 @@ class ReadCache {
     if (this.tracker.changedSince(entry.tables, entry.started)) return 'changed';
     if (this.stamps) {
       await this.tracker.capture.exit(() => this.stamps.fresh());
-      if (!this.stamps.coveredSince(this.realTables(entry.tables), entry.stampSeq, entry.stampNow)) {
+      if (!this.stamps.coveredSince(entry.tables, entry.stampSeq, entry.stampNow)) {
         return 'stamps not read before the load';
       }
       if (this.tracker.changedSince(entry.tables, entry.started)) return 'changed (stamps)';
     }
     return null;
-  }
-
-  /** Without the column groups: MySQL stamps whole tables only. */
-  realTables(tables) {
-    return tables.filter((t) => !this.tracker.groupNames.has(t));
   }
 
   /** The stamps can't be read: answer from the database, keep nothing. */
@@ -342,10 +335,9 @@ class ReadCache {
       }
       const { result, store } = captured;
       this.noteLoad(key, this.clock() - loadStarted);
-      const tables = this.tracker.withGroups(
-        [...new Set([...(options.tables || []).map((t) => String(t).toLowerCase()), ...store.tables])],
-        options.ignoreGroups,
-      );
+      const tables = [
+        ...new Set([...(options.tables || []).map((t) => String(t).toLowerCase()), ...store.tables]),
+      ];
       const reason = this.whyNotKept(result, store, tables, started, options);
       // what this load read is also read by whoever called it (an outer load
       // sees for itself a change during this one: it has the same tables and
@@ -391,7 +383,7 @@ class ReadCache {
         bytes,
         expiresAt: this.clock() + (options.ttlMs || this.ttlMs),
       });
-      if (this.stamps) this.stamps.watch(this.realTables(tables));
+      if (this.stamps) this.stamps.watch(tables);
       return { value: result, kept, stored: true, tables, started };
     })();
 
@@ -411,7 +403,7 @@ class ReadCache {
     if (options.keep && !options.keep(result)) return 'refused';
     if (this.tracker.changedSince(tables, started)) return 'changed while loading';
     for (const t of tables) {
-      if (!this.tracker.isTable(t)) {
+      if (!this.tracker.known.has(t)) {
         this.warn(`[read-cache] "${t}" is not a table of this database: nothing depending on it is kept`);
         return 'unknown table';
       }

@@ -129,6 +129,17 @@ Frozen and shared (`frozen: true`), filtered per request:
   `projectCache.js`, which change detection couldn't see and which went stale
   (dirty marks in `before` hooks, no *Many hooks, raw SQL).
 
+Project totals (issues/328): the stored totals and `dirty` of a project live
+in `project_totals`, not in `projects` (`src/api/project/services/project-totals.js`).
+Every hours entry marks its project dirty and the totals cron rewrites the
+totals two minutes later; as columns of `projects`, those two writes dropped
+everything that read a project (raiels: the Tresoreria forecast 8 times in 26
+minutes). Now `projects` changes only when a project does. The project
+lifecycles (afterFindMany / afterFindOne) put the totals back on every
+project read, so a cached answer that shows them (projects/basic) depends on
+`project_totals` by what its load read; one that reads projects with a
+`select` naming none of them (the forecast) doesn't.
+
 On resilience (the biggest tenant) all of it takes ~50 MB of the 64 MB cap;
 raise `READ_CACHE_MAX_MB` if `/read-cache/stats` shows evictions.
 

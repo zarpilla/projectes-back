@@ -39,7 +39,6 @@ const { getTracker } = require('./change-tracker');
 const { ReadCache, MB } = require('./read-cache');
 const { TableStamps, stampReader } = require('./table-stamps');
 const { loadSchema } = require('./schema');
-const { COLUMN_GROUPS } = require('./column-groups');
 const { startStatsLog } = require('./stats-log');
 const { CACHED_ROUTES, PERMISSION_TABLES, tablesOf } = require('./routes');
 
@@ -135,7 +134,6 @@ async function initReadCache(strapi, { onPermissionsChange } = {}) {
   try {
     const knex = strapi.db.connection;
     await probeHook(knex, tracker);
-    tracker.setColumnGroups(COLUMN_GROUPS);
     tracker.setSchema(await loadSchema(knex));
 
     // DDL changes the tables: read them again (the tracker already counted
