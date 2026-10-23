@@ -13,6 +13,12 @@
  */
 module.exports = {
   routes: [
+    // issues/325: Despeses' list, narrow and cached
+    {
+      method: 'GET',
+      path: '/payrolls/list',
+      handler: 'payroll.list',
+    },
     {
       method: 'POST',
       path: '/payrolls/create-all',

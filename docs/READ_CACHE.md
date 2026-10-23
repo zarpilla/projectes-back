@@ -117,6 +117,13 @@ Frozen and shared (`frozen: true`), filtered per request:
   and paid and answers copies. The current year is in the key (undated
   projects take it). A search by name (`_q`) or one state
   (`_where[project_state_eq]`) is computed as before.
+- Despeses (`received-invoices/list`, `received-expenses/list`,
+  `payrolls/list`, `services/expense-lists.js`, issues/325): the rows of the
+  query (same filters as the core find), with only what the screen reads.
+  Not frozen: each request gets a copy and adds the projects (a payroll's
+  person) with the core populate of those relations, out of the cache: hours
+  logged mark projects dirty and the totals cron rewrites them all day, and
+  that query also gives a document's projects in the order they had.
 - Everyone's daily dedications and festives (`services/calendars.js`), shared
   by those reports, the estimated totals and the project form. They replaced
   `projectCache.js`, which change detection couldn't see and which went stale
