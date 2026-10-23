@@ -129,6 +129,8 @@ allow(
     'update',
     'table',
     'totals',
+    'tableCount',
+    'tableStatusCounts',
     'checkMultidelivery',
     'collectionPointRoutes',
     'createCSV',

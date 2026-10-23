@@ -1065,6 +1065,9 @@ const MEMBER_SCOPES = {
   [`${ORDER}.table`]: scopeOrderTable,
   // the figures over the member's own orders, like the list (issues/177)
   [`${ORDER}.totals`]: scopeOrderList,
+  // the list's total and status tabs over her own orders, like find (issues/319)
+  [`${ORDER}.tableCount`]: scopeOrderList,
+  [`${ORDER}.tableStatusCounts`]: scopeOrderList,
   [`${INCIDENCE}.find`]: scopeIncidenceList,
   [`${INCIDENCE}.findOne`]: scopeIncidenceRow,
   [`${INCIDENCE}.update`]: scopeIncidenceRow,
