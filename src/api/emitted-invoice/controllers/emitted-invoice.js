@@ -25,6 +25,7 @@ const { buildEmailBody } = require('../../../services/email-body');
 const changeLog = require('../../../services/change-log');
 const { relationId } = require('../../../services/relation-input');
 const { toLocalDay } = require('../../../services/date-fields');
+const incomeListPopulate = require('../../../services/income-list-populate');
 
 // Map v3 entity slug -> DB table name for the raw UPDATE in payEntity.
 const ENTITY_TABLE = {
@@ -238,9 +239,8 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     if (wantsNoRows(opts)) return [];
     return strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
       where: opts.filters || {},
-      // issues/013: v3 auto-populated components; v5 does not. The lists read
-      // lines[0].concept (Concepte column, Excel export) and contact_info.
-      populate: { contact: true, projects: true, document_type: true, lines: true, contact_info: true },
+      // only what Ingressos shows and exports (issues/013, issues/330)
+      populate: incomeListPopulate.EMITTED_INVOICE,
       limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,

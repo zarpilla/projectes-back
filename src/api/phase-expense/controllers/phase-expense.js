@@ -24,7 +24,10 @@ module.exports = createCoreController('api::phase-expense.phase-expense', ({ str
     const opts = adaptQuery(ctx.query);
     const phases = await strapi.db.query('api::phase-expense.phase-expense').findMany({
       where: opts.filters || {},
-      populate: { expense: true, invoice: true },
+      // the ids only: whole documents of every year were read for them,
+      // 0.1–0.2 s locally, up to 2.8 s on the VPS (issues/330)
+      select: ['id'],
+      populate: { expense: { select: ['id'] }, invoice: { select: ['id'] } },
       limit: dbLimit(opts),
       orderBy: opts.sort,
     });
