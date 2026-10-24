@@ -97,9 +97,12 @@ const payEntity = async (documents, entitySlug, vatPaidDate, deductibleVatPct, y
   for (const doc of documents) {
     const emittedYear = doc.emitted?.substring(0, 4);
     const isDeductible = entitySlug !== 'received-income' && entitySlug !== 'emitted-invoice';
-    const deductibleVatPctYear = isDeductible
-      ? years.find((y) => String(y.year) === String(emittedYear))?.deductible_vat_pct || deductibleVatPct
-      : 100;
+    // the year's %, as «IVA» shows it: an empty year is 100 % (it took
+    // Configuració's, issues/338); Configuració's only when the year has no row
+    const year = years.find((y) => String(y.year) === String(emittedYear));
+    const emptyYear = year && (year.deductible_vat_pct === null || year.deductible_vat_pct === undefined);
+    const yearPct = year ? (emptyYear ? 100 : Number(year.deductible_vat_pct)) : null;
+    const deductibleVatPctYear = isDeductible ? (yearPct === null ? deductibleVatPct : yearPct) : 100;
 
     // The raw UPDATE skips the document service, so the change log is fed
     // here, reading only the two fields it writes (not the lines, issues/161).

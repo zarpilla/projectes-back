@@ -34,11 +34,16 @@ const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../serv
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
 const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
 
+// The deductible part of a document's supported VAT: its year's «% IVA
+// deduïble»; a year without one is 100 % (it was 0 %, issues/338), as in the
+// project totals and «Salda».
 const getDeductiblePct = (years, emitted) => {
   const year = years.find(
     (y) => y.year.toString() === moment(emitted, 'YYYY-MM-DD').format('YYYY').toString(),
   );
-  return year ? year.deductible_vat_pct / 100.0 : 1.0;
+  return year && year.deductible_vat_pct !== null && year.deductible_vat_pct !== undefined
+    ? year.deductible_vat_pct / 100.0
+    : 1.0;
 };
 
 const getBankAccountName = (bankAccount, defaultBankAccount) => {
