@@ -1,4 +1,5 @@
 'use strict';
+/* global strapi */
 
 /**
  * A project's stored totals live in their own table, `project_totals`, one row
