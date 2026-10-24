@@ -45,15 +45,24 @@ module.exports = () => ({
   },
 
   async download(ctx) {
-    const info = await latestInfo();
-    if (!info.available) return ctx.notFound('No hi ha cap còpia disponible');
+    // open first, then stat the open file: tonight's copy can replace the file
+    // (rename) at any moment, and the size sent must be the one streamed
+    let handle;
+    try {
+      handle = await fs.promises.open(backupPath(), 'r');
+    } catch (error) {
+      if (error.code !== 'ENOENT') global.strapi.log.warn(`[backup] can't open ${backupPath()}: ${error.message}`);
+      return ctx.notFound('No hi ha cap còpia disponible');
+    }
+    const stat = await handle.stat();
+    const filename = downloadName(stat.mtime);
     const user = ctx.state.user || {};
-    global.strapi.log.info(`[backup] ${info.filename} (${info.bytes} bytes) downloaded by user ${user.id} ${user.email || ''}`);
+    global.strapi.log.info(`[backup] ${filename} (${stat.size} bytes) downloaded by user ${user.id} ${user.email || ''}`);
     ctx.set('Content-Type', 'application/gzip');
-    ctx.set('Content-Length', String(info.bytes));
-    ctx.set('Content-Disposition', `attachment; filename="${info.filename}"`);
+    ctx.set('Content-Length', String(stat.size));
+    ctx.set('Content-Disposition', `attachment; filename="${filename}"`);
     ctx.set('Cache-Control', 'no-store');
-    ctx.body = fs.createReadStream(backupPath());
+    ctx.body = handle.createReadStream();
   },
 });
 

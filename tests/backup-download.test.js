@@ -73,6 +73,22 @@ describe('backup controller', () => {
   });
 });
 
+describe('backup download while tonight\'s copy replaces the file', () => {
+  it('streams the file it opened, with that file\'s size', async () => {
+    writeDump('old-copy');
+    const ctx = ctxFor();
+    await controller.download(ctx);
+    // tenant-dumps.sh writes a temporary file and renames it over latest.sql.gz
+    const tmp = path.join(dir, '.latest.sql.gz.tmp');
+    fs.writeFileSync(tmp, 'a much longer new copy');
+    fs.renameSync(tmp, path.join(dir, 'latest.sql.gz'));
+    const chunks = [];
+    for await (const chunk of ctx.body) chunks.push(chunk);
+    expect(Buffer.concat(chunks).toString()).toBe('old-copy');
+    expect(ctx.headers['Content-Length']).toBe('8');
+  });
+});
+
 describe('backup routes', () => {
   it('are admin-only', () => {
     const { routes } = require('../src/api/backup/routes/backup');
