@@ -37,6 +37,7 @@ const { removeUntypedProjectComponentLinks } = require('./services/remove-untype
 const { refreshTotalHoursTotals } = require('./services/refresh-total-hours-totals');
 const { addOfficialFestives } = require('./services/add-official-festives');
 const { fillEmptyRelationOrder } = require('./services/relation-order');
+const { fillEmptyYearVatPct } = require('./services/fill-empty-year-vat-pct');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
@@ -184,6 +185,8 @@ module.exports = {
       ['addOfficialFestives2027', () => addOfficialFestives(2027), { runOnce: true }],
       // issues/334: links migrated from v3 had no order: a document's projects came in any order.
       ['fillEmptyRelationOrder', fillEmptyRelationOrder, { runOnce: true }],
+      // issues/338: a year with no «% IVA deduïble» is 100 % (it was 0 % in «IVA»).
+      ['fillEmptyYearVatPct', fillEmptyYearVatPct, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
