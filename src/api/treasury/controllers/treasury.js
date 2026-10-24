@@ -30,7 +30,7 @@ const { queryTables } = require('../../../services/query-tables');
 const { COLUMNS: PROJECT_TOTALS_COLUMNS } = require('../../project/services/project-totals');
 const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
-const { addExpectedVat, applyExpectedVatPct } = require('../services/vat-forecast');
+const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../services/vat-forecast');
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
 const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
 
@@ -635,7 +635,9 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       };
 
       treasury.push(income);
-      if (i.total_vat) {
+      // a draft is not an invoice yet: its VAT isn't due (issues/339); it stays
+      // in Tresoreria above as expected income
+      if (i.total_vat && i.state !== 'draft') {
         if (!i.vat_paid_date) {
           vat.received += i.total_vat;
           vat.deductible_vat += -1 * i.total_vat;
@@ -1087,20 +1089,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
       // Only create treasury entry if cumulative balance is negative (payment required)
       if (cumulativeVatBalance < 0) {
-        // Calculate the payment date: 30th of the month after quarter end
-        // Exception: Q4 (Oct-Dec) is paid on January 20th instead of 30th
-        let paymentDate = moment(`${qData.year}`, 'YYYY')
-          .quarter(qData.quarter)
-          .endOf('quarter')
-          .add(1, 'month');
-
-        if (qData.quarter === 4) {
-          // Q4: January 20th
-          paymentDate.date(20);
-        } else {
-          // Q1, Q2, Q3: 30th of the month
-          paymentDate.date(30);
-        }
+        // the quarter's model 303 deadline (issues/337)
+        const paymentDate = vatPaymentDate(qData.year, qData.quarter);
 
         // Determine if it's paid (before today) or expected (today or future)
         const isPaid = paymentDate.isBefore(moment(), 'day');
@@ -1149,20 +1139,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
       // Only create treasury entry if cumulative balance is positive (payment required)
       if (cumulativeExpectedVatBalance > 0) {
-        // Calculate the payment date: 30th of the month after quarter end
-        // Exception: Q4 (Oct-Dec) is paid on January 20th instead of 30th
-        let paymentDate = moment(`${qData.year}`, 'YYYY')
-          .quarter(qData.quarter)
-          .endOf('quarter')
-          .add(1, 'month');
-
-        if (qData.quarter === 4) {
-          // Q4: January 20th
-          paymentDate.date(20);
-        } else {
-          // Q1, Q2, Q3: 30th of the month
-          paymentDate.date(30);
-        }
+        // the quarter's model 303 deadline (issues/337)
+        const paymentDate = vatPaymentDate(qData.year, qData.quarter);
 
         treasury.push({
           project_name: '',

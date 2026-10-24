@@ -20,11 +20,6 @@ module.exports = {
     },
     {
       method: 'POST',
-      path: '/emitted-invoices/pay-vat',
-      handler: 'emitted-invoice.payVat',
-    },
-    {
-      method: 'POST',
       path: '/emitted-invoices/pay-vat-ids',
       handler: 'emitted-invoice.payVatIds',
     },

@@ -49,4 +49,14 @@ function applyExpectedVatPct(vatExpected, byQuarter, deductibleVatPctByYear, fal
   vatExpected.deductible_paid = deductiblePaid;
 }
 
-module.exports = { addExpectedVat, applyExpectedVatPct };
+/**
+ * The deadline of a quarter's VAT return (model 303): the 20th of April, July
+ * and October for Q1–Q3, 30 January for Q4. They were the other way round
+ * (30th, and 20 January) until issues/337.
+ */
+function vatPaymentDate(year, quarter) {
+  const date = moment(`${year}`, 'YYYY').quarter(quarter).endOf('quarter').add(1, 'month').startOf('day');
+  return date.date(quarter === 4 ? 30 : 20);
+}
+
+module.exports = { addExpectedVat, applyExpectedVatPct, vatPaymentDate };

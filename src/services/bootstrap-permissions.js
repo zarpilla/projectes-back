@@ -159,7 +159,6 @@ async function importSeedPermissions() {
       'findOne',
       'update',
       'delete',
-      'payVat',
       'payVatIds',
       'pdf',
       'sendInvoiceByEmail',
