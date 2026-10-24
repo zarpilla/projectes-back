@@ -13,6 +13,8 @@ set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 [ -f tenants.conf ] || { echo "No tenants.conf"; exit 1; }
 mkdir -p state caddy
+# tenant-dumps.sh writes <dir>/<name>/latest.sql.gz; each backend mounts its own folder
+TENANT_DUMPS="${TENANT_DUMPS:-/var/backups/tenant-dumps}"
 
 TENANTS=()
 while read -r name port uploads; do
@@ -68,6 +70,8 @@ YAML
       PORT: "$p"
     volumes:
       - $uploads:/opt/app/public/uploads
+      # last night's dump of its own database only (tenant-dumps.sh), read-only
+      - $TENANT_DUMPS/$name:/opt/app/backups:ro
 YAML
     done
   done
