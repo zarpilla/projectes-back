@@ -90,6 +90,16 @@ It holds the deploy lock while the backend starts (a few minutes on the first bo
 
 `migrate-to-proxy.sh` did the one-time move from one container per port to this setup (2026-10-09). It is kept for reference.
 
+## «Còpia de seguretat»: last night's database for each tenant
+
+App admins download last night's dump of their own database from Administració › Còpia de seguretat (`GET /api/backup/latest`, `GET /api/backup/latest/download`, isAdmin).
+
+- `tenant-dumps.sh` (installed at `/usr/local/sbin/`, run as root from `backup-storagebox.sh` right before borg, ~03:00) dumps every tenant in `tenants.conf` **one after the other**, with `nice`/`ionice`, to `/var/backups/tenant-dumps/<tenant>/latest.sql.gz` (owner uid 1000 = the image's `node`, mode 600). Tonight's copy replaces last night's; a failed dump keeps the previous one and fails the run (healthchecks).
+- Left out: the Strapi admin panel (`admin_*`), API/transfer tokens and `strapi_sessions`. Strapi recreates them on boot, so the dump restores into a working database.
+- `render.sh` mounts each tenant's folder **read-only** at `/opt/app/backups` (`TENANT_DUMPS` overrides the root), so a backend never sees another tenant's copy. Without a file the page says there's no copy yet.
+- Install once (needs sudo): copy `render.sh`, `tenant-dumps.sh` and `install-tenant-dumps.sh` to `/var/www/esstrapis-back`, run `sudo bash install-tenant-dumps.sh` (patches `backup-storagebox.sh`, backup next to it, and makes a first run), then deploy so the containers get the new mount.
+- Run by hand: `sudo /usr/local/sbin/tenant-dumps.sh [tenant ...]`.
+
 ## Rolling back
 
 ```bash

@@ -130,6 +130,8 @@ async function importSeedPermissions() {
     config: ['find'],
     // issues/307: the read cache's stats and «Buida la memòria cau» (isAdmin on the routes)
     'read-cache': ['stats', 'clear'],
+    // «Còpia de seguretat»: last night's database dump (isAdmin on the routes)
+    backup: ['latest', 'download'],
     diet: ['find', 'findOne'],
     'emitted-grant': ['find', 'findOne'],
     'home-menu': ['find'],
