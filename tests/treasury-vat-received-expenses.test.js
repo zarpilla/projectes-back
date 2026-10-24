@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/209 (2026-10-19): the IVA screen's tiles put the VAT of unsettled
  * received expenses under «IVA repercutit» (vat.received) instead of «IVA
@@ -21,6 +23,7 @@ const doc = (id, total_vat) => ({ id, code: `D${id}`, emitted: day, total_base: 
 function stubStrapi(rows) {
   global.strapi = {
     db: {
+      ...treasuryDb(),
       query: (uid) => ({
         findMany: async () => rows[uid] || [],
         findOne: async () => null,

@@ -10,6 +10,7 @@
  */
 const moment = require('moment');
 const { createCoreController } = require('@strapi/strapi').factories;
+const { expenseList, PAYROLL } = require('../../../services/expense-lists');
 const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { monthSalary } = require('../../../services/payroll-salary');
 
@@ -28,6 +29,14 @@ module.exports = createCoreController('api::payroll.payroll', ({ strapi }) => ({
   async find(ctx) {
     adaptCtxQuery(ctx);
     return super.find(ctx);
+  },
+
+  /**
+   * GET /api/payrolls/list — Despeses' list: the same filters as find,
+   * only what the screen shows and exports, from the read cache (issues/325).
+   */
+  async list(ctx) {
+    return expenseList(PAYROLL, ctx.query);
   },
 
   /**

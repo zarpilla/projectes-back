@@ -37,12 +37,13 @@ describe('project beforeUpdate', () => {
     delete global.strapi;
   });
 
-  it('writes the computed totals and the edited fields', async () => {
+  it('keeps the computed totals for project_totals and writes the edited fields', async () => {
     const event = { params: { where: { id: 7 }, data: { name: 'New name' } }, state: {} };
     await lifecycles.beforeUpdate(event);
     expect(event.params.data.name).toBe('New name');
-    expect(event.params.data.total_incomes).toBe(1500);
-    expect(event.params.data.total_expenses).toBe(400);
+    // the totals go to project_totals (afterUpdate), not to `projects` (issues/328)
+    expect(event.params.data.total_incomes).toBeUndefined();
+    expect(event.state.totals).toMatchObject({ total_incomes: 1500, total_expenses: 400 });
   });
 
   it('does not write the activities and phases it loaded for the calculation', async () => {

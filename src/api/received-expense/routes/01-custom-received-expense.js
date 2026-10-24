@@ -13,6 +13,12 @@
  */
 module.exports = {
   routes: [
+    // issues/325: Despeses' list, narrow and cached
+    {
+      method: 'GET',
+      path: '/received-expenses/list',
+      handler: 'received-expense.list',
+    },
     {
       method: 'GET',
       path: '/received-expenses/basic',

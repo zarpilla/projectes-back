@@ -1,12 +1,15 @@
 'use strict';
 /* global strapi */
 
+const { markDirty, dirtyIds: readDirtyIds, dirtyCount } = require('./project-totals');
+
 /**
  * totalsRefreshScheduler (v5) — PM2-safe redesign (P4.10).
  *
  * The v3 scheduler used an in-process setTimeout+Map debounce, which is broken
  * under the production 16-instance PM2 cluster (each instance has its own map;
- * refreshes duplicated or lost). This redesign uses the `projects.dirty` flag
+ * refreshes duplicated or lost). This redesign uses the `dirty` flag (in
+ * project_totals since issues/328)
  * as the coordination point:
  *
  *   - scheduleRefresh(id)                → mark the project dirty (cheap UPDATE,
@@ -21,27 +24,23 @@
  * refreshStoredTotals recomputes from source data and the final update is
  * idempotent (same totals, dirty=false).
  *
- * NOTE: the projects table must have a `dirty` column (it does — ported from v3).
+ * NOTE: `dirty` lives in project_totals (services/project-totals.js, issues/328).
  */
 
 const { refreshStoredTotals } = require('./projectFinancials');
 
 /**
- * Mark a single project dirty. Cheap UPDATE — no lifecycle, no read. Goes
- * through the query builder so it joins the ambient transaction (the project
- * PUT wraps phase writes and the project update); a raw knex write would wait
- * on the row lock that transaction holds.
+ * Mark a single project dirty, in project_totals (issues/328): no lifecycle,
+ * no read, and `projects` isn't written. Joins the ambient transaction (the
+ * project PUT wraps phase writes and the project update), so it never waits
+ * on a lock that transaction holds.
  * @param {number|string} id project id
  */
 const scheduleRefresh = async (id) => {
   const numericId = parseInt(id, 10);
   if (!(numericId > 0)) return;
   try {
-    await strapi.db
-      .queryBuilder('api::project.project')
-      .update({ dirty: true })
-      .where({ id: numericId })
-      .execute();
+    await markDirty(numericId);
   } catch (e) {
     strapi.log.warn(`[totalsRefreshScheduler] scheduleRefresh(${id}): ${e && e.message}`);
   }
@@ -116,8 +115,7 @@ const scheduleFromPhaseRows = async (uid, where, extraIds = []) => {
 const processDirty = async () => {
   let dirtyIds;
   try {
-    const rows = await strapi.db.connection('projects').where({ dirty: true }).select('id');
-    dirtyIds = rows.map((r) => r.id);
+    dirtyIds = await readDirtyIds();
   } catch (e) {
     strapi.log.warn(`[totalsRefreshScheduler] processDirty read: ${e && e.message}`);
     return 0;
@@ -151,8 +149,7 @@ const flushPending = processDirty;
 // pending set — the count of dirty projects is the queue length.
 const getPendingCount = async () => {
   try {
-    const rows = await strapi.db.connection('projects').where({ dirty: true }).count('id as n');
-    return rows[0]?.n || 0;
+    return await dirtyCount();
   } catch {
     return 0;
   }

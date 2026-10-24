@@ -1,5 +1,7 @@
 'use strict';
 
+const { mockMarkDirty } = require('./helpers/mark-dirty');
+
 /**
  * issues/195 (2026-10-19): an original-budget line without date was left out
  * of the project's Original totals (the undated bucket was dropped when only
@@ -12,6 +14,7 @@ let findMany;
 
 function mockStrapi(projects) {
   updates = [];
+  mockMarkDirty((ids) => updates.push({ table: 'project_totals', col: 'project_id', ids, data: { dirty: true } }));
   findMany = jest.fn(async () => projects);
   global.strapi = {
     log: { info: jest.fn() },
@@ -43,7 +46,7 @@ describe('refreshUndatedOriginalTotals (issues/195)', () => {
     expect(findMany.mock.calls[0][0].where).toEqual({
       $or: [{ project_original_phases: { incomes: undated } }, { project_original_phases: { expenses: undated } }],
     });
-    expect(updates).toEqual([{ table: 'projects', col: 'id', ids: [75, 781], data: { dirty: true } }]);
+    expect(updates).toEqual([{ table: 'project_totals', col: 'project_id', ids: [75, 781], data: { dirty: true } }]);
   });
 
   it('writes nothing when no project has undated original lines', async () => {

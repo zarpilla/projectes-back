@@ -1237,19 +1237,15 @@ const computeStoredTotalsForProject = async (id) => {
   return { id: numericId, picked: pickStoredTotals(calculated), calculated };
 };
 
-// Recomputes and persists ONLY the stored total_* columns for a single
-// project. Bypasses Strapi lifecycles by going through raw knex so we don't
-// trigger beforeUpdate/afterUpdate (which would defeat the point of this
-// targeted refresh).
+// Recomputes and persists ONLY the stored totals of a single project, in
+// project_totals (issues/328): no lifecycle runs and `projects` isn't written.
 const refreshStoredTotals = async (id) => {
   const result = await computeStoredTotalsForProject(id);
   if (!result) return null;
 
-  // v5: knex via strapi.db.connection (lifecycle bypass — intentional for stored-totals refresh).
-  await strapi.db
-    .connection('projects')
-    .where({ id: result.id })
-    .update({ ...result.picked, dirty: false });
+  // required here: project-totals reads STORED_TOTAL_FIELDS from this module
+  const { writeTotals } = require('./project-totals');
+  await writeTotals(result.id, result.picked, { dirty: false });
 
   return result.picked;
 };

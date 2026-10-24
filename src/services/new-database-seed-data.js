@@ -31,7 +31,7 @@ const CATALOGS = {
   ],
   'api::expense-type.expense-type': [
     { name: 'Dietes', vat_pct: 21 },
-    { name: 'Serveis Externs', vat_pct: 10 },
+    { name: 'Serveis Externs', vat_pct: 21 },
     { name: 'Transport', vat_pct: 21 },
     { name: 'Compres', vat_pct: 21 },
     { name: "Ma d'obra", vat_pct: 0 },

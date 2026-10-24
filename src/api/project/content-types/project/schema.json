@@ -46,61 +46,6 @@
       "target": "api::contact.contact",
       "inversedBy": "projectes"
     },
-    "total_estimated_hours": {
-      "type": "decimal"
-    },
-    "total_real_hours": {
-      "type": "decimal"
-    },
-    "total_expenses": {
-      "type": "decimal"
-    },
-    "total_incomes": {
-      "type": "decimal"
-    },
-    "total_expenses_hours": {
-      "type": "decimal"
-    },
-    "balance": {
-      "type": "decimal"
-    },
-    "total_estimated_expenses": {
-      "type": "decimal"
-    },
-    "estimated_balance": {
-      "type": "decimal",
-      "default": 0
-    },
-    "incomes_expenses": {
-      "type": "decimal"
-    },
-    "total_original_incomes": {
-      "type": "decimal"
-    },
-    "total_original_expenses": {
-      "type": "decimal"
-    },
-    "total_original_hours": {
-      "type": "decimal"
-    },
-    "total_original_hours_price": {
-      "type": "decimal"
-    },
-    "total_original_expenses_vat": {
-      "type": "decimal"
-    },
-    "original_incomes_expenses": {
-      "type": "decimal"
-    },
-    "total_estimated_incomes": {
-      "type": "decimal"
-    },
-    "total_estimated_expenses_vat": {
-      "type": "decimal"
-    },
-    "estimated_incomes_expenses": {
-      "type": "decimal"
-    },
     "project_state": {
       "type": "relation",
       "relation": "oneToOne",
@@ -175,15 +120,6 @@
       "relation": "oneToOne",
       "target": "api::project-type.project-type"
     },
-    "total_real_incomes": {
-      "type": "decimal"
-    },
-    "total_real_expenses": {
-      "type": "decimal"
-    },
-    "total_real_incomes_expenses": {
-      "type": "decimal"
-    },
     "date_start": {
       "type": "date"
     },
@@ -194,12 +130,6 @@
       "type": "boolean"
     },
     "structural_expenses_pct": {
-      "type": "decimal"
-    },
-    "total_estimated_hours_price": {
-      "type": "decimal"
-    },
-    "total_real_hours_price": {
       "type": "decimal"
     },
     "default_dedication_type": {
@@ -293,10 +223,6 @@
         "videos"
       ]
     },
-    "dirty": {
-      "type": "boolean",
-      "default": false
-    },
     "periodification": {
       "type": "component",
       "repeatable": true,
@@ -312,12 +238,6 @@
       "type": "date"
     },
     "grantable_cofinancing": {
-      "type": "decimal"
-    },
-    "total_expenses_vat": {
-      "type": "decimal"
-    },
-    "total_real_expenses_vat": {
       "type": "decimal"
     },
     "grantable_structural_expenses": {

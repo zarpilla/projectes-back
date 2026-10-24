@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/236 (review 7, 2026-10-19): trashed projects still fed the forecasts
  * and several lists. On Arran de Terra «Hortes Salt» (trashed, never
@@ -68,6 +70,7 @@ describe('treasury forecast without trashed projects (issues/236)', () => {
     };
     global.strapi = {
       db: {
+        ...treasuryDb(),
         query: (uid) => ({
           findMany: async () => rows[uid] || [],
           findOne: async () => null,

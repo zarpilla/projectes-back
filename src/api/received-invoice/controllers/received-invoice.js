@@ -6,6 +6,7 @@
  * Custom endpoints: findBasic, upload (proxy to the Z.ai invoice-parser service).
  */
 const { createCoreController } = require('@strapi/strapi').factories;
+const { expenseList, RECEIVED_INVOICE } = require('../../../services/expense-lists');
 const { adaptCtxQuery, dbLimit, wantsNoRows } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { proxyUpload } = require('../../../services/invoice-parser-proxy');
@@ -17,6 +18,14 @@ module.exports = createCoreController('api::received-invoice.received-invoice', 
   async find(ctx) {
     adaptCtxQuery(ctx);
     return super.find(ctx);
+  },
+
+  /**
+   * GET /api/received-invoices/list — Despeses' list: the same filters as find,
+   * only what the screen shows and exports, from the read cache (issues/325).
+   */
+  async list(ctx) {
+    return expenseList(RECEIVED_INVOICE, ctx.query);
   },
 
   async findBasic(ctx) {

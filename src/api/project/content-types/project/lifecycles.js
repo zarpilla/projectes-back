@@ -17,12 +17,30 @@
  *   projects (direct db.query updates — the v3 `_internal` flag bypass).
  * - afterFind/afterFindOne (mother aggregation) moved to the project controller's
  *   find/findOne overrides (v5 removed those hooks).
+ * - afterFindMany/afterFindOne: the stored totals and `dirty` live in
+ *   `project_totals` (issues/328); every project read gets them back here, so
+ *   the API answers as when they were columns of `projects`. beforeUpdate keeps
+ *   the totals it computes out of the `projects` update and afterUpdate writes
+ *   them there; afterCreate marks a new project dirty.
  */
 const { PROJECT_GRAPH_FOR_TOTALS_POPULATE } = require('../../services/projectFinancials');
 const { resolveComponentRefs } = require('../../../../services/component-refs');
 const { liveChildrenWhere } = require('../../services/motherChildren');
+const projectTotals = require('../../services/project-totals');
 
 module.exports = {
+  async afterFindMany(event) {
+    if (Array.isArray(event.result) && projectTotals.wantsTotals(event.params)) {
+      await projectTotals.attachTotals(event.result);
+    }
+  },
+
+  async afterFindOne(event) {
+    if (event.result && projectTotals.wantsTotals(event.params)) {
+      await projectTotals.attachTotals(event.result);
+    }
+  },
+
   async beforeCreate(event) {
     const data = event.params.data;
 
@@ -42,6 +60,9 @@ module.exports = {
   async afterCreate(event) {
     const result = event.result;
     const state = event.state || {};
+
+    // its totals are computed by the cron (they were never computed on create)
+    await projectTotals.markDirty(result.id);
 
     // Materialize phases extracted in beforeCreate.
     if (state.originalPhases && state.originalPhases.length > 0) {
@@ -112,6 +133,13 @@ module.exports = {
 
     const calculatedData = await strapi.controller('api::project.project').calculateProject(fullProject, id);
     Object.assign(data, calculatedData);
+    // the totals go to project_totals (afterUpdate), never to `projects`; `dirty`
+    // stays as stored (issues/328)
+    event.state.totals = {};
+    for (const column of projectTotals.COLUMNS) {
+      if (column !== 'dirty' && data[column] !== undefined) event.state.totals[column] = data[column];
+      delete data[column];
+    }
     // The assign above also put the resolved rows back in place of the
     // references: linked without a `__pivot`, every save added an untyped copy
     // of each periodification / grant row, and the API returned each one once
@@ -132,9 +160,13 @@ module.exports = {
   },
 
   async afterUpdate(event) {
+    const state = event.state || {};
+    if (state.totals && event.result && event.result.id) {
+      await projectTotals.writeTotals(event.result.id, state.totals);
+    }
+
     // Maintain is_mother on the old/new mother when the mother field changed,
     // or on the mother when the project went in or out of the trash.
-    const state = event.state || {};
     if (state.oldMotherId !== undefined) {
       const data = event.params.data || {};
       const oldMotherId = state.oldMotherId;

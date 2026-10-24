@@ -39,6 +39,7 @@ const { getTracker } = require('./change-tracker');
 const { ReadCache, MB } = require('./read-cache');
 const { TableStamps, stampReader } = require('./table-stamps');
 const { loadSchema } = require('./schema');
+const { startStatsLog } = require('./stats-log');
 const { CACHED_ROUTES, PERMISSION_TABLES, tablesOf } = require('./routes');
 
 const KEY = Symbol.for('esstrapis.readCache.cache');
@@ -166,6 +167,8 @@ async function initReadCache(strapi, { onPermissionsChange } = {}) {
     }
 
     cache.enable();
+    // the figures in the logs every hour (issues/328); READ_CACHE_STATS_LOG_MIN=0: never
+    startStatsLog(cache, strapi.log, { everyMs: number(process.env.READ_CACHE_STATS_LOG_MIN, 60) * 60 * 1000 });
     strapi.log.info(
       `[read-cache] on: ${tracker.tables.length} tables watched for changes, ` +
         `${stamps.watched.size} stamped, cap ${Math.round(cache.maxBytes / MB)} MB, ttl ${Math.round(cache.ttlMs / 1000)} s` +

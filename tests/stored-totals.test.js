@@ -46,8 +46,11 @@ beforeEach(() => {
           return Object.values(projects);
         },
       }),
-      connection: () => ({
-        where: ({ id }) => ({ update: async (data) => written.push({ id, ...data }) }),
+      // project_totals since issues/328: an upsert per project
+      connection: (table) => ({
+        insert: (row) => ({
+          onConflict: () => ({ merge: async () => written.push({ table, id: row.project_id, ...row }) }),
+        }),
       }),
     },
     controller: () => ({
@@ -81,6 +84,7 @@ describe('refreshAllStoredTotals', () => {
 
     expect(result).toEqual({ total: 3, processed: 3, failed: 0, errors: [] });
     expect(written.map((w) => w.id)).toEqual([1, 2, 3]);
+    expect(written.every((w) => w.table === 'project_totals')).toBe(true);
     expect(written.every((w) => w.dirty === false)).toBe(true);
     expect(written[2]).toMatchObject({ total_real_hours: 2.5, total_incomes: 300.1 });
   });

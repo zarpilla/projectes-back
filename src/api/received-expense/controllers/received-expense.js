@@ -7,6 +7,7 @@
  * same Z.ai pipeline as received-invoice).
  */
 const { createCoreController } = require('@strapi/strapi').factories;
+const { expenseList, RECEIVED_EXPENSE } = require('../../../services/expense-lists');
 const { adaptCtxQuery, dbLimit, wantsNoRows } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
 const { proxyUpload } = require('../../../services/invoice-parser-proxy');
@@ -18,6 +19,14 @@ module.exports = createCoreController('api::received-expense.received-expense', 
   async find(ctx) {
     adaptCtxQuery(ctx);
     return super.find(ctx);
+  },
+
+  /**
+   * GET /api/received-expenses/list — Despeses' list: the same filters as find,
+   * only what the screen shows and exports, from the read cache (issues/325).
+   */
+  async list(ctx) {
+    return expenseList(RECEIVED_EXPENSE, ctx.query);
   },
 
   async findBasic(ctx) {

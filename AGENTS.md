@@ -24,5 +24,5 @@ A code fix only corrects rows written from now on. When the bug also left wrong 
 - `runStartupScript` (`src/services/startup-scripts.js`) records each run in `startup_scripts`: a finished run never repeats; a run that started but never ended is not retried and needs a look. Use `{ runOnce: false }` only for cheap, idempotent checks that must hold after every ETL rebuild.
 - Keep handlers idempotent (several PM2 instances may boot at once), touch only rows that are actually wrong, and log what changed.
 - Write straight to the table (`strapi.db.connection(...)`) when going through the entity layer would rerun lifecycles or be refused by guards.
-- For project totals, don't recompute inline: mark the projects `dirty` and let the totals cron (`config/cron.js`) drain them.
+- For project totals, don't recompute inline: mark the projects dirty with `markDirty(ids)` (`src/api/project/services/project-totals.js`) and let the totals cron (`config/cron.js`) drain them. The stored totals and `dirty` live in `project_totals`, not in `projects` (issues/328); the project lifecycles put them back on every project read.
 - Test the handler like any other service (stub `global.strapi`); examples: `recalc-zero-document-totals.js`, `backfill-activity-costs.js`.

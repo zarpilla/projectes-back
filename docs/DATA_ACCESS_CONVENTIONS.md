@@ -54,8 +54,9 @@ await rawExecute(strapi, 'UPDATE orders SET emitted_invoice = ?, status = ? WHER
   'invoiced',
   orderId,
 ]);
-// Knex query builder bulk update (skips lifecycles — stored-totals refresh)
-await bulkUpdate(strapi, 'projects', { id }, { dirty: false });
+// Knex query builder bulk update (skips lifecycles)
+await bulkUpdate(strapi, 'orders', { id }, { status: 'invoiced' });
+// project totals / dirty: project-totals.js (markDirty, writeTotals), issues/328
 ```
 
 Use ONLY when you must bypass lifecycles (bulk invoice/order status updates,
