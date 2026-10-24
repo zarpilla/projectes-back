@@ -12,7 +12,7 @@
 #
 # Per tenant: start the new build in the idle slot (blue <-> green), wait until it
 # answers, point the proxy (Caddy, graceful reload) at it, let the old slot drain,
-# then stop it. The canary goes first, then the rest two at a time. If a new slot
+# then stop it. The canary goes first, then the rest one at a time. If a new slot
 # doesn't become healthy, it is stopped (its old slot never stopped serving) and
 # tenants already switched in this run go back to their previous slot, also
 # without downtime. Exits non-zero in that case.
@@ -24,7 +24,10 @@ set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 
 CANARY=buida
-PARALLEL=2
+# One tenant at a time: on 2026-10-23 two backends booting together (each
+# ~600 MB, old and new slot alive) left the VPS without memory (no swap) and
+# stalled every tenant for ~14 minutes; one at a time went through.
+PARALLEL=1
 HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-180}
 DRAIN=10
 LOG=deploy.log

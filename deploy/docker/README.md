@@ -30,7 +30,7 @@ For each tenant, `deploy.sh`:
 3. switches Caddy to it with a graceful reload;
 4. lets the old slot drain for 10 s, then stops it.
 
-The site never stops answering. The canary `buida` goes first, then the rest two at a time. If a new slot doesn't become healthy, it is stopped (the old slot kept serving), every tenant already switched in that run goes back to its previous slot (also without downtime), and the job fails. The deployed tag is kept in `.env` (`BACK_TAG`). The log is in `deploy.log`.
+The site never stops answering. The canary `buida` goes first, then the rest one at a time (two at a time ran the VPS out of memory on 2026-10-23). If a new slot doesn't become healthy, it is stopped (the old slot kept serving), every tenant already switched in that run goes back to its previous slot (also without downtime), and the job fails. The deployed tag is kept in `.env` (`BACK_TAG`). The log is in `deploy.log`.
 
 Cron jobs take a MySQL lock per tenant database (`src/services/cron-lock.js`), so the few seconds where old and new slots overlap never run a job twice.
 

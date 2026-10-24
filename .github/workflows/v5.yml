@@ -122,7 +122,7 @@ jobs:
           cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/esstrapis-back:buildcache,mode=max,image-manifest=true,oci-mediatypes=true', secrets.DOCKERHUB_USERNAME) || '' }}
 
   # Deploys the image just built to every tenant on the VPS (deploy/docker/deploy.sh:
-  # canary first, two at a time, automatic rollback). The SSH key can only run that
+  # canary first, one at a time, automatic rollback). The SSH key can only run that
   # script (forced command in authorized_keys), and the host key is pinned.
   # Secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS.
   # Add required reviewers to the `production` environment to approve each deploy.
