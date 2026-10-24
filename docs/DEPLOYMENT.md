@@ -59,9 +59,9 @@ Every `main` commit has its image, and `deploy.log` lists what was deployed when
 
 ## 3. Frontend deploy
 
-A push to `master` of `projectes-front` runs its tests, builds
+A push to `main` of `projectes-front` runs its tests, builds
 `esstrapis-front:v5-vue3-<sha>` and deploys it to every site
-(`.github/workflows/master.yml` there). Details are in that repository's
+(`.github/workflows/main.yml` there). Details are in that repository's
 `deploy/docker/README.md`. The script takes the same arguments as the backend one:
 
 ```bash

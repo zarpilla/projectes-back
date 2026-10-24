@@ -34,7 +34,7 @@ LOG=deploy.log
 
 if [ -n "${SSH_ORIGINAL_COMMAND:-}" ]; then read -r -a ARGS <<<"$SSH_ORIGINAL_COMMAND"; else ARGS=("$@"); fi
 TAG="${ARGS[0]:-}"
-# Preview builds (a branch that is not main/master) are pinned to the tenants they go to.
+# Preview builds (a branch that is not main) are pinned to the tenants they go to.
 PREVIEW='^(redesign|diligencia-test)-'
 [[ "$TAG" =~ ^(v5|redesign|diligencia-test)-[0-9a-f]{40}$ ]] || { echo "Usage: deploy.sh v5-<40-hex sha> [tenant ...] | redesign|diligencia-test-<40-hex sha> tenant ..."; exit 2; }
 
