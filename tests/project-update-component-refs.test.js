@@ -70,7 +70,9 @@ describe('project beforeUpdate component references (issues/232)', () => {
 
     expect(event.params.data.periodification).toEqual(periodification);
     expect(event.params.data.grantable_years).toEqual(grantableYears);
-    expect(event.params.data.total_incomes).toBe(1500);
+    // the totals go to project_totals (afterUpdate), not to `projects` (issues/328)
+    expect(event.params.data.total_incomes).toBeUndefined();
+    expect(event.state.totals.total_incomes).toBe(1500);
     expect(calculatedWith.periodification.map((p) => p.year)).toEqual(['2025', '2026']);
     expect(calculatedWith.grantable_years[0].amount).toBe(100);
   });

@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/242 (2026-10-19): the «IRPF Factura» row of a received expense
  * (date = end of quarter + 20 days) was always `paid: false`, so it stayed in
@@ -34,6 +36,7 @@ const doc = (id, emitted) => ({
 function stubStrapi(rows) {
   global.strapi = {
     db: {
+      ...treasuryDb(),
       query: (uid) => ({
         findMany: async () => rows[uid] || [],
         findOne: async () => null,

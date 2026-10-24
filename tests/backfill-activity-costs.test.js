@@ -1,5 +1,7 @@
 'use strict';
 
+const { mockMarkDirty } = require('./helpers/mark-dirty');
+
 /**
  * issues/012 — startup script that brings "Hores executades" up to date:
  * prices activities left without cost/hour from the covering daily dedication
@@ -12,6 +14,7 @@ let updates;
 
 function mockStrapi({ dedications, activities, links }) {
   updates = [];
+  mockMarkDirty((ids) => updates.push({ table: 'project_totals', ids, data: { dirty: true } }));
   const table = (name) => {
     const q = {
       whereIn: jest.fn((col, ids) => ({
@@ -77,7 +80,7 @@ describe('backfillActivityCosts', () => {
 
     expect(updates).toEqual([
       { table: 'activities', ids: [100, 101], data: { cost_by_hour: 14.5 } },
-      { table: 'projects', ids: [25, 2], data: { dirty: true } },
+      { table: 'project_totals', ids: [25, 2], data: { dirty: true } },
     ]);
   });
 });

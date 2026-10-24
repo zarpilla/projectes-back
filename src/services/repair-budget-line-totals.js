@@ -1,6 +1,8 @@
 'use strict';
 /* global strapi */
 
+const { markDirty } = require('../api/project/services/project-totals');
+
 /**
  * Startup script: budget lines whose stored total disagrees with quantity ×
  * unit price (issues/194). Runs after widenBudgetLineDecimals.
@@ -88,7 +90,7 @@ async function repairBudgetLineTotals() {
     projectIds(lines).forEach((id) => dirty.add(id));
   }
   if (dirty.size) {
-    await strapi.db.connection('projects').whereIn('id', [...dirty]).update({ dirty: true });
+    await markDirty([...dirty]);
   }
   strapi.log.info(`[repairBudgetLineTotals] ${dirty.size} projects marked dirty`);
 }

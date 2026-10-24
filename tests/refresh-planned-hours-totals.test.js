@@ -1,5 +1,7 @@
 'use strict';
 
+const { mockMarkDirty } = require('./helpers/mark-dirty');
+
 /**
  * issues/067 (2026-10-17): on Arran de Terra, 9 projects of 2022–23 stored
  * 4.5–160 planned hours more than their phase lines give, so the projects panel
@@ -13,6 +15,7 @@ let findMany;
 
 function mockStrapi(projects) {
   updates = [];
+  mockMarkDirty((ids) => updates.push({ table: 'project_totals', col: 'project_id', ids, data: { dirty: true } }));
   findMany = jest.fn(async () => projects);
   global.strapi = {
     log: { info: jest.fn() },
@@ -44,7 +47,7 @@ describe('refreshPlannedHoursTotals (issues/067)', () => {
     expect(findMany.mock.calls[0][0].where).toEqual({
       $or: [{ project_phases: withHours }, { project_original_phases: withHours }],
     });
-    expect(updates).toEqual([{ table: 'projects', col: 'id', ids: [138, 142], data: { dirty: true } }]);
+    expect(updates).toEqual([{ table: 'project_totals', col: 'project_id', ids: [138, 142], data: { dirty: true } }]);
   });
 
   it('writes nothing when no project has planned hours', async () => {

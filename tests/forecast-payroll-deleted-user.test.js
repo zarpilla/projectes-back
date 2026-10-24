@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/050 — 2026-10-15, arrandeterra: "Previsió Econòmica" (and Tresoreria,
  * IVA, which read the same endpoint) got a 500 from GET /treasuries/forecast.
@@ -32,6 +34,7 @@ const payroll = (id, user) => ({
 function stubStrapi (rows) {
   global.strapi = {
     db: {
+      ...treasuryDb(),
       query: (uid) => ({
         findMany: async () => rows[uid] || [],
         findOne: async () => null,

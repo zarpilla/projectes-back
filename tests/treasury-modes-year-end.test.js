@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/252 (2026-10-19): on La Diligència, Tresoreria's «Des de l'inici
  * d'any» and «Des d'avui» ended 2026 22,61 € apart. Two forecast invoices of
@@ -45,6 +47,7 @@ const project = {
 function stubStrapi(rows) {
   global.strapi = {
     db: {
+      ...treasuryDb(),
       query: (uid) => ({
         findMany: async () => rows[uid] || [],
         findOne: async () => null,

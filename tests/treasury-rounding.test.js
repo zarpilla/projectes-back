@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/277 (2026-10-20) — the Tresoreria export carried unrounded expected
  * payments (8535.6062, −990.1320000000001) and saldos with float noise
@@ -45,6 +47,7 @@ const project = {
 function stubStrapi(rows) {
   global.strapi = {
     db: {
+      ...treasuryDb(),
       query: (uid) => ({
         findMany: async () => rows[uid] || [],
         findOne: async () => null,

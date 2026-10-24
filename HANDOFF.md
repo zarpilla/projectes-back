@@ -27,7 +27,7 @@ message on older Node — node-ical 0.26 crashes on Node 18).
   sort/pagination) + `src/services/raw-sql.js` (forced parameter binding; fixes
   the v3 SQL-injection in emitted-invoice.payEntity).
 - **P4** All 61 custom endpoints; `src/api/project/services/totalsRefreshScheduler.js`
-  redesigned PM2-safe (projects.dirty flag drained by a */2 cron).
+  redesigned PM2-safe (`dirty` flag drained by a */2 cron; flag and stored totals in `project_totals` since issues/328).
 - **P5** 26 lifecycles incl. the big four: emitted-invoice (ESBORRANY→SERIE-000N
   state machine), project, order (1,839 LOC), verifactu-chain (AEAT hash chain).
 - **P6** Bootstrap seeds permission matrix via official

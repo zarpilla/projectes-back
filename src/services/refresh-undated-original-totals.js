@@ -1,6 +1,8 @@
 'use strict';
 /* global strapi */
 
+const { markDirty } = require('../api/project/services/project-totals');
+
 /**
  * Startup script: recompute the Original totals of projects with undated
  * original-budget lines (issues/195).
@@ -24,7 +26,7 @@ async function refreshUndatedOriginalTotals() {
   });
   const ids = projects.map((p) => p.id);
   if (ids.length) {
-    await strapi.db.connection('projects').whereIn('id', ids).update({ dirty: true });
+    await markDirty(ids);
   }
   strapi.log.info(`[refreshUndatedOriginalTotals] ${ids.length} projects with undated original lines marked dirty`);
 }

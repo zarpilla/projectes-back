@@ -1,5 +1,7 @@
 'use strict';
 
+const { treasuryDb } = require('./helpers/treasury-db');
+
 /**
  * issues/221 (2026-10-19) — «IVA previst» (IVA screen and the treasury's
  * forecast VAT payments) deducted Configuració's «% IVA deduïble» even when
@@ -56,6 +58,7 @@ const project = {
 function stubStrapi(rows) {
   global.strapi = {
     db: {
+      ...treasuryDb(),
       query: (uid) => ({
         findMany: async () => rows[uid] || [],
         findOne: async () => null,

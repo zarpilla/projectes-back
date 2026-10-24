@@ -1,5 +1,7 @@
 'use strict';
 
+const { mockMarkDirty } = require('./helpers/mark-dirty');
+
 /**
  * issues/033 (2026-10-12) — the project totals read a 0 % expense type as
  * "no VAT set" and budgeted its lines at 21 % VAT.
@@ -93,6 +95,7 @@ describe('zeroVatExpenseTypes', () => {
 
   function mockStrapi({ unsetTypes, phaseExpenses }) {
     updates = [];
+    mockMarkDirty((ids) => updates.push({ table: 'project_totals', ids, data: { dirty: true } }));
     queries = [];
     global.strapi = {
       log: { info: jest.fn(), warn: jest.fn() },
@@ -137,7 +140,7 @@ describe('zeroVatExpenseTypes', () => {
     expect(queries[1]).toEqual({ uid: PHASE_EXPENSE, where: { expense_type: { vat_pct: 0 } } });
     expect(updates).toEqual([
       { table: 'expense_types', ids: [7, 8], data: { vat_pct: 0 } },
-      { table: 'projects', ids: [10, 11], data: { dirty: true } },
+      { table: 'project_totals', ids: [10, 11], data: { dirty: true } },
     ]);
   });
 

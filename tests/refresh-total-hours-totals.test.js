@@ -1,5 +1,7 @@
 'use strict';
 
+const { mockMarkDirty } = require('./helpers/mark-dirty');
+
 /**
  * issues/259 (2026-10-20, review 8): «Total» planned-hours lines shorter than
  * ~15 days were dropped from the stored project totals. The startup script
@@ -12,6 +14,7 @@ let findMany;
 
 function mockStrapi(projects) {
   updates = [];
+  mockMarkDirty((ids) => updates.push({ table: 'project_totals', col: 'project_id', ids, data: { dirty: true } }));
   findMany = jest.fn(async () => projects);
   global.strapi = {
     log: { info: jest.fn() },
@@ -45,7 +48,7 @@ describe('refreshTotalHoursTotals (issues/259)', () => {
     expect(findMany.mock.calls[0][0].where).toEqual({
       $or: [{ project_phases: total }, { project_original_phases: total }],
     });
-    expect(updates).toEqual([{ table: 'projects', col: 'id', ids: [75, 781], data: { dirty: true } }]);
+    expect(updates).toEqual([{ table: 'project_totals', col: 'project_id', ids: [75, 781], data: { dirty: true } }]);
   });
 
   it('writes nothing when no project has «Total» hours lines', async () => {

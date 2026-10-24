@@ -1,6 +1,8 @@
 'use strict';
 /* global strapi */
 
+const { markDirty } = require('../api/project/services/project-totals');
+
 /**
  * Startup script (issues/033): expense types without VAT, and the budgets
  * that use them.
@@ -41,7 +43,7 @@ async function zeroVatExpenseTypes() {
 
   const projectIds = await projectIdsForPhaseRows(PHASE_EXPENSE, { expense_type: { vat_pct: 0 } });
   if (projectIds.length) {
-    await strapi.db.connection('projects').whereIn('id', projectIds).update({ dirty: true });
+    await markDirty(projectIds);
   }
 
   strapi.log.info(

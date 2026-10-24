@@ -92,8 +92,11 @@ describe('refreshStoredTotals', () => {
     global.strapi = {
       db: {
         query: jest.fn(() => ({ findOne: jest.fn(async () => ({ id: 5 })) })),
-        connection: jest.fn(() => ({
-          where: jest.fn(() => ({ update: jest.fn(async (data) => written.push(data)) })),
+        // project_totals since issues/328: an upsert per project
+        connection: jest.fn((table) => ({
+          insert: jest.fn((row) => ({
+            onConflict: () => ({ merge: async () => written.push({ table, ...row }) }),
+          })),
         })),
       },
       controller: jest.fn(() => ({ calculateProject })),
@@ -104,6 +107,12 @@ describe('refreshStoredTotals', () => {
     await refreshStoredTotals(5);
 
     expect(calculateProject).toHaveBeenCalled();
-    expect(written[0]).toMatchObject({ total_real_hours: 4, total_real_hours_price: 63.4, dirty: false });
+    expect(written[0]).toMatchObject({
+      table: 'project_totals',
+      project_id: 5,
+      total_real_hours: 4,
+      total_real_hours_price: 63.4,
+      dirty: false,
+    });
   });
 });

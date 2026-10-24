@@ -1,6 +1,8 @@
 'use strict';
 /* global strapi */
 
+const { markDirty } = require('../api/project/services/project-totals');
+
 /**
  * Startup script: recompute the stored planned hours (issues/067).
  *
@@ -25,7 +27,7 @@ async function refreshPlannedHoursTotals() {
   });
   const ids = projects.map((p) => p.id);
   if (ids.length) {
-    await strapi.db.connection('projects').whereIn('id', ids).update({ dirty: true });
+    await markDirty(ids);
   }
   strapi.log.info(`[refreshPlannedHoursTotals] ${ids.length} projects with planned hours marked dirty`);
 }
