@@ -25,6 +25,7 @@ const { backfillTransferDestinations } = require('./services/backfill-transfer-d
 const { repairCollectionOrderRates } = require('./services/repair-collection-order-rates');
 const { refreshUnifiedOrderSnapshots } = require('./services/refresh-unified-order-snapshots');
 const { frontUrlsWithoutHash } = require('./services/front-urls-without-hash');
+const { frontUrlsAtRoot } = require('./services/front-urls-at-root');
 const { clearQuotePreviewLinks } = require('./services/clear-quote-preview-links');
 const { padFourDigitPostcodes } = require('./services/pad-four-digit-postcodes');
 const { refreshUndatedOriginalTotals } = require('./services/refresh-undated-original-totals');
@@ -162,6 +163,8 @@ module.exports = {
       ['refreshUnifiedOrderSnapshots', refreshUnifiedOrderSnapshots, { runOnce: true }],
       // issues/158: the front's URLs lost the "#/"; so do the links the API sends.
       ['frontUrlsWithoutHash', frontUrlsWithoutHash, { runOnce: true }],
+      // issues/342: the front moved from /stats/ to the root of the site; so do the links the API sends.
+      ['frontUrlsAtRoot', frontUrlsAtRoot, { runOnce: true }],
       // issues/160: quotes kept a link to the front's removed quote preview as their PDF.
       ['clearQuotePreviewLinks', clearQuotePreviewLinks, { runOnce: true }],
       // issues/179: contacts loaded from a spreadsheet lost the leading zero of their postcode.

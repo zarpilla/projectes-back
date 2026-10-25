@@ -82,7 +82,7 @@ the other containers as orphans. `--remove-orphans` would delete them. The
 ### Verify from outside
 
 ```bash
-curl -s https://<host>/stats/ | grep -oE 'js/app\.[a-f0-9]+\.js'
+curl -s https://<host>/ | grep -oE 'js/app\.[a-f0-9]+\.js'
 ```
 
 The bundle hash changes with every build, so it tells you which one a site serves.

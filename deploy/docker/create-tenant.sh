@@ -110,7 +110,7 @@ BACK_TAG=$(sed -n 's/^BACK_TAG=//p' .env 2>/dev/null || true)
 [ -n "$BACK_TAG" ] || die "No BACK_TAG in .env: nothing has been deployed here yet"
 
 say "Tenant $NAME$($RESUME && echo ' (resuming)')"
-info "URL            $URL  (front: $URL/stats/)"
+info "URL            $URL  (front at the root, Strapi at $URL/admin)"
 info "database       $DB_NAME, user $DB_USER"
 info "backend        port $BACK_PORT (blue $((BACK_PORT + 10000)), green $((BACK_PORT + 20000))), image $BACK_TAG"
 info "front          port $FRONT_PORT, image $FRONT_TAG, in $FRONT"
@@ -226,8 +226,8 @@ if [ ! -f "$FRONT/docker-compose.yml" ]; then
   cat > "$FRONT/.env" <<ENV
 VUE_APP_API_URL=$URL
 VUE_APP_API_LOGIN=$URL/admin
-VUE_APP_PATH=/stats
-VUE_APP_RESET_PASSWORD="$URL/stats/#/reset-password"
+VUE_APP_PATH=/
+VUE_APP_RESET_PASSWORD="$URL/reset-password"
 EXTERNAL_PORT=$FRONT_PORT
 ENV
   cat > "$FRONT/docker-compose.yml" <<YAML
@@ -240,7 +240,7 @@ services:
       - NODE_ENV=production
       - VUE_APP_API_URL=\${VUE_APP_API_URL:-http://localhost:1337}
       - VUE_APP_RESET_PASSWORD=\${VUE_APP_RESET_PASSWORD:-http://localhost:8080/#/reset-password}
-      - VUE_APP_PATH=\${VUE_APP_PATH:-/stats/}
+      - VUE_APP_PATH=\${VUE_APP_PATH:-/}
     env_file:
       - .env
     restart: unless-stopped
@@ -252,8 +252,8 @@ flock -w 900 8 || die "A front deploy has been running for 15 minutes; try again
 # never --remove-orphans or `down` here, it would remove the other sites' containers.
 (cd "$FRONT" && docker compose up -d 2>&1 | grep -vE '^\s*$|obsolete' || true)
 waited=0
-until [[ "$(curl -s -m 5 "http://127.0.0.1:$FRONT_PORT/stats/" || true)" == *"assets/index"* ]]; do
-  [ $waited -lt 90 ] || die "front not serving http://127.0.0.1:$FRONT_PORT/stats/ after 90s. See: cd $FRONT && docker compose logs"
+until [[ "$(curl -s -m 5 "http://127.0.0.1:$FRONT_PORT/" || true)" == *"assets/index"* ]]; do
+  [ $waited -lt 90 ] || die "front not serving http://127.0.0.1:$FRONT_PORT/ after 90s. See: cd $FRONT && docker compose logs"
   sleep 2; waited=$((waited + 2))
 done
 grep -qE "^$NAME[[:space:]]" "$FRONT_DIR/sites.conf" || printf '%-17s %s\n' "$NAME" "$FRONT" >> "$FRONT_DIR/sites.conf"
@@ -276,18 +276,23 @@ cat > "$SITE_DRAFT" <<NGINX
 server {
     server_name $DOMAIN;
 
-    location / {
+    # Never serve credential files (FACe / Verifactu certificates, keys) from /uploads
+    location ~* \.(p12|pfx|pem|key|crt|cer|jks|kdb)\$ {
+        return 403;
+    }
+
+    # Strapi (issues/342): the API, the uploads, its admin panel and the paths
+    # the panel calls at the root. Keep in step with STRAPI_PATHS in the front's
+    # tests/unit/frontAtRoot.spec.js: no route of the app may start with one.
+    location ~ ^/(admin|api|uploads|content-manager|content-type-builder|upload|i18n|users-permissions|email|_health)(/|\$) {
         proxy_pass http://127.0.0.1:$BACK_PORT;
         $proxy_headers
     }
 
-    location /stats {
+    # Everything else is the app (it redirects the old /stats/… addresses)
+    location / {
         proxy_pass http://127.0.0.1:$FRONT_PORT;
         $proxy_headers
-
-        location ~* \.(pdf|html)\$ {
-            expires 30s;
-        }
     }
 
     listen 80;
@@ -319,7 +324,7 @@ else
 fi
 
 say "Tenant $NAME is up"
-info "app        $URL/stats/"
+info "app        $URL/"
 info "admin      $URL/admin   (register the first Strapi admin there)"
 if [ -n "$USER_EMAIL" ] && [ "$SEEDED" != 0 ]; then
   info "first user $USER_EMAIL"

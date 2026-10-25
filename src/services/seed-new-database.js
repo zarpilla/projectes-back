@@ -31,10 +31,10 @@ async function isNewDatabase() {
   return true;
 }
 
-/** The front is served under /stats/ of the same host (see ensure-reset-password-url). */
+/** The front is served at the root of the same host (issues/342; see ensure-reset-password-url). */
 function frontUrl() {
   const serverUrl = String(strapi.config.get('server.url') || '').replace(/\/+$/, '');
-  return /^https?:\/\//.test(serverUrl) ? `${serverUrl}/stats/` : null;
+  return /^https?:\/\//.test(serverUrl) ? `${serverUrl}/` : null;
 }
 
 async function seedFirstUser() {

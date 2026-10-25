@@ -82,8 +82,8 @@ describe('seedNewDatabase', () => {
 
     const [me] = rowsOf(ME);
     expect(me.options.treasury).toBe(true);
-    expect(me.front_url).toBe('https://demo.example.org/stats/');
-    expect(rowsOf('api::config.config')).toEqual([{ front_url: 'https://demo.example.org/stats/' }]);
+    expect(me.front_url).toBe('https://demo.example.org/');
+    expect(rowsOf('api::config.config')).toEqual([{ front_url: 'https://demo.example.org/' }]);
     expect(rowsOf('api::home-menu.home-menu')[0].homegroup.map((g) => g.name)).toEqual([
       'Projectes',
       'Administració',
