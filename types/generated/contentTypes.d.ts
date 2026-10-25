@@ -576,6 +576,7 @@ export interface ApiContactContact extends Struct.CollectionTypeSchema {
   };
   attributes: {
     address: Schema.Attribute.String;
+    capital_contributions: Schema.Attribute.Component<'partners.capital-contribution', true>;
     city: Schema.Attribute.String;
     collection_points: Schema.Attribute.Relation<'oneToMany', 'api::contact.contact'>;
     contact_email: Schema.Attribute.Email;

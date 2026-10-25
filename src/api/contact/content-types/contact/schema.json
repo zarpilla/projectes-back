@@ -124,6 +124,11 @@
     "partner_amount_date": {
       "type": "date"
     },
+    "capital_contributions": {
+      "type": "component",
+      "repeatable": true,
+      "component": "partners.capital-contribution"
+    },
     "followup_date": {
       "type": "date"
     },

@@ -161,7 +161,14 @@ function rulesFor({ member = false, selfId = null, permissions = [] } = {}) {
   const contactDrop = [];
   if (member) {
     // the office's data on a contact
-    contactDrop.push('partner_amount', 'partner_amount_date', 'followup_date', 'projects', 'projectes');
+    contactDrop.push(
+      'partner_amount',
+      'partner_amount_date',
+      'capital_contributions',
+      'followup_date',
+      'projects',
+      'projectes',
+    );
   }
   // the energy community's data on its members (their documents: ID cards,
   // payment receipts), only for `admin_energy` (and full access, never sanitized)

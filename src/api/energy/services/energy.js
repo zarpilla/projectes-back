@@ -13,6 +13,7 @@
 const { errors } = require('@strapi/utils');
 const { checkCups, cupsKey } = require('../../../services/energy-cups');
 const rules = require('../../../services/energy-coefficients');
+const { cleanContributions } = require('../../../services/capital-contributions');
 
 const CONTACT = 'api::contact.contact';
 const CONTACT_TYPE = 'api::contact-type.contact-type';
@@ -37,11 +38,10 @@ const PARTNER_FIELDS = [
   'join_date',
   'leave_date',
   'privacy_accepted',
-  'partner_amount',
-  'partner_amount_date',
 ];
-const DATE_FIELDS = ['join_date', 'leave_date', 'partner_amount_date'];
-const PARTNER_SELECT = ['id', 'documentId', ...PARTNER_FIELDS];
+const DATE_FIELDS = ['join_date', 'leave_date'];
+// partner_amount(_date): the summary of her capital contributions (read only)
+const PARTNER_SELECT = ['id', 'documentId', ...PARTNER_FIELDS, 'partner_amount', 'partner_amount_date'];
 const SUPPLY_FIELDS = ['cups', 'holder_name', 'address', 'city', 'submitted', 'active', 'notes'];
 const INSTALLATION_FIELDS = ['name', 'power_kw', 'cau', 'address', 'start_date', 'active', 'notes'];
 
@@ -87,8 +87,12 @@ function pick(data, fields) {
 function cleanPartner(data) {
   const out = pick(data, PARTNER_FIELDS);
   for (const field of DATE_FIELDS) if (field in out && !out[field]) out[field] = null;
-  if ('partner_amount' in out && (out.partner_amount === '' || out.partner_amount === undefined)) {
-    out.partner_amount = null;
+  if (data && Array.isArray(data.capital_contributions)) {
+    try {
+      out.capital_contributions = cleanContributions(data.capital_contributions);
+    } catch (error) {
+      throw new errors.ValidationError(error.message);
+    }
   }
   if ('name' in out) {
     out.name = String(out.name || '').trim();
@@ -135,11 +139,23 @@ async function loadPartner(id) {
   return strapi.db.query(CONTACT).findOne({
     where: { id: contactId },
     select: PARTNER_SELECT,
-    populate: { documents: true },
+    populate: { documents: true, capital_contributions: true },
   });
 }
 
 // --- reading ----------------------------------------------------------------------
+
+/** Her contributions, oldest first (undated last). */
+function sortContributions(rows) {
+  return (rows || [])
+    .map((r) => ({
+      id: r.id,
+      date: toDay(r.date),
+      amount: r.amount === null ? null : Number(r.amount),
+      comment: r.comment || null,
+    }))
+    .sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+}
 
 function formatSupply(supply) {
   const check = checkCups(supply.cups);
@@ -246,6 +262,7 @@ async function getPartner(id) {
   return {
     ...contact,
     documents: contact.documents || [],
+    capital_contributions: sortContributions(contact.capital_contributions),
     supplies: supplies.map((supply) => {
       const s = formatSupply(supply);
       s.coefficients = coefficients

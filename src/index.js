@@ -38,6 +38,7 @@ const { refreshTotalHoursTotals } = require('./services/refresh-total-hours-tota
 const { addOfficialFestives } = require('./services/add-official-festives');
 const { fillEmptyRelationOrder } = require('./services/relation-order');
 const { fillEmptyYearVatPct } = require('./services/fill-empty-year-vat-pct');
+const { migratePartnerAmounts } = require('./services/capital-contributions');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
@@ -187,6 +188,9 @@ module.exports = {
       ['fillEmptyRelationOrder', fillEmptyRelationOrder, { runOnce: true }],
       // issues/338: a year with no «% IVA deduïble» is 100 % (it was 0 % in «IVA»).
       ['fillEmptyYearVatPct', fillEmptyYearVatPct, { runOnce: true }],
+      // 2026-10-25: a contact's capital contribution becomes a list (date, amount,
+      // comment); its old amount and date are its first one.
+      ['migratePartnerAmounts', migratePartnerAmounts, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
