@@ -12,13 +12,8 @@
 
 // Collection types, in creation order: uid -> rows.
 const CATALOGS = {
-  'api::activity-type.activity-type': [
-    { name: 'gestió eco', global: false },
-    { name: 'gestió laboral', global: false },
-    { name: 'execució activitats', global: false },
-    { name: 'reunions', global: false },
-    { name: 'coordinació', global: false },
-  ],
+  // Activity types start empty: each instance defines its own.
+  'api::activity-type.activity-type': [],
   'api::contact-type.contact-type': [{ name: 'Clienta' }, { name: 'Proveïdora' }],
   'api::dedication-type.dedication-type': [{ name: 'Facturable' }, { name: 'Gestió Interna' }],
   'api::document-type.document-type': [
