@@ -53,7 +53,7 @@ describe('task notices at once', () => {
     expect(assigned.subject).toBe("[ESSTRAPIS] T'han assignat una tasca: Fer <l'acta>");
     expect(assigned.html).toContain('Fer &lt;l\'acta&gt;');
     expect(assigned.html).toContain('20/10/2026');
-    expect(assigned.html).toContain('https://x.cat/tasks?task=12');
+    expect(assigned.html).toContain('https://x.cat/tasques?task=12');
     const mention = mentionEmail(task, { text: 'Hola @Pau\n<b>ja</b>' }, { username: 'Laia' }, 'https://x.cat/');
     expect(mention.html).toContain('Hola @Pau<br>&lt;b&gt;ja&lt;/b&gt;');
   });

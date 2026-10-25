@@ -628,7 +628,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
     const urls = [];
     for (const order of ordersEntities) {
-      const qrCodeImage = await QRCode.toDataURL(`${frontUrl}order/view/${order.id}`);
+      const qrCodeImage = await QRCode.toDataURL(`${frontUrl}comanda/veure/${order.id}`);
       const contacts = await strapi.db.query('api::contact.contact').findMany({
         where: { users_permissions_user: order.owner?.id },
       });

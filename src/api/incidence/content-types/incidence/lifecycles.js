@@ -198,7 +198,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null, replyCoun
 
   const html = `
     <b>Incidència ${action === 'created' ? 'Creada' : replyAdded ? 'amb una resposta nova' : 'Actualitzada'}</b><br><br>
-    <b>ID Incidència:</b> <a href="${frontUrl}incidences?id=${fullIncidence.id}" target="_blank">${fullIncidence.id}</a><br>
+    <b>ID Incidència:</b> <a href="${frontUrl}incidencies?id=${fullIncidence.id}" target="_blank">${fullIncidence.id}</a><br>
     <b>Comanda:</b> #${order.id}<br>
     <b>Propietari Comanda:</b> ${orderOwner ? orderOwner.fullname || orderOwner.username : 'N/A'} ${orderOwner && orderOwner.email ? `(${orderOwner.email})` : ''}<br>
     <b>Punt d'entrega:</b> ${deliveryPoint}<br>

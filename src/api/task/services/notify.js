@@ -43,7 +43,7 @@ function removedFrom(beforeUsers, afterUsers) {
   return (beforeUsers || []).filter((u) => !after.has(u.id));
 }
 
-const taskLink = (task, frontUrl) => `<a target="_blank" href="${frontUrl}tasks?task=${task.id}">Obre la tasca</a>`;
+const taskLink = (task, frontUrl) => `<a target="_blank" href="${frontUrl}tasques?task=${task.id}">Obre la tasca</a>`;
 const who = (actor) => escapeHtml(actor && actor.username ? actor.username : 'Algú');
 
 function assignmentEmail(task, actor, frontUrl) {
@@ -78,11 +78,11 @@ function noticesEmail(notices, frontUrl) {
     const line = n.kind === 'mention'
       ? `${who(n.actor)} t'ha esmentat a ${name}: «${escapeHtml(n.comment.text)}»`
       : `${who(n.actor)} t'ha assignat ${name}${n.task.project && n.task.project.name ? ' (' + escapeHtml(n.task.project.name) + ')' : ''}`;
-    return `<li>${line} · <a target="_blank" href="${frontUrl}tasks?task=${n.task.id}">obre-la</a></li>`;
+    return `<li>${line} · <a target="_blank" href="${frontUrl}tasques?task=${n.task.id}">obre-la</a></li>`;
   });
   return {
     subject: `[ESSTRAPIS] ${notices.length} novetats a les teves tasques`,
-    html: `Novetats a les teves <a target="_blank" href="${frontUrl}tasks">tasques</a>:<ul>${items.join('')}</ul>`,
+    html: `Novetats a les teves <a target="_blank" href="${frontUrl}tasques">tasques</a>:<ul>${items.join('')}</ul>`,
   };
 }
 

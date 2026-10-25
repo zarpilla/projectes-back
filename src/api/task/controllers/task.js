@@ -85,7 +85,7 @@ const sendEmail = async (data, frontUrl, me) => {
 
   // Regular expired tasks (updated in the last 15 days)
   if (data.rows.filter((r) => r.type === 'expired' && !r.shouldStop).length > 0) {
-    text += `Hi ha <a target='_blank' href='${frontUrl}tasks'>tasques o checklists</a> amb la data límit superada:<br><br>`;
+    text += `Hi ha <a target='_blank' href='${frontUrl}tasques'>tasques o checklists</a> amb la data límit superada:<br><br>`;
     data.rows
       .filter((r) => r.type === 'expired' && !r.shouldStop)
       .forEach((r) => {
@@ -107,7 +107,7 @@ const sendEmail = async (data, frontUrl, me) => {
   }
 
   if (data.rows.filter((r) => r.type === 'new').length > 0) {
-    text += `Hi ha canvis en <a target='_blank' href='${frontUrl}tasks'>tasques o checklists</a>:<br><br>`;
+    text += `Hi ha canvis en <a target='_blank' href='${frontUrl}tasques'>tasques o checklists</a>:<br><br>`;
     data.rows
       .filter((r) => r.type === 'new')
       .forEach((r) => {

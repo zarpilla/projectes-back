@@ -15,7 +15,8 @@
  */
 
 const STORE = { type: 'plugin', name: 'users-permissions' };
-const FRONT_RESET_PATH = '/reset-password';
+// the front's page for the e-mailed link (Catalan URLs since issues/343)
+const FRONT_RESET_PATH = '/canviar-clau';
 
 function resetPasswordUrl() {
   if (process.env.RESET_PASSWORD_URL) return process.env.RESET_PASSWORD_URL;

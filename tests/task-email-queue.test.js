@@ -38,16 +38,16 @@ describe('task email queue', () => {
   });
 
   it('one notice: its own email; several: one email with the list', () => {
-    const one = noticesEmail([{ kind: 'assigned', actor: laia, task: task(1, [anna]) }], 'https://x.cat/#/');
+    const one = noticesEmail([{ kind: 'assigned', actor: laia, task: task(1, [anna]) }], 'https://x.cat/');
     expect(one.subject).toBe("[ESSTRAPIS] T'han assignat una tasca: Tasca 1");
     const many = noticesEmail([
       { kind: 'assigned', actor: laia, task: task(1, [anna]) },
       { kind: 'mention', actor: laia, task: task(2, []), comment: { text: '<b>mira</b>' } },
-    ], 'https://x.cat/#/');
+    ], 'https://x.cat/');
     expect(many.subject).toBe('[ESSTRAPIS] 2 novetats a les teves tasques');
     expect(many.html).toContain("Laia t'ha assignat <b>Tasca 1</b> (Bellmodel)");
     expect(many.html).toContain("Laia t'ha esmentat a <b>Tasca 2</b>: «&lt;b&gt;mira&lt;/b&gt;»");
-    expect(many.html).toContain('https://x.cat/#/tasks?task=2');
+    expect(many.html).toContain('https://x.cat/tasques?task=2');
   });
 
   it('knows who was taken off a task', () => {

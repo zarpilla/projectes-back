@@ -67,7 +67,7 @@ describe('forgot password (issues/021)', () => {
     await require(ENSURE).ensureResetPasswordUrl();
     expect(stored.advanced).toEqual({
       email_confirmation: false,
-      email_reset_password: 'https://coop.example.org/reset-password',
+      email_reset_password: 'https://coop.example.org/canviar-clau',
     });
   });
 

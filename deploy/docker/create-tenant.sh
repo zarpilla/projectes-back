@@ -227,7 +227,7 @@ if [ ! -f "$FRONT/docker-compose.yml" ]; then
 VUE_APP_API_URL=$URL
 VUE_APP_API_LOGIN=$URL/admin
 VUE_APP_PATH=/
-VUE_APP_RESET_PASSWORD="$URL/reset-password"
+VUE_APP_RESET_PASSWORD="$URL/canviar-clau"
 EXTERNAL_PORT=$FRONT_PORT
 ENV
   cat > "$FRONT/docker-compose.yml" <<YAML
@@ -239,7 +239,7 @@ services:
     environment:
       - NODE_ENV=production
       - VUE_APP_API_URL=\${VUE_APP_API_URL:-http://localhost:1337}
-      - VUE_APP_RESET_PASSWORD=\${VUE_APP_RESET_PASSWORD:-http://localhost:8080/#/reset-password}
+      - VUE_APP_RESET_PASSWORD=\${VUE_APP_RESET_PASSWORD:-http://localhost:8080/#/canviar-clau}
       - VUE_APP_PATH=\${VUE_APP_PATH:-/}
     env_file:
       - .env
