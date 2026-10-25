@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * GET /api/backup/latest           → { available, createdAt, bytes, filename }
+ * GET /api/backup/latest           → { enabled, available, createdAt, bytes, filename }
  * GET /api/backup/latest/download  → the .sql.gz file
  *
  * The host dumps every tenant's database each night, one after the other
@@ -23,11 +23,18 @@ function downloadName(createdAt) {
   return `${db}-${day}.sql.gz`;
 }
 
+/**
+ * `enabled` is false when the host gives this tenant no backups folder at all:
+ * tenants listed in tenant-dumps.skip (e.g. demo) get no copy to download.
+ */
 async function latestInfo() {
+  const enabled = fs.existsSync(backupDir());
+  if (!enabled) return { enabled: false, available: false };
   try {
     const stat = await fs.promises.stat(backupPath());
-    if (!stat.isFile()) return { available: false };
+    if (!stat.isFile()) return { enabled, available: false };
     return {
+      enabled,
       available: true,
       createdAt: stat.mtime.toISOString(),
       bytes: stat.size,
@@ -35,7 +42,7 @@ async function latestInfo() {
     };
   } catch (error) {
     if (error.code !== 'ENOENT') global.strapi.log.warn(`[backup] can't read ${backupPath()}: ${error.message}`);
-    return { available: false };
+    return { enabled, available: false };
   }
 }
 

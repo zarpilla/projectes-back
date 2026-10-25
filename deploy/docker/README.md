@@ -99,6 +99,7 @@ App admins download last night's dump of their own database from Administració 
 - `render.sh` mounts each tenant's folder **read-only** at `/opt/app/backups` (`TENANT_DUMPS` overrides the root), so a backend never sees another tenant's copy. Without a file the page says there's no copy yet.
 - Install once (needs sudo): copy `render.sh`, `tenant-dumps.sh` and `install-tenant-dumps.sh` to `/var/www/esstrapis-back`, run `sudo bash install-tenant-dumps.sh` (patches `backup-storagebox.sh`, backup next to it, and makes a first run), then deploy so the containers get the new mount.
 - Run by hand: `sudo /usr/local/sbin/tenant-dumps.sh [tenant ...]`.
+- Tenants with no downloadable copy (e.g. `demo`): one name per line in `/var/www/esstrapis-back/tenant-dumps.skip`. `tenant-dumps.sh` skips them and removes their folder, `render.sh` doesn't mount it (on the next deploy), and the page says the entity has no copies.
 
 ## Rolling back
 

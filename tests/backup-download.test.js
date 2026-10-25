@@ -41,7 +41,7 @@ const writeDump = (content = 'dump', when = new Date('2026-10-24T01:05:00Z')) =>
 
 describe('backup controller', () => {
   it('says there is no copy when the host has not written one', async () => {
-    expect(await controller.latest()).toEqual({ available: false });
+    expect(await controller.latest()).toEqual({ enabled: true, available: false });
     const ctx = ctxFor();
     await controller.download(ctx);
     expect(ctx.notFound).toHaveBeenCalled();
@@ -51,6 +51,7 @@ describe('backup controller', () => {
   it('describes the latest copy', async () => {
     writeDump('0123456789');
     expect(await controller.latest()).toEqual({
+      enabled: true,
       available: true,
       createdAt: '2026-10-24T01:05:00.000Z',
       bytes: 10,
@@ -70,6 +71,17 @@ describe('backup controller', () => {
     for await (const chunk of ctx.body) chunks.push(chunk);
     expect(Buffer.concat(chunks).toString()).toBe('0123456789');
     expect(global.strapi.log.info).toHaveBeenCalledWith(expect.stringContaining('downloaded by user 7'));
+  });
+});
+
+describe('a tenant without copies (tenant-dumps.skip, e.g. demo)', () => {
+  it('has no backups folder: not enabled, and nothing to download', async () => {
+    fs.rmSync(dir, { recursive: true, force: true });
+    expect(await controller.latest()).toEqual({ enabled: false, available: false });
+    const ctx = ctxFor();
+    await controller.download(ctx);
+    expect(ctx.notFound).toHaveBeenCalled();
+    expect(ctx.body).toBeUndefined();
   });
 });
 
