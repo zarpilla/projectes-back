@@ -13,6 +13,7 @@
  */
 
 const fs = require('fs');
+const moment = require('moment');
 const os = require('os');
 const path = require('path');
 
@@ -32,11 +33,13 @@ describe('late rules (services/late-order)', () => {
   const at = (hhmm) => new Date(`2026-10-21T${hhmm}:00`);
 
   it('takes the defaults for the empty settings', () => {
-    expect(lateRules(null)).toEqual({ nextDayLimitHour: 14, pickupSameDayLimitHour: 10, lateSurcharge: 25 });
+    const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+    expect(lateRules(null)).toEqual({ nextDayLimitHour: 14, pickupSameDayLimitHour: 10, lateSurcharge: 25, workingDays: weekdays });
     expect(lateRules({ next_day_limit_hour: 13, pickup_same_day_limit_hour: 9, late_surcharge: 30 })).toEqual({
       nextDayLimitHour: 13,
       pickupSameDayLimitHour: 9,
       lateSurcharge: 30,
+      workingDays: weekdays,
     });
   });
 
@@ -57,6 +60,64 @@ describe('late rules (services/late-order)', () => {
     expect(isLatePickup('2026-10-22', at('13:00'), rules)).toBe(true);
     expect(isLatePickup('2026-10-21', at('08:00'), rules)).toBe(true);
     expect(isLatePickup('2026-10-23', at('20:00'), rules)).toBe(false);
+  });
+
+  // «Dies laborables» (2026-10-25): the limit of a day is that of the working
+  // day before it, so Friday's limit closes Monday and the weekend counts as
+  // late for Monday. 2026-10-23 is a Friday.
+  describe('working days', () => {
+    const { workingDaysOf, deadlineOf } = require('../src/services/late-order');
+    const fri = (hhmm) => new Date(`2026-10-23T${hhmm}:00`);
+    const weekdays = lateRules({ next_day_limit_hour: 14 });
+    const withSaturday = lateRules({
+      next_day_limit_hour: 14,
+      working_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+    });
+
+    it('defaults to Monday–Friday and keeps only valid days, in week order', () => {
+      expect(workingDaysOf(null)).toEqual(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']);
+      expect(workingDaysOf([])).toEqual(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']);
+      expect(workingDaysOf(['nope'])).toEqual(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']);
+      expect(workingDaysOf(['sunday', 'Saturday', 'monday'])).toEqual(['monday', 'saturday', 'sunday']);
+    });
+
+    it("Monday's deadline is Friday's limit", () => {
+      expect(moment(deadlineOf('2026-10-26', weekdays)).format('YYYY-MM-DD HH:mm')).toBe('2026-10-23 14:00');
+      expect(moment(deadlineOf('2026-10-27', weekdays)).format('YYYY-MM-DD HH:mm')).toBe('2026-10-26 14:00');
+      expect(moment(deadlineOf('2026-10-26', withSaturday)).format('YYYY-MM-DD HH:mm')).toBe('2026-10-24 14:00');
+    });
+
+    it('a Monday delivery is late from Friday 14 h and all weekend', () => {
+      expect(isLateDelivery('2026-10-26', fri('13:59'), weekdays)).toBe(false);
+      expect(isLateDelivery('2026-10-26', fri('14:00'), weekdays)).toBe(true);
+      expect(isLateDelivery('2026-10-26', new Date('2026-10-24T10:00:00'), weekdays)).toBe(true);
+      expect(isLateDelivery('2026-10-26', new Date('2026-10-25T20:00:00'), weekdays)).toBe(true);
+    });
+
+    it('a Tuesday delivery is on time until Monday 14 h', () => {
+      expect(isLateDelivery('2026-10-27', fri('16:00'), weekdays)).toBe(false);
+      expect(isLateDelivery('2026-10-27', new Date('2026-10-25T20:00:00'), weekdays)).toBe(false);
+      expect(isLateDelivery('2026-10-27', new Date('2026-10-26T13:59:00'), weekdays)).toBe(false);
+      expect(isLateDelivery('2026-10-27', new Date('2026-10-26T14:00:00'), weekdays)).toBe(true);
+    });
+
+    it('with Saturday as a working day, Monday closes on Saturday 14 h', () => {
+      expect(isLateDelivery('2026-10-26', fri('16:00'), withSaturday)).toBe(false);
+      expect(isLateDelivery('2026-10-26', new Date('2026-10-24T13:59:00'), withSaturday)).toBe(false);
+      expect(isLateDelivery('2026-10-26', new Date('2026-10-24T14:00:00'), withSaturday)).toBe(true);
+    });
+
+    it('a morning pickup on Monday follows the same deadline; an afternoon one only its own day', () => {
+      expect(isLatePickup('2026-10-26', fri('13:59'), weekdays)).toBe(false);
+      expect(isLatePickup('2026-10-26', fri('14:00'), weekdays)).toBe(true);
+      expect(isLatePickup('2026-10-26', new Date('2026-10-25T09:00:00'), weekdays)).toBe(true);
+      expect(isLatePickup('2026-10-26', new Date('2026-10-25T09:00:00'), weekdays, { afternoon: true })).toBe(false);
+    });
+
+    it('today and past days are never late here (refused elsewhere)', () => {
+      expect(isLateDelivery('2026-10-23', fri('16:00'), weekdays)).toBe(false);
+      expect(isLateDelivery('2026-10-22', fri('16:00'), weekdays)).toBe(false);
+    });
   });
 
   it('a slot starting at 13 h or later is an afternoon one', () => {

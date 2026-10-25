@@ -155,7 +155,8 @@ async function pickupIsAfternoon(routeId, collectionPointId) {
 
 /**
  * The late flags of an order a member saves (issues/315): `late_order` and its
- * surcharge when the delivery is for tomorrow past the next-day limit,
+ * surcharge when the delivery is entered past its deadline (the next-day
+ * limit of the working day before it, services/late-order),
  * `late_pickup` when the farm pickup is too close. On an update only a moved
  * date is judged again. The office and the staff are exempt: they set
  * «Recàrrec per incidència» by hand.
