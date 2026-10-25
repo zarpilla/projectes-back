@@ -79,16 +79,28 @@ async function forecast() {
   return (await actions.forecast(ctx)) || ctx.body;
 }
 
-// The year-end balance as TresoreriaTable computes it in each mode.
+// The year-end balance as TresoreriaTable computes it in each mode: the
+// marker's balance, the flows from its day on and what the noted balances after
+// that day moved (the ones of the marker's day are already in it).
 const yearEnd = (rows, mode) => {
   const marker = rows.find((r) => r.type === (mode === 'today' ? 'Avui' : 'Inici Any'));
   const from = mode === 'today' ? moment().format('YYYYMMDD') : `${year}0101`;
   const flows = rows
     .filter((r) => r.datef >= from && r.datef <= `${year}1231`)
-    .filter((r) => !r.is_balance_annotation && !r.is_real_balance_adjustment)
-    .reduce((s, r) => s + r.total_amount, 0);
+    .reduce((s, r) => {
+      const noted = r.is_balance_annotation || r.is_real_balance_adjustment;
+      if (!noted) return s + r.total_amount;
+      return r.datef > from ? s + r.balance_delta : s;
+    }, 0);
   return Math.round((marker.subtotal + flows) * 100) / 100;
 };
+
+// a date of this year strictly between 1 January and today, and one after today
+const between = () => {
+  const d = moment().startOf('year').add(Math.floor(moment().dayOfYear() / 2), 'days');
+  return d.format('YYYY-MM-DD');
+};
+const later = moment().add(1, 'day').year() === year ? moment().add(1, 'day').format('YYYY-MM-DD') : null;
 
 describe('Tresoreria modes agree on the year-end balance (issues/252)', () => {
   beforeEach(() => {
@@ -107,6 +119,39 @@ describe('Tresoreria modes agree on the year-end balance (issues/252)', () => {
     const { treasury } = await forecast();
     expect(treasury.some((r) => r.type === 'Avui')).toBe(true);
     expect(yearEnd(treasury, 'today')).toBe(yearEnd(treasury, 'year'));
+  });
+
+  // The open point of issues/252: «Des de l'inici d'any» left out a «Saldo
+  // real» / «Saldo bancari» noted during the year (only «Saldo avui» had it).
+  it('counts the balances noted during the year in both modes', async () => {
+    const bank = { id: 1, name: 'Banc' };
+    const treasuries = [
+      { id: 1, date: `${year}-01-01`, total: 500, is_real_balance: true, bank_account: bank },
+      { id: 2, date: `${year}-01-01`, total: -50, comment: 'Comissió', bank_account: bank },
+    ];
+    if (moment().dayOfYear() > 2) {
+      treasuries.push({ id: 3, date: between(), total: 1234.56, is_real_balance: true, bank_account: bank });
+    }
+    if (later) treasuries.push({ id: 4, date: later, total: 0, balance: '777.77', bank_account: bank });
+    stubStrapi({
+      'api::project.project': [project],
+      'api::bank-account.bank-account': [bank],
+      'api::treasury.treasury': treasuries,
+    });
+    const { treasury } = await forecast();
+    const noted = treasury.filter((r) => r.is_real_balance_adjustment || r.is_balance_annotation);
+    expect(noted.length).toBe(treasuries.length - 1);
+    noted.forEach((r) => expect(typeof r.balance_delta).toBe('number'));
+    expect(yearEnd(treasury, 'today')).toBe(yearEnd(treasury, 'year'));
+    if (later) {
+      // from the «Saldo bancari» on, the balance is the noted one plus the
+      // movements that follow it (same day included: they come after it)
+      const from = later.replace(/-/g, '');
+      const tail = treasury
+        .filter((r) => !r.is_balance_annotation && r.datef >= from && r.datef <= `${year}1231`)
+        .reduce((s, r) => s + r.total_amount, 0);
+      expect(yearEnd(treasury, 'year')).toBe(Math.round((777.77 + tail) * 100) / 100);
+    }
   });
 });
 

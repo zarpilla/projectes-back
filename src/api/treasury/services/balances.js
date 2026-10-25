@@ -11,6 +11,8 @@
  * balance noted for one account replaced the total of all of them.
  *
  * A real-balance adjustment sets its row's amount to the difference (as before).
+ * Noted balances («Saldo real ajustat», «Saldo bancari») also carry
+ * `balance_delta`, the difference they made to the balance (issues/252).
  *
  * Rows without an account belong to `defaultAccount` (the default bank account,
  * or the only one). Miceli has one account and no default: its documents had no
@@ -44,7 +46,10 @@ const walkBalances = (rows, { defaultAccount = null } = {}) => {
     const { accountBalance, delta } = applyRowToBalance(row, balanceByAccount[account]);
     balanceByAccount[account] = accountBalance;
     subtotal = round2(subtotal + delta);
-    return { ...row, subtotal, account_subtotal: accountBalance };
+    // what a noted balance moved the saldo: the monthly table of Tresoreria
+    // adds it when the row comes after the mode's start (issues/252)
+    const noted = row.is_real_balance_adjustment || row.is_balance_annotation;
+    return { ...row, subtotal, account_subtotal: accountBalance, ...(noted ? { balance_delta: delta } : {}) };
   });
 };
 
