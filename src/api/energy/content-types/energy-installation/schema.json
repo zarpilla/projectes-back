@@ -1,0 +1,39 @@
+{
+  "kind": "collectionType",
+  "collectionName": "energy_installations",
+  "info": {
+    "singularName": "energy-installation",
+    "pluralName": "energy-installations",
+    "displayName": "Energy installation",
+    "description": "Comunitat energètica: an installation (Pavelló, Dipòsit) whose power is shared among the members' CUPS"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "power_kw": {
+      "type": "decimal"
+    },
+    "cau": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "start_date": {
+      "type": "date"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true
+    },
+    "notes": {
+      "type": "text"
+    }
+  }
+}

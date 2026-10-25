@@ -585,6 +585,7 @@ export interface ApiContactContact extends Struct.CollectionTypeSchema {
     country: Schema.Attribute.String;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    documents: Schema.Attribute.Media<'images' | 'files' | 'videos' | 'audios', true>;
     email: Schema.Attribute.Email;
     externalId: Schema.Attribute.String;
     externalId2: Schema.Attribute.String;
@@ -595,6 +596,8 @@ export interface ApiContactContact extends Struct.CollectionTypeSchema {
     followup_date: Schema.Attribute.Date;
     is_client: Schema.Attribute.Boolean;
     is_provider: Schema.Attribute.Boolean;
+    join_date: Schema.Attribute.Date;
+    leave_date: Schema.Attribute.Date;
     legal_form: Schema.Attribute.Relation<'oneToOne', 'api::legal-form.legal-form'>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::contact.contact'> & Schema.Attribute.Private;
@@ -611,6 +614,7 @@ export interface ApiContactContact extends Struct.CollectionTypeSchema {
     pickup_discount: Schema.Attribute.Decimal;
     pickup_point: Schema.Attribute.Boolean;
     postcode: Schema.Attribute.String;
+    privacy_accepted: Schema.Attribute.Boolean;
     projectes: Schema.Attribute.Relation<'manyToMany', 'api::project.project'>;
     projects: Schema.Attribute.Relation<'manyToMany', 'api::project.project'>;
     publishedAt: Schema.Attribute.DateTime;
@@ -922,6 +926,96 @@ export interface ApiEmittedInvoiceEmittedInvoice extends Struct.CollectionTypeSc
     user_real: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
     vat_paid_date: Schema.Attribute.DateTime;
     verifactu: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+  };
+}
+
+export interface ApiEnergyEnergyCoefficient extends Struct.CollectionTypeSchema {
+  collectionName: 'energy_coefficients';
+  info: {
+    description: 'Comunitat energ\u00E8tica: the share (0-1) of an installation a CUPS gets from start_date to end_date (empty = still in force)';
+    displayName: 'Energy coefficient';
+    pluralName: 'energy-coefficients';
+    singularName: 'energy-coefficient';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    coefficient: Schema.Attribute.Float & Schema.Attribute.Required;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    end_date: Schema.Attribute.Date;
+    installation: Schema.Attribute.Relation<'manyToOne', 'api::energy.energy-installation'>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::energy.energy-coefficient'> &
+      Schema.Attribute.Private;
+    notes: Schema.Attribute.Text;
+    publishedAt: Schema.Attribute.DateTime;
+    start_date: Schema.Attribute.Date & Schema.Attribute.Required;
+    supply: Schema.Attribute.Relation<'manyToOne', 'api::energy.energy-supply'>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
+export interface ApiEnergyEnergyInstallation extends Struct.CollectionTypeSchema {
+  collectionName: 'energy_installations';
+  info: {
+    description: "Comunitat energ\u00E8tica: an installation (Pavell\u00F3, Dip\u00F2sit) whose power is shared among the members' CUPS";
+    displayName: 'Energy installation';
+    pluralName: 'energy-installations';
+    singularName: 'energy-installation';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    address: Schema.Attribute.String;
+    cau: Schema.Attribute.String;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::energy.energy-installation'> &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String & Schema.Attribute.Required;
+    notes: Schema.Attribute.Text;
+    power_kw: Schema.Attribute.Decimal;
+    publishedAt: Schema.Attribute.DateTime;
+    start_date: Schema.Attribute.Date;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
+export interface ApiEnergyEnergySupply extends Struct.CollectionTypeSchema {
+  collectionName: 'energy_supplies';
+  info: {
+    description: 'Comunitat energ\u00E8tica: a supply point (CUPS) of a member contact';
+    displayName: 'Energy supply (CUPS)';
+    pluralName: 'energy-supplies';
+    singularName: 'energy-supply';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    address: Schema.Attribute.String;
+    city: Schema.Attribute.String;
+    contact: Schema.Attribute.Relation<'manyToOne', 'api::contact.contact'>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    cups: Schema.Attribute.String & Schema.Attribute.Required;
+    holder_name: Schema.Attribute.String;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::energy.energy-supply'> &
+      Schema.Attribute.Private;
+    notes: Schema.Attribute.Text;
+    publishedAt: Schema.Attribute.DateTime;
+    submitted: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
   };
 }
 
@@ -2961,7 +3055,7 @@ export interface ApiYearYear extends Struct.CollectionTypeSchema {
   attributes: {
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
-    deductible_vat_pct: Schema.Attribute.Decimal;
+    deductible_vat_pct: Schema.Attribute.Decimal & Schema.Attribute.DefaultTo<100>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::year.year'> & Schema.Attribute.Private;
     publishedAt: Schema.Attribute.DateTime;
@@ -3416,6 +3510,9 @@ declare module '@strapi/strapi' {
       'api::document-type.document-type': ApiDocumentTypeDocumentType;
       'api::emitted-grant.emitted-grant': ApiEmittedGrantEmittedGrant;
       'api::emitted-invoice.emitted-invoice': ApiEmittedInvoiceEmittedInvoice;
+      'api::energy.energy-coefficient': ApiEnergyEnergyCoefficient;
+      'api::energy.energy-installation': ApiEnergyEnergyInstallation;
+      'api::energy.energy-supply': ApiEnergyEnergySupply;
       'api::estimated-hour.estimated-hour': ApiEstimatedHourEstimatedHour;
       'api::expense-type.expense-type': ApiExpenseTypeExpenseType;
       'api::face-queue.face-queue': ApiFaceQueueFaceQueue;

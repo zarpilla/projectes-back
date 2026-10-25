@@ -399,7 +399,7 @@ export interface PermissionsApplicationPermission extends Struct.ComponentSchema
   };
   attributes: {
     permission: Schema.Attribute.Enumeration<
-      ['projects', 'orders', 'orders_admin', 'orders_delivery', 'hours', 'admin']
+      ['projects', 'orders', 'orders_admin', 'orders_delivery', 'hours', 'admin', 'admin_energy']
     >;
   };
 }
