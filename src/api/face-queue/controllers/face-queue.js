@@ -186,37 +186,33 @@ module.exports = createCoreController(FACE_QUEUE_UID, ({ strapi }) => ({
         return ctx.notFound("Face queue not found");
       }
 
-      if (!faceQueue.registration_number) {
+      const service = strapi.service('api::face-queue.face-queue');
+      const registrationNumber = service.registrationNumberOf(faceQueue);
+      if (!registrationNumber) {
         return ctx.badRequest("No registration number available for this invoice");
       }
 
-      const me = await strapi.documents(ME_UID).findFirst();
+      const me = await strapi.documents(ME_UID).findFirst({ populate: { face_certificate: true } });
 
       if (!me.face || me.face === "no") {
         return ctx.badRequest("FACe is not enabled");
       }
 
-      const service = strapi.service('api::face-queue.face-queue');
       const statusResult = await service.checkInvoiceStatus({
-        registrationNumber: faceQueue.registration_number,
+        registrationNumber,
         mode: faceQueue.mode,
         me,
       });
 
       if (statusResult.success) {
         // Map FACe status to our internal status
-        const estado = statusResult.estado || statusResult.codigoEstado;
-        let newStatus = "registered";
-        if (estado === "REC01" || estado === "delivered" || estado === "entregada") {
-          newStatus = "delivered";
-        } else if (estado === "REC02" || estado === "rejected" || estado === "rechazada") {
-          newStatus = "rejected";
-        }
+        const newStatus = service.mapFaceEstado(statusResult.data);
 
         await strapi.db.query(FACE_QUEUE_UID).update({
           where: { id: faceQueue.id },
           data: {
             status: newStatus,
+            registration_number: registrationNumber,
             response_body: JSON.stringify(statusResult.data, null, 2),
             last_status_check: new Date(),
           },
