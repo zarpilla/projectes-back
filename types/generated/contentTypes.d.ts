@@ -1660,6 +1660,7 @@ export interface ApiPhaseExpensePhaseExpense extends Struct.CollectionTypeSchema
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::phase-expense.phase-expense'> &
       Schema.Attribute.Private;
     paid: Schema.Attribute.Boolean;
+    position: Schema.Attribute.Integer;
     project_original_phase: Schema.Attribute.Relation<
       'manyToOne',
       'api::project-original-phase.project-original-phase'
@@ -1703,6 +1704,7 @@ export interface ApiPhaseIncomePhaseIncome extends Struct.CollectionTypeSchema {
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::phase-income.phase-income'> &
       Schema.Attribute.Private;
     paid: Schema.Attribute.Boolean;
+    position: Schema.Attribute.Integer;
     project_original_phase: Schema.Attribute.Relation<
       'manyToOne',
       'api::project-original-phase.project-original-phase'

@@ -39,4 +39,20 @@ const invalidLineValueMessage = (phases) => {
   return null;
 };
 
-module.exports = { BUDGET_LINE_SCALE, lineTotal, isStorableNumber, invalidLineValueMessage };
+/**
+ * issues/345: the lines of a phase keep the order the form sends them in (the
+ * user can reorder them with drag & drop). Sets `position` to each line's index
+ * and returns the saved lines that only moved: new and edited (`dirty`) lines
+ * carry the position in their own write.
+ */
+const assignLinePositions = (lines) => {
+  const moved = [];
+  (lines || []).forEach((line, index) => {
+    if (!line) return;
+    if (line.id && !line.dirty && line.position !== index) moved.push({ id: line.id, position: index });
+    line.position = index;
+  });
+  return moved;
+};
+
+module.exports = { BUDGET_LINE_SCALE, lineTotal, isStorableNumber, invalidLineValueMessage, assignLinePositions };
