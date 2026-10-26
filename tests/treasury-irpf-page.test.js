@@ -34,7 +34,7 @@ describe('IRPF summary (issues/348)', () => {
       invoice(10, '2026-03-31', 19, { document_type: { id: 1, name: 'Lloguer' }, contact: null }),
     ],
     payrolls: [
-      payroll(20, 3, 200, { irpf_date: '2026-04-20' }),
+      payroll(20, 3, 200, { irpf_date: '2026-04-20', paid: true }),
       payroll(21, 4, 210),
       payroll(22, 4, 0),
     ],
@@ -64,11 +64,21 @@ describe('IRPF summary (issues/348)', () => {
   });
 
   it('gives the year totals and the next payment', () => {
-    expect(summary.totals).toEqual({ total: 649, paid: 369, pending: 280, next: { date: '2026-07-20', amount: 280 } });
+    expect(summary.totals).toEqual({ total: 649, paid: 369, pending: 280, overdue: 0, next: { date: '2026-07-20', amount: 280 } });
   });
 
-  it('has no next payment once everything is paid', () => {
+  it('has no next payment once every date has passed', () => {
     expect(irpfSummary(data, 2026, '2027-01-01').totals.next).toBe(null);
+  });
+
+  // as Tresoreria: a payroll's IRPF is paid when the payroll is, its date
+  // passed or not; an invoice's once its date has passed
+  it("takes a payroll's own paid state, and an unpaid one past its date is overdue", () => {
+    const later = irpfSummary(data, 2026, '2026-08-01');
+    expect(later.rows.find((r) => r.key === 'payrolls:21')).toMatchObject({ paid: false });
+    expect(later.rows.find((r) => r.key === 'received-invoices:2')).toMatchObject({ paid: true });
+    expect(later.quarters[1].paid).toBe(false);
+    expect(later.totals).toMatchObject({ pending: 210, overdue: 210, next: null });
   });
 });
 

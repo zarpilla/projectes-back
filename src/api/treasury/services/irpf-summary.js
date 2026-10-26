@@ -13,8 +13,8 @@ const { round2 } = require('./balances');
  *   «IRPF Nòmina» rows (by default the 20th after the quarter too).
  *
  * The quarter is the document's (its emission date, or the payroll's month).
- * A row is paid once its payment date has passed, as Tresoreria counts the
- * invoices' IRPF (issues/242). The IRPF withheld from the entity on emitted
+ * Paid as Tresoreria shows it: an invoice's or expense's IRPF once its payment
+ * date has passed (issues/242), a payroll's when the payroll is paid. The IRPF withheld from the entity on emitted
  * invoices is not paid by it and is not here.
  */
 
@@ -48,7 +48,7 @@ function documentRow(doc, kind, today) {
   };
 }
 
-function payrollRow(payroll, today) {
+function payrollRow(payroll) {
   const year = payroll.year && payroll.year.year;
   const month = payroll.month && payroll.month.month;
   const date = year && month
@@ -75,7 +75,7 @@ function payrollRow(payroll, today) {
     irpf,
     pct: pctOf(irpf, base),
     payment_date: paymentDate,
-    paid: paymentDate < today,
+    paid: !!payroll.paid,
     to: `/document/${payroll.id}/payrolls`,
   };
 }
@@ -125,7 +125,7 @@ function irpfSummary({ receivedInvoices = [], receivedExpenses = [], payrolls = 
   const rows = [
     ...receivedInvoices.filter((d) => Number(d.total_irpf) && d.emitted).map((d) => documentRow(d, 'received-invoices', today)),
     ...receivedExpenses.filter((d) => Number(d.total_irpf) && d.emitted).map((d) => documentRow(d, 'received-expenses', today)),
-    ...payrolls.filter((p) => Number(p.irpf_base)).map((p) => payrollRow(p, today)),
+    ...payrolls.filter((p) => Number(p.irpf_base)).map((p) => payrollRow(p)),
   ]
     .filter((r) => r.year === Number(year))
     .sort((a, b) => a.date.localeCompare(b.date) || a.code.localeCompare(b.code));
@@ -133,16 +133,19 @@ function irpfSummary({ receivedInvoices = [], receivedExpenses = [], payrolls = 
   const total = round2(rows.reduce((s, r) => s + r.irpf, 0));
   const paid = round2(rows.filter((r) => r.paid).reduce((s, r) => s + r.irpf, 0));
   const pending = rows.filter((r) => !r.paid);
+  // an unpaid payroll whose IRPF date has passed is overdue, not the next payment
+  const overdue = round2(pending.filter((r) => r.payment_date < today).reduce((s, r) => s + r.irpf, 0));
+  const upcoming = pending.filter((r) => r.payment_date >= today);
   let next = null;
-  if (pending.length) {
-    const date = pending.map((r) => r.payment_date).sort()[0];
-    next = { date, amount: round2(pending.filter((r) => r.payment_date === date).reduce((s, r) => s + r.irpf, 0)) };
+  if (upcoming.length) {
+    const date = upcoming.map((r) => r.payment_date).sort()[0];
+    next = { date, amount: round2(upcoming.filter((r) => r.payment_date === date).reduce((s, r) => s + r.irpf, 0)) };
   }
 
   return {
     year: Number(year),
     today,
-    totals: { total, paid, pending: round2(total - paid), next },
+    totals: { total, paid, pending: round2(total - paid), overdue, next },
     quarters: quarterRows(rows, Number(year)),
     rows,
   };

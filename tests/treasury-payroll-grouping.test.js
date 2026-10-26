@@ -119,6 +119,33 @@ describe('payroll lines grouped in Tresoreria (issues/347)', () => {
     expect(ss[0].validation_keys).toEqual(['payrolls:1:ss', 'payrolls:2:ss']);
   });
 
+  it('gives one IRPF line per payment date, whatever the months (and a net line per month)', async () => {
+    const q3 = (id, username, month, paid) => payroll(id, username, {
+      month: { month }, net_date: `2026-0${month}-28`, paid_date: paid ? `2026-0${month}-28` : null, paid, irpf_date: '2026-10-20', ss_base: 0,
+    });
+    stubStrapi({
+      'api::year.year': [{ id: 1, year: 2026, deductible_vat_pct: 100 }],
+      'api::payroll.payroll': [
+        q3(1, 'carla', 7, true), q3(2, 'domi', 7, true), q3(3, 'alex', 7, false),
+        q3(4, 'carla', 8, true), q3(5, 'domi', 8, true), q3(6, 'alex', 8, false),
+        q3(7, 'carla', 9, false), q3(8, 'alex', 9, false),
+      ],
+    });
+    const { treasury } = await forecast();
+    const irpf = treasury.filter((r) => r.type === 'IRPF Nòmina');
+    // paid and unpaid payrolls stay apart: two lines for the quarter, not five
+    expect(irpf).toHaveLength(2);
+    const paid = irpf.find((r) => r.paid);
+    expect(paid).toMatchObject({
+      concept: 'IRPF nòmines 2026-07 a 2026-08 (4 nòmines)', contact: 'carla, domi', total_amount: -600, to: '/irpf?any=2026&trimestre=3',
+    });
+    const pending = irpf.find((r) => !r.paid);
+    expect(pending).toMatchObject({ concept: 'IRPF nòmines 2026-07 a 2026-09 (4 nòmines)', contact: 'alex, carla', total_amount: -600 });
+    expect(pending.validation_keys).toHaveLength(4);
+    // the net payments are still one line per month (and paid state)
+    expect(treasury.filter((r) => /^Nòmin/.test(r.type) && /^Nòmines 2026-07/.test(r.concept))).toHaveLength(1);
+  });
+
   it('keeps months apart and is validated only when all its payrolls are', async () => {
     stubStrapi(
       {

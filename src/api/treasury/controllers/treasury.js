@@ -1279,7 +1279,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         populate: { contact: { select: ['id', 'name'] }, document_type: { select: ['id', 'name'] } },
       }),
       strapi.db.query('api::payroll.payroll').findMany({
-        select: ['id', 'emitted', 'total_base', 'irpf_base', 'irpf_date'],
+        select: ['id', 'emitted', 'paid', 'total_base', 'irpf_base', 'irpf_date'],
         where: { year: { year }, irpf_base: { $ne: 0, $notNull: true } },
         populate: { year: true, month: true, users_permissions_user: { select: ['id', 'username'] } },
       }),
