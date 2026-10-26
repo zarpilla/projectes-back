@@ -164,8 +164,13 @@ async function applyLateFlags(payload, user, stored = null) {
     const pickupDate = payload.collection_pickup_date;
     if (!pickupDate) {
       payload.late_pickup = false;
-    } else if (!(stored && sameDay(stored.collection_pickup_date, pickupDate))) {
+    } else {
       const routeId = relationId(payload.collection_pickup_route ?? (stored && stored.collection_pickup_route));
+      // a route changed to or from a «Ruta de tarda» is judged again too (issues/346)
+      // (ids only: a documentId sent for the same route is no move)
+      const storedRouteId = stored ? relationId(stored.collection_pickup_route) : undefined;
+      const routeMoved = typeof routeId === 'number' && typeof storedRouteId === 'number' && routeId !== storedRouteId;
+      if (stored && sameDay(stored.collection_pickup_date, pickupDate) && !routeMoved) return;
       const afternoon = await pickupIsAfternoon(routeId);
       payload.late_pickup = isLatePickup(pickupDate, now, rules, { afternoon });
     }

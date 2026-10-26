@@ -340,6 +340,21 @@ describe('order controller: late flags', () => {
     expect(ctx.request.body.data.late_order).toBe(true);
   });
 
+  it('judges a pickup again when its route moves to or from a «Ruta de tarda» (issues/346)', async () => {
+    // stored on morning route 5 for tomorrow, marked late; same date, now route 6 (tarda)
+    const stored = { id: 1, estimated_delivery_date: '2026-10-24', collection_pickup_date: '2026-10-22', collection_pickup_route: { id: 5 }, collection_point: { id: 8 } };
+    const tarda = load({ stored });
+    const ctx = ctxFor({ collection_pickup_date: '2026-10-22', collection_pickup_route: 6 }, { state: { v3: { numericId: 1 } } });
+    await tarda.ctrl.update(ctx);
+    expect(ctx.request.body.data.late_pickup).toBe(false);
+
+    // the same route sent by documentId is no move
+    const same = load({ stored });
+    const keep = ctxFor({ collection_pickup_date: '2026-10-22', collection_pickup_route: 'abc123doc' }, { state: { v3: { numericId: 1 } } });
+    await same.ctrl.update(keep);
+    expect(keep.request.body.data.late_pickup).toBeUndefined();
+  });
+
   it('judges a pickup again only when its date moves', async () => {
     const stored = { id: 1, estimated_delivery_date: '2026-10-24', collection_pickup_date: '2026-10-22', collection_pickup_route: { id: 5 }, collection_point: { id: 8 } };
     const same = load({ stored });

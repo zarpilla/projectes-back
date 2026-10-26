@@ -65,7 +65,8 @@ async function recheckLateFlags() {
     .leftJoin('orders_collection_pickup_route_lnk as pr', 'pr.order_id', 'o.id')
     .leftJoin('orders_collection_order_lnk as co', 'co.order_id', 'o.id')
     .where((q) => q.where('o.late_order', true).orWhere('o.late_pickup', true))
-    .whereNot('o.is_collection_order', true)
+    // NULL on most orders: «not true» in SQL would skip them
+    .where((q) => q.whereNull('o.is_collection_order').orWhere('o.is_collection_order', false))
     .whereNotIn('o.status', CLOSED)
     .select(
       'o.id',
