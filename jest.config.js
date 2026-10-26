@@ -4,6 +4,8 @@
 module.exports = {
   testEnvironment: 'node',
   testMatch: ['<rootDir>/tests/**/*.test.js'],
+  // UTC like the containers (issues/346)
+  globalSetup: '<rootDir>/tests/global-setup-tz.js',
   // utils/ holds the invoice and delivery-note PDF builders.
   collectCoverageFrom: ['src/**/*.js', 'utils/**/*.js', '!src/admin/**', '!**/node_modules/**'],
   coverageDirectory: 'coverage',

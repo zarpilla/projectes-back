@@ -611,39 +611,36 @@ module.exports = class MicroinvoiceOrder {
   }
 
   /**
-   * «COMANDA EXPRESS» of a late order (issues/315): a warning triangle and the
-   * words in a thick frame, in black so it prints on any printer, in the free
-   * corner right of the pickup box.
+   * The mark of an order entered out of time (issues/315, 346): only a big
+   * warning triangle, in black so it prints on any printer, in the free corner
+   * right of the pickup box. It said «COMANDA EXPRESS» next to it; La
+   * Diligència: it is a surcharge for breaking the rules, not an express
+   * service.
    */
-  generateExpress() {
-    if (!this.options.data.invoice.express) return;
-    const x = 300;
-    const y = 292;
-    const width = 275;
-    const height = 62;
+  generateLateMark() {
+    if (!this.options.data.invoice.late) return;
+    // 84 wide, 72 high, its base on the line above the footer
+    const width = 84;
+    const height = 72;
+    const tx = 575 - width;
+    const ty = 286;
     const doc = this.document;
     doc.save();
-    doc.lineWidth(3).rect(x, y, width, height).stroke('#000000');
-    // the triangle: 46 wide, a rounded outline with a «!» inside
-    const tx = x + 12;
-    const ty = y + 9;
     doc
-      .lineWidth(4)
+      .lineWidth(6)
       .lineJoin('round')
-      .moveTo(tx + 23, ty)
-      .lineTo(tx + 46, ty + 42)
-      .lineTo(tx, ty + 42)
+      .moveTo(tx + width / 2, ty)
+      .lineTo(tx + width, ty + height)
+      .lineTo(tx, ty + height)
       .closePath()
       .stroke('#000000');
-    doc.lineWidth(4).lineCap('round').moveTo(tx + 23, ty + 14).lineTo(tx + 23, ty + 28).stroke('#000000');
-    doc.circle(tx + 23, ty + 35, 2.4).fill('#000000');
-    // as big as fits on one line
-    const label = 'COMANDA EXPRESS';
-    const room = width - 80;
-    doc.fillColor('#000000').font(this.getFontOrFallback('bold', label));
-    let size = 26;
-    while (size > 12 && doc.fontSize(size).widthOfString(label) > room) size -= 1;
-    doc.fontSize(size).text(label, x + 70, y + (height - size) / 2, { lineBreak: false });
+    doc
+      .lineWidth(8)
+      .lineCap('round')
+      .moveTo(tx + width / 2, ty + 24)
+      .lineTo(tx + width / 2, ty + 46)
+      .stroke('#000000');
+    doc.circle(tx + width / 2, ty + 58, 4.5).fill('#000000');
     doc.restore();
   }
 
@@ -838,7 +835,7 @@ module.exports = class MicroinvoiceOrder {
       this.generateLegal();
       this.generatePartsLines(i);
       this.generateRectangle(20, 260, 222, 80, this.options.style.text.primaryColor);
-      this.generateExpress();
+      this.generateLateMark();
       this.generateFooter();
       if (i < this.options.data.pages - 1) {
         this.storage.cursor.y = 0;
