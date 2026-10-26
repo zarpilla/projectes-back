@@ -320,6 +320,7 @@ export interface OptionsOrdersOptions extends Struct.ComponentSchema {
     multidelivery_discount: Schema.Attribute.Decimal;
     next_day_limit_hour: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<14>;
     pickup_same_day_limit_hour: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<10>;
+    working_days: Schema.Attribute.JSON;
   };
 }
 

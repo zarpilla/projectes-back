@@ -1427,6 +1427,7 @@ export interface ApiMeMe extends Struct.SingleTypeSchema {
     quotes: Schema.Attribute.Component<'options.quotes', false>;
     state: Schema.Attribute.String;
     task_emails: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    time_zone: Schema.Attribute.String & Schema.Attribute.DefaultTo<'Europe/Andorra'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     verifactu: Schema.Attribute.Enumeration<['no', 'test', 'real']>;
@@ -2434,6 +2435,7 @@ export interface ApiRouteRoute extends Struct.CollectionTypeSchema {
   };
   attributes: {
     active: Schema.Attribute.Boolean;
+    afternoon: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     delivery_user: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
