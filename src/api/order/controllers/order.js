@@ -41,7 +41,7 @@ const changeLog = require('../../../services/change-log');
 const { orderTotals, TOTALS_SELECT } = require('../services/order-totals');
 const { currentOrderVolumeDiscount } = require('../services/volume-discount');
 const { relationId } = require('../../../services/relation-input');
-const { isAfternoonSlot, isLateDelivery, isLatePickup, lateRules } = require('../../../services/late-order');
+const { isLateDelivery, isLatePickup, lateRules } = require('../../../services/late-order');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 // collection_point and route_rate: the quick edit picks the rate with them; an
@@ -116,41 +116,26 @@ async function ordersOptions() {
  */
 async function deliveryDateRefusal(date, user) {
   if (!date) return null;
-  const day = moment(date);
-  if (!day.isValid()) return null;
-  const tomorrow = moment().add(1, 'day');
-  if (!day.isBefore(tomorrow, 'day')) return null;
+  if (!moment(date).isValid()) return null;
+  // the tenant's days, not the server's UTC ones (issues/346)
+  const day = toQueryDay(date);
+  const today = toQueryDay(new Date());
+  if (day > today) return null;
   if (await exemptFromDateRules(user)) return null;
   return "No es pot crear la comanda: la data d'entrega ha de ser a partir de demà.";
 }
 
 /**
- * Whether the farm pickup of an order is in the afternoon: the time slot of
- * its pickup route in the collection point's town, else the route's
- * (issues/314, 315).
+ * Whether the farm pickup of an order is on an afternoon route: «Ruta de
+ * tarda» on the route (issues/346). It used to be guessed from the route's
+ * or the town's time slot, which no route had.
  */
-async function pickupIsAfternoon(routeId, collectionPointId) {
+async function pickupIsAfternoon(routeId) {
   if (typeof routeId !== 'number') return false;
   const route = await strapi.db
     .query('api::route.route')
-    .findOne({ where: { id: routeId }, select: ['id', 'time_from'] });
-  let timeFrom = route ? route.time_from : null;
-  if (typeof collectionPointId === 'number') {
-    const point = await strapi.db
-      .query('api::contact.contact')
-      .findOne({ where: { id: collectionPointId }, select: ['id', 'city'] });
-    const city =
-      point && point.city
-        ? await strapi.db.query('api::city.city').findOne({ where: { name: point.city }, select: ['id'] })
-        : null;
-    if (city) {
-      const cityRoute = await strapi.db
-        .query('api::city-route.city-route')
-        .findOne({ where: { city: city.id, route: routeId }, select: ['id', 'time_from'] });
-      if (cityRoute && cityRoute.time_from) timeFrom = cityRoute.time_from;
-    }
-  }
-  return isAfternoonSlot(timeFrom);
+    .findOne({ where: { id: routeId }, select: ['id', 'afternoon'] });
+  return Boolean(route && route.afternoon);
 }
 
 /**
@@ -165,7 +150,8 @@ async function applyLateFlags(payload, user, stored = null) {
   if (await exemptFromDateRules(user)) return;
   const rules = lateRules(await ordersOptions());
   const now = new Date();
-  const sameDay = (a, b) => Boolean(a && b) && moment(a).isSame(b, 'day');
+  // the tenant's days: the form sends local midnight, the day before in UTC (issues/346)
+  const sameDay = (a, b) => Boolean(a && b) && toQueryDay(a) === toQueryDay(b);
 
   const deliveryDate = payload.estimated_delivery_date;
   if (deliveryDate && !(stored && sameDay(stored.estimated_delivery_date, deliveryDate))) {
@@ -180,8 +166,7 @@ async function applyLateFlags(payload, user, stored = null) {
       payload.late_pickup = false;
     } else if (!(stored && sameDay(stored.collection_pickup_date, pickupDate))) {
       const routeId = relationId(payload.collection_pickup_route ?? (stored && stored.collection_pickup_route));
-      const pointId = relationId(payload.collection_point ?? (stored && stored.collection_point));
-      const afternoon = await pickupIsAfternoon(routeId, pointId);
+      const afternoon = await pickupIsAfternoon(routeId);
       payload.late_pickup = isLatePickup(pickupDate, now, rules, { afternoon });
     }
   }
@@ -745,8 +730,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
             details: { parts },
             // «Peu de les comandes» (Configuració general), under the issuer line
             footer: me.order_footer,
-            // a late order prints «COMANDA EXPRESS» (issues/315)
-            express: order.late_order === true,
+            // a late order prints a warning triangle (issues/315, 346)
+            late: order.late_order === true,
           },
         },
       });
@@ -956,7 +941,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
         })
       : null;
     if (payload.estimated_delivery_date) {
-      if (!stored || !moment(stored.estimated_delivery_date).isSame(payload.estimated_delivery_date, 'day')) {
+      if (!stored || toQueryDay(stored.estimated_delivery_date) !== toQueryDay(payload.estimated_delivery_date)) {
         const dateRefusal = await deliveryDateRefusal(payload.estimated_delivery_date, ctx.state.user);
         if (dateRefusal) return ctx.badRequest(dateRefusal.replace('crear', 'moure'));
       }

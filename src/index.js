@@ -42,6 +42,8 @@ const { fillEmptyRelationOrder } = require('./services/relation-order');
 const { fillEmptyYearVatPct } = require('./services/fill-empty-year-vat-pct');
 const { migratePartnerAmounts } = require('./services/capital-contributions');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
+const { loadTimeZone } = require('./services/time-zone');
+const { recheckLateFlags } = require('./services/recheck-late-flags');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
 const { ensureChangeLogIndex } = require('./services/ensure-change-log-index');
@@ -84,6 +86,8 @@ module.exports = {
    */
   async bootstrap({ strapi }) {
     registerDateFieldNormalizer();
+    // «Zona horària» (Configuració general) before any date is stored (issues/346)
+    await loadTimeZone();
     registerRolePermissionsInvalidation();
     // GET /api/logos is served from memory until a logo is written (issues/308)
     registerLogosCacheInvalidation();
@@ -197,6 +201,8 @@ module.exports = {
       // 2026-10-25: a contact's capital contribution becomes a list (date, amount,
       // comment); its old amount and date are its first one.
       ['migratePartnerAmounts', migratePartnerAmounts, { runOnce: true }],
+      // issues/346: «Ruta de tarda» on the «TARDA» routes; the late marks of open orders judged again.
+      ['recheckLateFlags', recheckLateFlags, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

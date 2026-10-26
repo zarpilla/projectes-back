@@ -97,6 +97,10 @@
     },
     "time_to": {
       "type": "time"
+    },
+    "afternoon": {
+      "type": "boolean",
+      "default": false
     }
   }
 }

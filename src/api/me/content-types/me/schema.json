@@ -177,6 +177,10 @@
     "front_url": {
       "type": "string"
     },
+    "time_zone": {
+      "type": "string",
+      "default": "Europe/Andorra"
+    },
     "pdf_invoice_parser": {
       "type": "boolean",
       "default": false
