@@ -11,8 +11,8 @@
 # app user with the `admin` permission; its generated password is printed at the end.
 #
 # Steps, each skipped when already done, so a failed run can simply be rerun:
-#   1. envs/<name>.env    shared settings (SMTP, API keys...) copied from the
-#                         template tenant's env, plus new secrets and DB password
+#   1. envs/<name>.env    shared settings (SMTP, API keys...) copied from
+#                         envs/_shared.env, plus new secrets and DB password
 #   2. database           <name>_v5 and MySQL user <name> (asks the MySQL admin password)
 #   3. backend            tenants.conf, render.sh, start <name>-blue, wait, switch the proxy
 #   4. front              /var/www/projectes-<name>/docker, started, added to sites.conf
@@ -26,7 +26,7 @@ cd "$(dirname "$(readlink -f "$0")")"
 WWW=${WWW:-/var/www}
 FRONT_DIR=${FRONT_DIR:-$WWW/esstrapis-front}
 NGINX_DIR=${NGINX_DIR:-/etc/nginx}
-TEMPLATE_ENV=${TEMPLATE_ENV:-envs/buida.env}
+TEMPLATE_ENV=${TEMPLATE_ENV:-envs/_shared.env}
 MYSQL_ADMIN_USER=${MYSQL_ADMIN_USER:-admin}
 HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-600}   # the first boot creates ~360 tables
 FRONT_IMAGE=webcoop/esstrapis-front
