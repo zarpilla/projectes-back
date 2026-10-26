@@ -30,6 +30,7 @@ const { queryTables } = require('../../../services/query-tables');
 const { COLUMNS: PROJECT_TOTALS_COLUMNS } = require('../../project/services/project-totals');
 const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
+const { groupPayrollRows } = require('../services/payroll-groups');
 const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../services/vat-forecast');
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
 const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
@@ -929,7 +930,13 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     // `periodification` ("no"/"prevista"/"real") parameter. The treasury rows
     // therefore reflect real/expected cash movements only.
 
+    // grouped per month, bank account and date below (issues/347)
+    const payrollRows = [];
     for (let e of payrolls) {
+      // a payroll without year or month stays on its own line
+      const payroll_month = e.year && e.year.year && e.month && e.month.month
+        ? `${e.year.year}-${zeroPad(e.month.month, 2)}`
+        : `payroll:${e.id}`;
       const date = e.paid_date
         ? moment(e.paid_date, 'YYYY-MM-DD')
         : moment.max([e.emitted ? moment(e.emitted, 'YYYY-MM-DD') : moment(), moment()]);
@@ -966,7 +973,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         validation_key: validationKey,
         is_validated: validationMap[validationKey] || false,
       };
-      treasury.push(expense);
+      payrollRows.push({ ...expense, payroll_month, payroll_part: 'net' });
 
       if (e.irpf_base) {
         const irpfValidationKey = getValidationKey('payrolls', e.id, 'irpf');
@@ -988,7 +995,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           validation_key: irpfValidationKey,
           is_validated: validationMap[irpfValidationKey] || false,
         };
-        treasury.push(expense2);
+        payrollRows.push({ ...expense2, payroll_month, payroll_part: 'irpf' });
       }
 
       if (e.other_base) {
@@ -1012,7 +1019,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           validation_key: otherValidationKey,
           is_validated: validationMap[otherValidationKey] || false,
         };
-        treasury.push(expense4);
+        payrollRows.push({ ...expense4, payroll_month, payroll_part: 'other' });
       }
 
       if (e.ss_base) {
@@ -1035,9 +1042,10 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           validation_key: ssValidationKey,
           is_validated: validationMap[ssValidationKey] || false,
         };
-        treasury.push(expense3);
+        payrollRows.push({ ...expense3, payroll_month, payroll_part: 'ss' });
       }
     }
+    treasury.push(...groupPayrollRows(payrollRows));
 
     // Group VAT documents by quarter for executed VAT
     const vatByQuarter = {};
