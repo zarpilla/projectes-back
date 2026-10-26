@@ -23,5 +23,10 @@ module.exports = {
       path: '/treasuries/invoicing-forecast',
       handler: 'treasury.invoicingForecast',
     },
+    {
+      method: 'GET',
+      path: '/treasuries/irpf',
+      handler: 'treasury.irpf',
+    },
   ],
 };

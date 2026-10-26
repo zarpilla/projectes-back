@@ -31,6 +31,7 @@ const { COLUMNS: PROJECT_TOTALS_COLUMNS } = require('../../project/services/proj
 const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { groupPayrollRows } = require('../services/payroll-groups');
+const { irpfSummary } = require('../services/irpf-summary');
 const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../services/vat-forecast');
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
 const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
@@ -1256,6 +1257,36 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
   // Informes › Previsió facturació: the planned incomes still to invoice (all
   // project states; the report filters them) and the invoiced base per month
   // over the last 12 months.
+  /**
+   * GET /api/treasuries/irpf?year=YYYY — the IRPF page (issues/348): the
+   * withholdings paid to Hisenda that year, per quarter and per document.
+   */
+  async irpf(ctx) {
+    const year = parseInt(ctx.query.year, 10) || moment().year();
+    const from = `${year}-01-01`;
+    const to = `${year}-12-31`;
+    const documentWhere = { emitted: { $gte: from, $lte: to }, total_irpf: { $ne: 0, $notNull: true } };
+    const documentSelect = ['id', 'code', 'emitted', 'total_base', 'total_irpf'];
+    const [receivedInvoices, receivedExpenses, payrolls] = await Promise.all([
+      strapi.db.query('api::received-invoice.received-invoice').findMany({
+        select: documentSelect,
+        where: documentWhere,
+        populate: { contact: { select: ['id', 'name'] } },
+      }),
+      strapi.db.query('api::received-expense.received-expense').findMany({
+        select: documentSelect,
+        where: documentWhere,
+        populate: { contact: { select: ['id', 'name'] }, document_type: { select: ['id', 'name'] } },
+      }),
+      strapi.db.query('api::payroll.payroll').findMany({
+        select: ['id', 'emitted', 'total_base', 'irpf_base', 'irpf_date'],
+        where: { year: { year }, irpf_base: { $ne: 0, $notNull: true } },
+        populate: { year: true, month: true, users_permissions_user: { select: ['id', 'username'] } },
+      }),
+    ]);
+    ctx.body = irpfSummary({ receivedInvoices, receivedExpenses, payrolls }, year, moment().format('YYYY-MM-DD'));
+  },
+
   async invoicingForecast(ctx) {
     // without the trashed projects (issues/236)
     const projects = (await strapi.db.query('api::project.project').findMany({ populate: PROJECT_POPULATE })).filter(
