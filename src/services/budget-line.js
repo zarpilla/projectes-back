@@ -55,4 +55,47 @@ const assignLinePositions = (lines) => {
   return moved;
 };
 
-module.exports = { BUDGET_LINE_SCALE, lineTotal, isStorableNumber, invalidLineValueMessage, assignLinePositions };
+/**
+ * The saved order of a list (phases of a project, lines of a phase): by
+ * `position`, the rows without one (never reordered) after them in the order
+ * they came. Stable; sorts in place and returns the list.
+ */
+const sortByPosition = (rows) => {
+  if (!Array.isArray(rows)) return rows;
+  const rank = (row) => {
+    const p = row && row.position;
+    return p === null || p === undefined || p === '' ? Infinity : Number(p);
+  };
+  const sorted = rows.map((row, index) => ({ row, index })).sort((a, b) => rank(a.row) - rank(b.row) || a.index - b.index);
+  sorted.forEach((item, i) => {
+    rows[i] = item.row;
+  });
+  return rows;
+};
+
+/**
+ * Phases and their lines in the saved order (issues/345 lines, phases too).
+ * Every endpoint that hands phases to the front sorts them: a form that saves
+ * them back without showing them (an invoice fixing its #ESBORRANY# line, for
+ * instance) sends them in this order, and updatePhases stores that order.
+ */
+const sortPhasesByPosition = (phases) => {
+  if (!Array.isArray(phases)) return phases;
+  sortByPosition(phases);
+  phases.forEach((phase) => {
+    if (!phase) return;
+    sortByPosition(phase.incomes);
+    sortByPosition(phase.expenses);
+  });
+  return phases;
+};
+
+module.exports = {
+  BUDGET_LINE_SCALE,
+  lineTotal,
+  isStorableNumber,
+  invalidLineValueMessage,
+  assignLinePositions,
+  sortByPosition,
+  sortPhasesByPosition,
+};
