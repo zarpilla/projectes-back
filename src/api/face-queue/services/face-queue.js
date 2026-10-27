@@ -30,6 +30,7 @@ const { createCoreService } = require('@strapi/strapi').factories;
 const { getMe } = require('../../../services/me-settings');
 
 const FACE_QUEUE_UID = 'api::face-queue.face-queue';
+const { mapFaceEstado, registrationNumberOf } = require('../utils/face-status');
 const EMITTED_INVOICE_UID = 'api::emitted-invoice.emitted-invoice';
 const ME_UID = 'api::me.me';
 const CONTACT_UID = 'api::contact.contact';
@@ -739,7 +740,8 @@ const submitInvoiceToFace = async ({ xml, nif: _nif, dir3: _dir3, mode, me }) =>
     return {
       success: true,
       statusCode: response.status,
-      registrationNumber: response.data.numero_registro || response.data.registration_number,
+      // FACe's REST API answers `registryCode` (REGAGE…); the other names are the old guesses
+      registrationNumber: response.data.registryCode || response.data.numero_registro || response.data.registration_number,
       estado: response.data.estado,
       data: response.data,
     };
@@ -1140,20 +1142,9 @@ const startFaceProcess = async (faceQueueInput) => {
   );
 };
 
-/**
- * Map a FACe estado code to our internal queue status.
- */
-const mapFaceEstado = (estado) => {
-  if (estado === "REC01" || estado === "delivered" || estado === "entregada") {
-    return "delivered";
-  }
-  if (estado === "REC02" || estado === "rejected" || estado === "rechazada") {
-    return "rejected";
-  }
-  return "registered";
-};
-
 module.exports = createCoreService(FACE_QUEUE_UID, ({ strapi }) => ({
+  mapFaceEstado,
+  registrationNumberOf,
   startFaceProcess,
   checkInvoiceStatus,
   submitInvoiceToFace,
@@ -1164,7 +1155,7 @@ module.exports = createCoreService(FACE_QUEUE_UID, ({ strapi }) => ({
    */
   async cronCheckStatus() {
     try {
-      const me = await strapi.documents(ME_UID).findFirst();
+      const me = await strapi.documents(ME_UID).findFirst({ populate: { face_certificate: true } });
 
       if (!me || !me.face || me.face === "no") {
         return; // FACe not enabled
@@ -1190,24 +1181,26 @@ module.exports = createCoreService(FACE_QUEUE_UID, ({ strapi }) => ({
       strapi.log.info(`[CRON] Checking FACe status for ${pendingQueues.length} invoices`);
 
       for (const queue of pendingQueues) {
-        if (!queue.registration_number) {
+        const registrationNumber = registrationNumberOf(queue);
+        if (!registrationNumber) {
           continue;
         }
 
         try {
           const statusResult = await checkInvoiceStatus({
-            registrationNumber: queue.registration_number,
+            registrationNumber,
             mode: queue.mode,
             me,
           });
 
           if (statusResult.success) {
-            const newStatus = mapFaceEstado(statusResult.estado || statusResult.codigoEstado);
+            const newStatus = mapFaceEstado(statusResult.data);
 
             await strapi.db.query(FACE_QUEUE_UID).update({
               where: { id: queue.id },
               data: {
                 status: newStatus,
+                registration_number: registrationNumber,
                 response_body: JSON.stringify(statusResult.data, null, 2),
                 last_status_check: new Date(),
               },

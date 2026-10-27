@@ -5,6 +5,7 @@
 // answers 400 with the message, which the views already display.
 const { errors: { ApplicationError, ValidationError } } = require('@strapi/utils');
 const { relationId } = require('../../../../services/relation-input');
+const { refreshContactCapital } = require('../../../../services/capital-contributions');
 
 const blank = (value) => value === undefined || value === null || String(value).trim() === '';
 
@@ -29,13 +30,41 @@ async function checkTradeName(data, where = null) {
   if (owner) throw new ValidationError("El nom comercial és obligatori als punts d'entrega");
 }
 
+/**
+ * `partner_amount` / `partner_amount_date` are the summary of the contact's
+ * capital contributions (services/capital-contributions.js): a write that
+ * brings the contributions drops what the form sent back for them, and the
+ * summary is written again after it.
+ */
+function dropCapitalSummary(data) {
+  if (!('capital_contributions' in data)) return;
+  delete data.partner_amount;
+  delete data.partner_amount_date;
+}
+
+async function refreshCapital(event) {
+  const data = event.params.data || {};
+  const id = event.result && event.result.id;
+  if ('capital_contributions' in data && id) await refreshContactCapital(id);
+}
+
 module.exports = {
   async beforeCreate(event) {
     await checkTradeName(event.params.data || {});
+    dropCapitalSummary(event.params.data || {});
+  },
+
+  async afterCreate(event) {
+    await refreshCapital(event);
   },
 
   async beforeUpdate(event) {
     await checkTradeName(event.params.data || {}, event.params.where);
+    dropCapitalSummary(event.params.data || {});
+  },
+
+  async afterUpdate(event) {
+    await refreshCapital(event);
   },
 
   async beforeDelete(event) {

@@ -20,10 +20,13 @@ module.exports = createCoreController('api::treasury-validation.treasury-validat
   /**
    * POST /api/treasury-validations/toggle
    * Toggles validation for a treasury movement.
-   * Body: { entity_type, entity_id, sub_type?, notes? }
+   * Body: { entity_type, entity_id, sub_type?, notes?, validated? }
+   * With `validated` (true/false) it sets that state instead of toggling: a
+   * Tresoreria line grouping several payrolls validates them all at once,
+   * some of which may already be validated (issues/347).
    */
   async toggle(ctx) {
-    const { entity_type, entity_id, sub_type, notes } = ctx.request.body;
+    const { entity_type, entity_id, sub_type, notes, validated } = ctx.request.body;
 
     if (!entity_type || !entity_id) {
       return ctx.badRequest('entity_type and entity_id are required');
@@ -37,6 +40,11 @@ module.exports = createCoreController('api::treasury-validation.treasury-validat
     }
 
     const existing = await strapi.db.query('api::treasury-validation.treasury-validation').findOne({ where });
+
+    const target = typeof validated === 'boolean' ? validated : !existing;
+    if (target === !!existing) {
+      return { validated: target, message: target ? 'Movement validated' : 'Validation removed' };
+    }
 
     if (existing) {
       // Delete validation (unvalidate)

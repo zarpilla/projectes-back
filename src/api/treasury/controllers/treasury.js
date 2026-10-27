@@ -30,15 +30,22 @@ const { queryTables } = require('../../../services/query-tables');
 const { COLUMNS: PROJECT_TOTALS_COLUMNS } = require('../../project/services/project-totals');
 const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
-const { addExpectedVat, applyExpectedVatPct } = require('../services/vat-forecast');
+const { groupPayrollRows } = require('../services/payroll-groups');
+const { irpfSummary } = require('../services/irpf-summary');
+const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../services/vat-forecast');
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
 const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
 
+// The deductible part of a document's supported VAT: its year's «% IVA
+// deduïble»; a year without one is 100 % (it was 0 %, issues/338), as in the
+// project totals and «Salda».
 const getDeductiblePct = (years, emitted) => {
   const year = years.find(
     (y) => y.year.toString() === moment(emitted, 'YYYY-MM-DD').format('YYYY').toString(),
   );
-  return year ? year.deductible_vat_pct / 100.0 : 1.0;
+  return year && year.deductible_vat_pct !== null && year.deductible_vat_pct !== undefined
+    ? year.deductible_vat_pct / 100.0
+    : 1.0;
 };
 
 const getBankAccountName = (bankAccount, defaultBankAccount) => {
@@ -635,7 +642,9 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       };
 
       treasury.push(income);
-      if (i.total_vat) {
+      // a draft is not an invoice yet: its VAT isn't due (issues/339); it stays
+      // in Tresoreria above as expected income
+      if (i.total_vat && i.state !== 'draft') {
         if (!i.vat_paid_date) {
           vat.received += i.total_vat;
           vat.deductible_vat += -1 * i.total_vat;
@@ -922,7 +931,13 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     // `periodification` ("no"/"prevista"/"real") parameter. The treasury rows
     // therefore reflect real/expected cash movements only.
 
+    // grouped per month, bank account and date below (issues/347)
+    const payrollRows = [];
     for (let e of payrolls) {
+      // a payroll without year or month stays on its own line
+      const payroll_month = e.year && e.year.year && e.month && e.month.month
+        ? `${e.year.year}-${zeroPad(e.month.month, 2)}`
+        : `payroll:${e.id}`;
       const date = e.paid_date
         ? moment(e.paid_date, 'YYYY-MM-DD')
         : moment.max([e.emitted ? moment(e.emitted, 'YYYY-MM-DD') : moment(), moment()]);
@@ -959,7 +974,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         validation_key: validationKey,
         is_validated: validationMap[validationKey] || false,
       };
-      treasury.push(expense);
+      payrollRows.push({ ...expense, payroll_month, payroll_part: 'net' });
 
       if (e.irpf_base) {
         const irpfValidationKey = getValidationKey('payrolls', e.id, 'irpf');
@@ -981,7 +996,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           validation_key: irpfValidationKey,
           is_validated: validationMap[irpfValidationKey] || false,
         };
-        treasury.push(expense2);
+        payrollRows.push({ ...expense2, payroll_month, payroll_part: 'irpf' });
       }
 
       if (e.other_base) {
@@ -1005,7 +1020,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           validation_key: otherValidationKey,
           is_validated: validationMap[otherValidationKey] || false,
         };
-        treasury.push(expense4);
+        payrollRows.push({ ...expense4, payroll_month, payroll_part: 'other' });
       }
 
       if (e.ss_base) {
@@ -1028,9 +1043,10 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           validation_key: ssValidationKey,
           is_validated: validationMap[ssValidationKey] || false,
         };
-        treasury.push(expense3);
+        payrollRows.push({ ...expense3, payroll_month, payroll_part: 'ss' });
       }
     }
+    treasury.push(...groupPayrollRows(payrollRows));
 
     // Group VAT documents by quarter for executed VAT
     const vatByQuarter = {};
@@ -1087,20 +1103,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
       // Only create treasury entry if cumulative balance is negative (payment required)
       if (cumulativeVatBalance < 0) {
-        // Calculate the payment date: 30th of the month after quarter end
-        // Exception: Q4 (Oct-Dec) is paid on January 20th instead of 30th
-        let paymentDate = moment(`${qData.year}`, 'YYYY')
-          .quarter(qData.quarter)
-          .endOf('quarter')
-          .add(1, 'month');
-
-        if (qData.quarter === 4) {
-          // Q4: January 20th
-          paymentDate.date(20);
-        } else {
-          // Q1, Q2, Q3: 30th of the month
-          paymentDate.date(30);
-        }
+        // the quarter's model 303 deadline (issues/337)
+        const paymentDate = vatPaymentDate(qData.year, qData.quarter);
 
         // Determine if it's paid (before today) or expected (today or future)
         const isPaid = paymentDate.isBefore(moment(), 'day');
@@ -1149,20 +1153,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
 
       // Only create treasury entry if cumulative balance is positive (payment required)
       if (cumulativeExpectedVatBalance > 0) {
-        // Calculate the payment date: 30th of the month after quarter end
-        // Exception: Q4 (Oct-Dec) is paid on January 20th instead of 30th
-        let paymentDate = moment(`${qData.year}`, 'YYYY')
-          .quarter(qData.quarter)
-          .endOf('quarter')
-          .add(1, 'month');
-
-        if (qData.quarter === 4) {
-          // Q4: January 20th
-          paymentDate.date(20);
-        } else {
-          // Q1, Q2, Q3: 30th of the month
-          paymentDate.date(30);
-        }
+        // the quarter's model 303 deadline (issues/337)
+        const paymentDate = vatPaymentDate(qData.year, qData.quarter);
 
         treasury.push({
           project_name: '',
@@ -1265,6 +1257,36 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
   // Informes › Previsió facturació: the planned incomes still to invoice (all
   // project states; the report filters them) and the invoiced base per month
   // over the last 12 months.
+  /**
+   * GET /api/treasuries/irpf?year=YYYY — the IRPF page (issues/348): the
+   * withholdings paid to Hisenda that year, per quarter and per document.
+   */
+  async irpf(ctx) {
+    const year = parseInt(ctx.query.year, 10) || moment().year();
+    const from = `${year}-01-01`;
+    const to = `${year}-12-31`;
+    const documentWhere = { emitted: { $gte: from, $lte: to }, total_irpf: { $ne: 0, $notNull: true } };
+    const documentSelect = ['id', 'code', 'emitted', 'total_base', 'total_irpf'];
+    const [receivedInvoices, receivedExpenses, payrolls] = await Promise.all([
+      strapi.db.query('api::received-invoice.received-invoice').findMany({
+        select: documentSelect,
+        where: documentWhere,
+        populate: { contact: { select: ['id', 'name'] } },
+      }),
+      strapi.db.query('api::received-expense.received-expense').findMany({
+        select: documentSelect,
+        where: documentWhere,
+        populate: { contact: { select: ['id', 'name'] }, document_type: { select: ['id', 'name'] } },
+      }),
+      strapi.db.query('api::payroll.payroll').findMany({
+        select: ['id', 'emitted', 'paid', 'total_base', 'irpf_base', 'irpf_date'],
+        where: { year: { year }, irpf_base: { $ne: 0, $notNull: true } },
+        populate: { year: true, month: true, users_permissions_user: { select: ['id', 'username'] } },
+      }),
+    ]);
+    ctx.body = irpfSummary({ receivedInvoices, receivedExpenses, payrolls }, year, moment().format('YYYY-MM-DD'));
+  },
+
   async invoicingForecast(ctx) {
     // without the trashed projects (issues/236)
     const projects = (await strapi.db.query('api::project.project').findMany({ populate: PROJECT_POPULATE })).filter(

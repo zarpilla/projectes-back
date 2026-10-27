@@ -15,8 +15,10 @@ function orderLineConcept(order) {
   const date = day.isValid() ? day.format('DD/MM/YYYY') : order.estimated_delivery_date || '';
   const route = order.route && order.route.name;
   const number = `${String(order.id).padStart(4, '0')}${order.is_collection_order ? '-R' : ''}`;
-  // a late order says why it costs more (issues/315)
-  const surcharge = order.late_order && Number(order.late_surcharge) ? `Express +${formatPercent(order.late_surcharge)} %` : null;
+  // a late order says why it costs more (issues/315); no «Express», it is a
+  // surcharge for breaking the rules (issues/346)
+  const surcharge =
+    order.late_order && Number(order.late_surcharge) ? `Fora de temps +${formatPercent(order.late_surcharge)} %` : null;
   return [date ? `Comanda ${date}` : 'Comanda', number, route, surcharge].filter(Boolean).join(' | ');
 }
 

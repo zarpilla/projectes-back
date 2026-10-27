@@ -2,7 +2,8 @@
 /* global strapi */
 
 /**
- * Store `date` attributes as the calendar day in the app's timezone.
+ * Store `date` attributes as the calendar day in the tenant's time zone
+ * («Zona horària», services/time-zone).
  *
  * The frontend sends datepicker values as local-midnight Dates, which JSON
  * turns into UTC ("2026-09-30" in Madrid -> "2026-09-29T22:00:00.000Z"). v3
@@ -12,18 +13,18 @@
  * component rows alike.
  */
 const moment = require('moment');
+const { currentTimeZone } = require('./time-zone');
 
-const DATE_TZ = process.env.APP_TZ || 'Europe/Madrid';
 const DAY_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
-function toLocalDay(value) {
+function toLocalDay(value, timeZone = currentTimeZone()) {
   if (value === null || value === undefined || value === '') return value;
   if (typeof value === 'string' && DAY_ONLY.test(value)) return value;
   if (typeof value !== 'string' && !(value instanceof Date)) return value;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   // sv-SE formats as YYYY-MM-DD
-  return d.toLocaleDateString('sv-SE', { timeZone: DATE_TZ });
+  return d.toLocaleDateString('sv-SE', { timeZone });
 }
 
 /**
@@ -33,8 +34,8 @@ function toLocalDay(value) {
  * a UTC container the form's "2026-09-30T22:00:00.000Z" matched the 29th
  * (issues/233). Values it can't read keep moment's answer, as before.
  */
-function toQueryDay(value) {
-  const day = toLocalDay(value);
+function toQueryDay(value, timeZone = currentTimeZone()) {
+  const day = toLocalDay(value, timeZone);
   if (typeof day === 'string' && DAY_ONLY.test(day)) return day;
   return moment(value).format('YYYY-MM-DD');
 }

@@ -4,7 +4,7 @@
  * Which app permissions may call each API action (issues/099).
  *
  * The app permissions (`projects`, `hours`, `admin`, `orders`, `orders_admin`,
- * `orders_delivery`) used to be applied by the front end only: every logged-in
+ * `orders_delivery`, `admin_energy`) used to be applied by the front end only: every logged-in
  * user could call the whole API directly. `middlewares/app-permissions.js`
  * checks every content-API request against this table.
  *
@@ -29,6 +29,7 @@ const ORDERS = 'orders';
 const ORDERS_ADMIN = 'orders_admin';
 const ORDERS_DELIVERY = 'orders_delivery';
 const HOURS = 'hours';
+const ENERGY = 'admin_energy';
 
 // any logged-in user, even one with no app permission
 const ANY = '*';
@@ -178,6 +179,34 @@ allow(api('received-income'), ['findBasic'], ORDERS);
 allow(api('phase-income'), ['findAssigned'], ORDERS);
 allow(api('form-submission'), ['create'], ORDERS);
 
+// --- comunitat energètica -------------------------------------------------------
+// The members, their CUPS, the installations and the coefficients, all through
+// /api/energy/* (api/energy): this permission reaches no other contact. The
+// members' documents are uploaded first (POST /upload) and linked on save.
+allow(
+  api('energy'),
+  [
+    'listPartners',
+    'getPartner',
+    'createPartner',
+    'updatePartner',
+    'createSupply',
+    'updateSupply',
+    'deleteSupply',
+    'listInstallations',
+    'createInstallation',
+    'updateInstallation',
+    'deleteInstallation',
+    'distribution',
+    'setDistribution',
+    'addCoefficient',
+    'updateCoefficient',
+    'deleteCoefficient',
+  ],
+  ENERGY,
+);
+allow('plugin::upload.content-api', ['upload'], ENERGY);
+
 /**
  * The permissions that may call `action` (`api::order.order.find`,
  * `plugin::users-permissions.user.me`), or undefined when none but FULL_ACCESS.
@@ -224,6 +253,7 @@ function pivotIdentifiersFor(permissions) {
 
 module.exports = {
   FULL_ACCESS,
+  ENERGY,
   LOGISTICS,
   ANY,
   rules,

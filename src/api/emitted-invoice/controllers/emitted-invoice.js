@@ -25,6 +25,7 @@ const { buildEmailBody } = require('../../../services/email-body');
 const changeLog = require('../../../services/change-log');
 const { relationId } = require('../../../services/relation-input');
 const { toLocalDay } = require('../../../services/date-fields');
+const incomeListPopulate = require('../../../services/income-list-populate');
 
 // Map v3 entity slug -> DB table name for the raw UPDATE in payEntity.
 const ENTITY_TABLE = {
@@ -68,10 +69,14 @@ const lineAmounts = (line) => {
   return { gross, discount: round2(gross - base), base, vat, irpf, total: round2(base + vat - irpf) };
 };
 
+// The documents whose VAT is not settled yet. A draft issued invoice is not an
+// invoice yet, so its VAT can't be settled (issues/339).
 const getEntityInfo = async (entityUid) => {
-  const documents = await strapi.db.query(entityUid).findMany({
-    where: { vat_paid_date: { $null: true } },
-  });
+  const documents = (
+    await strapi.db.query(entityUid).findMany({
+      where: { vat_paid_date: { $null: true } },
+    })
+  ).filter((d) => d.state !== 'draft');
   return { documents, total_vat: _.sumBy(documents, 'total_vat') };
 };
 
@@ -92,9 +97,12 @@ const payEntity = async (documents, entitySlug, vatPaidDate, deductibleVatPct, y
   for (const doc of documents) {
     const emittedYear = doc.emitted?.substring(0, 4);
     const isDeductible = entitySlug !== 'received-income' && entitySlug !== 'emitted-invoice';
-    const deductibleVatPctYear = isDeductible
-      ? years.find((y) => String(y.year) === String(emittedYear))?.deductible_vat_pct || deductibleVatPct
-      : 100;
+    // the year's %, as «IVA» shows it: an empty year is 100 % (it took
+    // Configuració's, issues/338); Configuració's only when the year has no row
+    const year = years.find((y) => String(y.year) === String(emittedYear));
+    const emptyYear = year && (year.deductible_vat_pct === null || year.deductible_vat_pct === undefined);
+    const yearPct = year ? (emptyYear ? 100 : Number(year.deductible_vat_pct)) : null;
+    const deductibleVatPctYear = isDeductible ? (yearPct === null ? deductibleVatPct : yearPct) : 100;
 
     // The raw UPDATE skips the document service, so the change log is fed
     // here, reading only the two fields it writes (not the lines, issues/161).
@@ -238,9 +246,8 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     if (wantsNoRows(opts)) return [];
     return strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
       where: opts.filters || {},
-      // issues/013: v3 auto-populated components; v5 does not. The lists read
-      // lines[0].concept (Concepte column, Excel export) and contact_info.
-      populate: { contact: true, projects: true, document_type: true, lines: true, contact_info: true },
+      // only what Ingressos shows and exports (issues/013, issues/330)
+      populate: incomeListPopulate.EMITTED_INVOICE,
       limit: dbLimit(opts),
       offset: opts.pagination?.start,
       orderBy: opts.sort,
@@ -532,8 +539,14 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
    * Pay VAT on specific emitted/received documents by id, creating a treasury entry.
    */
   async payVatIds(ctx) {
-    const { emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, vat_paid_date } =
-      ctx.request.body;
+    const body = ctx.request.body || {};
+    const { vat_paid_date } = body;
+    // a list the screen doesn't send is an empty one (it answered a 500, issues/340)
+    const ids = (key) => (Array.isArray(body[key]) ? body[key] : []);
+    const emittedInvoices = ids('emittedInvoices');
+    const receivedIncomes = ids('receivedIncomes');
+    const receivedInvoices = ids('receivedInvoices');
+    const receivedExpenses = ids('receivedExpenses');
 
     const eInvoiceInfo = await getEntityInfo(ENTITY_UID['emitted-invoice']);
     const incomeInfo = await getEntityInfo(ENTITY_UID['received-income']);
@@ -580,66 +593,6 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
             comment: 'IVA Saldat',
             total: -1 * totalVat,
             date: vat_paid_date,
-            bank_account: bankAccountVat,
-            publishedAt: new Date(),
-          },
-        });
-      }
-    }
-    return {
-      done: true,
-      emittedInvoices: eInvoiceInfo.documents,
-      receivedIncomes: incomeInfo.documents,
-      receivedInvoices: rInvoiceInfo.documents,
-      receivedExpenses: expenseInfo.documents,
-    };
-  },
-
-  /**
-   * POST /api/emitted-invoices/pay-vat
-   * Pay VAT on ALL unpaid documents (no id selection).
-   */
-  async payVat(ctx) {
-    const eInvoiceInfo = await getEntityInfo(ENTITY_UID['emitted-invoice']);
-    const incomeInfo = await getEntityInfo(ENTITY_UID['received-income']);
-    const rInvoiceInfo = await getEntityInfo(ENTITY_UID['received-invoice']);
-    const expenseInfo = await getEntityInfo(ENTITY_UID['received-expense']);
-    const me = await getMe();
-    const bankAccountVat = me.bank_account_vat;
-    const years = await getYearsInfo();
-
-    if (me.options?.deductible_vat_pct) {
-      const vatPaidDate = new Date();
-      let totalVat = 0;
-      totalVat += await payEntity(eInvoiceInfo.documents, 'emitted-invoice', vatPaidDate, 100, years);
-      totalVat += await payEntity(
-        incomeInfo.documents,
-        'received-income',
-        vatPaidDate,
-        me.options.deductible_vat_pct,
-        years,
-      );
-      totalVat -= await payEntity(
-        rInvoiceInfo.documents,
-        'received-invoice',
-        vatPaidDate,
-        me.options.deductible_vat_pct,
-        years,
-      );
-      totalVat -= await payEntity(
-        expenseInfo.documents,
-        'received-expense',
-        vatPaidDate,
-        me.options.deductible_vat_pct,
-        years,
-      );
-
-      if (totalVat !== 0) {
-        await strapi.service('api::treasury.treasury').create({
-          data: {
-            comment: 'IVA Saldat',
-            total: -1 * totalVat,
-            date: vatPaidDate,
             bank_account: bankAccountVat,
             publishedAt: new Date(),
           },

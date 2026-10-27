@@ -13,8 +13,6 @@ const updater = require('../../utils/updater');
 const { getMe, getFrontUrl } = require('../../../../services/me-settings');
 
 const INCIDENCE = 'api::incidence.incidence';
-// The logistics office: who answers incidences and is e-mailed about replies.
-const OFFICE_PERMISSION = 'orders_admin';
 
 module.exports = {
   async afterCreate(event) {
@@ -51,17 +49,6 @@ module.exports = {
   },
 };
 
-/** E-mails of the active users with the logistics office permission. */
-async function officeStaffEmails() {
-  const users = await strapi.db.query('plugin::users-permissions.user').findMany({
-    where: { blocked: false },
-    populate: { permissions: true },
-  });
-  return (users || [])
-    .filter((u) => u.email && (u.permissions || []).some((p) => p && p.permission === OFFICE_PERMISSION))
-    .map((u) => ({ id: u.id, email: u.email }));
-}
-
 const splitEmails = (list) =>
   (list || '')
     .split(',')
@@ -80,32 +67,25 @@ function uniqueEmails(emails) {
 }
 
 /**
- * Who hears about a new reply (issues/154): the office (contact_form_email
- * and every active orders_admin user) and the order's owner, except the
- * reply's own author. Before, a member's reply went only to
- * contact_form_email and anyone else's reply only to the member.
+ * Who hears about a new reply: the office (contact_form_email) and the
+ * order's owner, except the reply's own author. Users with orders_admin are
+ * not added: the office chooses who gets these e-mails in contact_form_email,
+ * not through permissions (issues/154 had added them; 2026-10-27 removed).
  */
-async function replyRecipients(reply, updaterId, orderOwner, me) {
+function replyRecipients(reply, updaterId, orderOwner, me) {
   const authorId = (reply && reply.user && (reply.user.id || reply.user)) || updaterId || null;
   const authorEmail = (reply && reply.user && reply.user.email) || null;
-  const isAuthor = (user) =>
-    (authorId && String(user.id) === String(authorId)) ||
-    (authorEmail && user.email && user.email.toLowerCase() === authorEmail.toLowerCase());
-
-  const staff = await officeStaffEmails();
-  const excluded = new Set(
-    [authorEmail, ...staff.filter(isAuthor).map((u) => u.email)]
-      .concat(orderOwner && isAuthor(orderOwner) ? [orderOwner.email] : [])
-      .filter(Boolean)
-      .map((e) => e.toLowerCase()),
-  );
+  const ownerIsAuthor =
+    orderOwner &&
+    ((authorId && String(orderOwner.id) === String(authorId)) ||
+      (authorEmail && orderOwner.email && orderOwner.email.toLowerCase() === authorEmail.toLowerCase()));
 
   const emails = [
     ...splitEmails(me.contact_form_email),
-    ...staff.map((u) => u.email),
-    ...(orderOwner && orderOwner.email && !isAuthor(orderOwner) ? [orderOwner.email] : []),
+    ...(orderOwner && orderOwner.email && !ownerIsAuthor ? [orderOwner.email] : []),
   ];
-  return uniqueEmails(emails.filter((e) => !excluded.has(e.toLowerCase())));
+  const excluded = authorEmail ? authorEmail.toLowerCase() : null;
+  return uniqueEmails(emails.filter((e) => e.toLowerCase() !== excluded));
 }
 
 async function sendIncidenceEmail(incidence, action, updaterId = null, replyCountBefore = undefined) {
@@ -151,7 +131,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null, replyCoun
 
   let recipients = [];
   if (replyAdded) {
-    recipients = await replyRecipients(replies[replies.length - 1], updaterId, orderOwner, me);
+    recipients = replyRecipients(replies[replies.length - 1], updaterId, orderOwner, me);
   } else if (action === 'created') {
     recipients = me.contact_form_email.split(',').map((e) => e.trim());
     if (orderOwner && orderOwner.email) recipients.push(orderOwner.email);
@@ -198,7 +178,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null, replyCoun
 
   const html = `
     <b>Incidència ${action === 'created' ? 'Creada' : replyAdded ? 'amb una resposta nova' : 'Actualitzada'}</b><br><br>
-    <b>ID Incidència:</b> <a href="${frontUrl}incidences?id=${fullIncidence.id}" target="_blank">${fullIncidence.id}</a><br>
+    <b>ID Incidència:</b> <a href="${frontUrl}incidencies?id=${fullIncidence.id}" target="_blank">${fullIncidence.id}</a><br>
     <b>Comanda:</b> #${order.id}<br>
     <b>Propietari Comanda:</b> ${orderOwner ? orderOwner.fullname || orderOwner.username : 'N/A'} ${orderOwner && orderOwner.email ? `(${orderOwner.email})` : ''}<br>
     <b>Punt d'entrega:</b> ${deliveryPoint}<br>

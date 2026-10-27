@@ -67,6 +67,36 @@ describe.each(TYPES)('%s/basic populate', (type) => {
 
   it('still populates the relations the lists read', async () => {
     const populate = await callFindBasic(type);
-    expect(populate).toMatchObject({ contact: true, projects: true, document_type: true });
+    for (const name of ['contact', 'projects']) expect(populate[name]).toBeTruthy();
   });
+});
+
+/**
+ * issues/330 (2026-10-24): Ingressos (EmittedInvoicesTable) read whole
+ * contacts, projects and document types for a period; it shows and exports
+ * only these columns (as the Despeses lists of issues/325). Half the answer,
+ * 2.5–3× faster locally.
+ */
+describe('Ingressos lists read only what they show (issues/330)', () => {
+  beforeEach(() => {
+    jest.resetModules();
+  });
+
+  const CONTACT = ['id', 'name', 'nif', 'address', 'postcode', 'city'];
+
+  it('emitted invoices: contact and projects narrowed, no document type', async () => {
+    const populate = await callFindBasic('emitted-invoice');
+    expect(Object.keys(populate).sort()).toEqual(['contact', 'contact_info', 'lines', 'projects']);
+    expect(populate.contact).toEqual({ select: CONTACT });
+    expect(populate.projects).toEqual({ select: ['id', 'name'] });
+  });
+
+  it('received incomes: the document type narrowed too', async () => {
+    const populate = await callFindBasic('received-income');
+    expect(Object.keys(populate).sort()).toEqual(['contact', 'contact_info', 'document_type', 'lines', 'projects']);
+    expect(populate.contact).toEqual({ select: CONTACT });
+    expect(populate.projects).toEqual({ select: ['id', 'name'] });
+    expect(populate.document_type).toEqual({ select: ['id', 'name'] });
+  });
+
 });

@@ -17,6 +17,10 @@
 # the Strapi admin panel's users, roles and permissions (admin_*), API and
 # transfer tokens, and login sessions.
 #
+# Tenants listed in tenant-dumps.skip (next to tenants.conf, one name per
+# line, e.g. demo) get no copy, and their folder is removed. render.sh reads
+# the same file and doesn't mount the folder for them.
+#
 # Usage: tenant-dumps.sh [tenant ...]   (default: every tenant in tenants.conf)
 # Exit code 1 when a dump failed; that tenant keeps its previous copy.
 set -uo pipefail
@@ -68,6 +72,9 @@ dump_one() {
 
 mkdir -p "$OUT" && chmod 755 "$OUT"
 
+SKIP_FILE="$BACK_DIR/tenant-dumps.skip"
+skipped() { [ -f "$SKIP_FILE" ] && grep -qxE "[[:space:]]*$1[[:space:]]*" "$SKIP_FILE"; }
+
 if [ $# -gt 0 ]; then
   TENANTS=("$@")
 else
@@ -77,13 +84,15 @@ fi
 rc=0
 for tenant in "${TENANTS[@]}"; do
   [[ "$tenant" =~ ^[a-z0-9_]+$ ]] || { log "ERROR bad tenant name: $tenant"; rc=1; continue; }
+  skipped "$tenant" && { log "$tenant skipped (tenant-dumps.skip)"; continue; }
   dump_one "$tenant" || rc=1
 done
 
-# folders of tenants that are gone
+# folders of tenants that are gone or skipped
 [ -s "$BACK_DIR/tenants.conf" ] && for dir in "$OUT"/*/; do
   [ -d "$dir" ] || continue
   name=$(basename "$dir")
+  skipped "$name" && { log "removing $dir (tenant-dumps.skip)"; rm -rf "$dir"; continue; }
   grep -qE "^[[:space:]]*$name[[:space:]]" "$BACK_DIR/tenants.conf" || { log "removing $dir (not in tenants.conf)"; rm -rf "$dir"; }
 done
 

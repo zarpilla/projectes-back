@@ -1,0 +1,40 @@
+{
+  "kind": "collectionType",
+  "collectionName": "energy_coefficients",
+  "info": {
+    "singularName": "energy-coefficient",
+    "pluralName": "energy-coefficients",
+    "displayName": "Energy coefficient",
+    "description": "Comunitat energètica: the share (0-1) of an installation a CUPS gets from start_date to end_date (empty = still in force)"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "supply": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::energy.energy-supply"
+    },
+    "installation": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::energy.energy-installation"
+    },
+    "coefficient": {
+      "type": "float",
+      "required": true
+    },
+    "start_date": {
+      "type": "date",
+      "required": true
+    },
+    "end_date": {
+      "type": "date"
+    },
+    "notes": {
+      "type": "text"
+    }
+  }
+}

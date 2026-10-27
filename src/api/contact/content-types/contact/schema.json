@@ -124,6 +124,11 @@
     "partner_amount_date": {
       "type": "date"
     },
+    "capital_contributions": {
+      "type": "component",
+      "repeatable": true,
+      "component": "partners.capital-contribution"
+    },
     "followup_date": {
       "type": "date"
     },
@@ -158,6 +163,26 @@
     },
     "face": {
       "type": "boolean"
+    },
+    "join_date": {
+      "type": "date"
+    },
+    "leave_date": {
+      "type": "date"
+    },
+    "privacy_accepted": {
+      "type": "boolean"
+    },
+    "documents": {
+      "type": "media",
+      "multiple": true,
+      "relation": "oneToMany",
+      "allowedTypes": [
+        "images",
+        "files",
+        "videos",
+        "audios"
+      ]
     }
   }
 }

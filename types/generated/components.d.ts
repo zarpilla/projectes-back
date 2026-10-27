@@ -320,6 +320,7 @@ export interface OptionsOrdersOptions extends Struct.ComponentSchema {
     multidelivery_discount: Schema.Attribute.Decimal;
     next_day_limit_hour: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<14>;
     pickup_same_day_limit_hour: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<10>;
+    working_days: Schema.Attribute.JSON;
   };
 }
 
@@ -374,6 +375,21 @@ export interface OrdersLines extends Struct.ComponentSchema {
   };
 }
 
+export interface PartnersCapitalContribution extends Struct.ComponentSchema {
+  collectionName: 'components_partners_capital_contributions';
+  info: {
+    description: "A member's contribution to the cooperative's capital: date, amount and a comment";
+    displayName: 'Capital contribution';
+    pluralName: 'capital-contributions';
+    singularName: 'capital-contribution';
+  };
+  attributes: {
+    amount: Schema.Attribute.Decimal;
+    comment: Schema.Attribute.Text;
+    date: Schema.Attribute.Date;
+  };
+}
+
 export interface PeriodificationPeriodification extends Struct.ComponentSchema {
   collectionName: 'components_periodification_periodifications';
   info: {
@@ -399,7 +415,7 @@ export interface PermissionsApplicationPermission extends Struct.ComponentSchema
   };
   attributes: {
     permission: Schema.Attribute.Enumeration<
-      ['projects', 'orders', 'orders_admin', 'orders_delivery', 'hours', 'admin']
+      ['projects', 'orders', 'orders_admin', 'orders_delivery', 'hours', 'admin', 'admin_energy']
     >;
   };
 }
@@ -485,6 +501,7 @@ declare module '@strapi/strapi' {
       'options.quotes': OptionsQuotes;
       'orders.incidence-response': OrdersIncidenceResponse;
       'orders.lines': OrdersLines;
+      'partners.capital-contribution': PartnersCapitalContribution;
       'periodification.periodification': PeriodificationPeriodification;
       'permissions.application-permission': PermissionsApplicationPermission;
       'project-phase.original-project-phase': ProjectPhaseOriginalProjectPhase;

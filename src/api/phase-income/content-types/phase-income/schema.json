@@ -83,6 +83,9 @@
     },
     "vat_pct": {
       "type": "integer"
+    },
+    "position": {
+      "type": "integer"
     }
   }
 }

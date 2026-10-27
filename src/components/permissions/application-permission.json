@@ -9,7 +9,7 @@
   "attributes": {
     "permission": {
       "type": "enumeration",
-      "enum": ["projects", "orders", "orders_admin", "orders_delivery", "hours", "admin"]
+      "enum": ["projects", "orders", "orders_admin", "orders_delivery", "hours", "admin", "admin_energy"]
     }
   }
 }

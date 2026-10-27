@@ -6,6 +6,11 @@ name: Build and Publish Backend Docker image (v5)
 # controllers in this image, and a mismatch 404s every request rather than
 # failing loudly.
 #
+# A push to main is deployed to every tenant, except when only files outside the
+# image changed since the last deploy (tests, tools, docs…): then it is only tested.
+# «[skip deploy]» in the commit message builds and publishes without deploying
+# (see the `changes` job).
+#
 # The v3 backend (zarpilla/projectes) is a different repository, so this needs
 # no branch of its own: `main` here IS v5.
 #
@@ -80,8 +85,39 @@ jobs:
       - name: Run tests
         run: npm run test:cov
 
+  # Decides whether this run builds and deploys (.github/scripts/deploy-decision.sh):
+  # a push that only changes files outside the image (tests, tools, docs, types, .github, *.md, *.sql) is
+  # tested but neither built nor deployed, and «[skip deploy]» in the commit message
+  # builds and publishes the image without deploying it.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      image: ${{ steps.decide.outputs.image }}
+      deploy: ${{ steps.decide.outputs.deploy }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build and deploy?
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+          # paths that don't go into the image
+          NO_IMAGE_RE: '^(tests/|tools/|docs/|types/|deploy/|\.github/|.*\.md$|.*\.sql$|jest\.config\.js$|eslint\.config\.cjs$|\.prettier)'
+        run: .github/scripts/deploy-decision.sh
+
   build-and-push:
-    needs: test
+    needs: [test, changes]
+    if: needs.changes.outputs.image == 'true'
     runs-on: ubuntu-latest
     env:
       IMAGE_TAG: ${{ github.ref == 'refs/heads/diligencia-test' && 'diligencia-test' || 'v5' }}
@@ -127,8 +163,8 @@ jobs:
   # Secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS.
   # Add required reviewers to the `production` environment to approve each deploy.
   deploy:
-    needs: build-and-push
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/diligencia-test')
+    needs: [build-and-push, changes]
+    if: needs.changes.outputs.deploy == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/diligencia-test')
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 40

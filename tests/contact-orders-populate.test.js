@@ -23,32 +23,9 @@ const SRC = path.join(__dirname, '..', 'src');
 const read = (...p) => fs.readFileSync(path.join(SRC, ...p), 'utf8');
 
 const controller = read('api', 'contact', 'controllers', 'contact.js');
-const orderAttrs = JSON.parse(
-  read('api', 'order', 'content-types', 'order', 'schema.json')
-).attributes;
 
-describe('contacts/orders owner aggregation', () => {
-  it('order.owner is a relation — the assumption this rests on', () => {
-    expect(orderAttrs.owner).toBeDefined();
-    expect(orderAttrs.owner.type).toBe('relation');
-  });
-
-  it('populates owner alongside contact', () => {
-    expect(controller).toContain('populate: { contact: true, owner: true }');
-  });
-
-  it('reads the populated object, not a bare FK id', () => {
-    // the v3-shaped comparison that silently never matched in v5
-    expect(controller).not.toContain('o.id === order.owner');
-    expect(controller).not.toContain('{ id: order.owner, name:');
-    expect(controller).toContain('contact.owners.find((o) => o.id === owner.id)');
-  });
-
-  it('no longer scans the entire user table to resolve a name', () => {
-    expect(controller).not.toContain("query('plugin::users-permissions.user').findMany({})");
-    expect(controller).toContain('owner.username');
-  });
-});
+// contacts/orders no longer loads orders through the entity layer; its owner
+// aggregation is covered against real SQL in contact-orders-summary.test.js.
 
 describe('contacts/withorders', () => {
   it('populates the contact relations the table renders', () => {

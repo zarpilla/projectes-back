@@ -10,7 +10,7 @@
  *
  *   - the plugin extension drops a stray `url` (fronts not yet updated);
  *   - services/ensure-reset-password-url.js fills the setting on boot from
- *     RESET_PASSWORD_URL, or the server URL + the front's /stats/ path.
+ *     RESET_PASSWORD_URL, or the server URL + the front's reset path (issues/342: at the root).
  */
 
 const path = require('path');
@@ -67,7 +67,7 @@ describe('forgot password (issues/021)', () => {
     await require(ENSURE).ensureResetPasswordUrl();
     expect(stored.advanced).toEqual({
       email_confirmation: false,
-      email_reset_password: 'https://coop.example.org/stats/reset-password',
+      email_reset_password: 'https://coop.example.org/canviar-clau',
     });
   });
 

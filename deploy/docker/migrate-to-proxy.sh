@@ -11,7 +11,7 @@
 #   ./migrate-to-proxy.sh [tenant ...]     (default: all in tenants.conf, canary first)
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
-CANARY=buida
+CANARY=demo
 TAG=$(sed -n 's/^BACK_TAG=//p' .env)
 [[ "$TAG" =~ ^v5-[0-9a-f]{40}$ ]] || { echo "No BACK_TAG in .env"; exit 1; }
 

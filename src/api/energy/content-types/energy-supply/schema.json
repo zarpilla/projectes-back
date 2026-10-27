@@ -1,0 +1,45 @@
+{
+  "kind": "collectionType",
+  "collectionName": "energy_supplies",
+  "info": {
+    "singularName": "energy-supply",
+    "pluralName": "energy-supplies",
+    "displayName": "Energy supply (CUPS)",
+    "description": "Comunitat energètica: a supply point (CUPS) of a member contact"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "cups": {
+      "type": "string",
+      "required": true
+    },
+    "contact": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::contact.contact"
+    },
+    "holder_name": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "submitted": {
+      "type": "boolean",
+      "default": false
+    },
+    "active": {
+      "type": "boolean",
+      "default": true
+    },
+    "notes": {
+      "type": "text"
+    }
+  }
+}

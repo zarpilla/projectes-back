@@ -1,0 +1,21 @@
+{
+  "collectionName": "components_partners_capital_contributions",
+  "info": {
+    "singularName": "capital-contribution",
+    "pluralName": "capital-contributions",
+    "displayName": "Capital contribution",
+    "description": "A member's contribution to the cooperative's capital: date, amount and a comment"
+  },
+  "options": {},
+  "attributes": {
+    "date": {
+      "type": "date"
+    },
+    "amount": {
+      "type": "decimal"
+    },
+    "comment": {
+      "type": "text"
+    }
+  }
+}

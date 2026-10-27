@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Zero-downtime deploy of a backend image to the Docker tenants (blue/green).
 #
-#   ./deploy.sh v5-<40-hex sha> [tenant ...]     e.g. ./deploy.sh v5-8b48003... buida
+#   ./deploy.sh v5-<40-hex sha> [tenant ...]     e.g. ./deploy.sh v5-8b48003... demo
 #   ./deploy.sh diligencia-test-<40-hex sha> tenant ...  a build of a preview branch (diligencia-test, redesign)
 #
 # Pinned tenants (pinned.conf: <tenant> <tag>) are on a preview build: a deploy
@@ -23,7 +23,7 @@
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 
-CANARY=buida
+CANARY=demo
 # One tenant at a time: on 2026-10-23 two backends booting together (each
 # ~600 MB, old and new slot alive) left the VPS without memory (no swap) and
 # stalled every tenant for ~14 minutes; one at a time went through.

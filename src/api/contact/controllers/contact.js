@@ -17,6 +17,7 @@ const {
   forOrdersWhere,
 } = require('../services/for-orders');
 const { contactsWithOrders } = require('../services/with-orders');
+const { contactsOrdersSummary } = require('../services/orders-summary');
 const { contactSnapshot, loadContact } = require('../../order/services/contact-snapshot');
 
 const ORDER = 'api::order.order';
@@ -75,67 +76,11 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
 
   /**
    * GET /api/contacts/orders
-   * Aggregates order counts and route names per contact.
+   * Delivery points with their orders of the last year, members and routes.
+   * Grouped queries, nothing loaded order by order (services/orders-summary).
    */
   async orders(ctx) {
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-
-    const contactsWithOwner = await strapi.db.query('api::contact.contact').findMany({
-      where: { owner: { $notNull: true } },
-    });
-
-    const orders = await strapi.db.query('api::order.order').findMany({
-      where: { estimated_delivery_date: { $gte: oneYearAgo } },
-      // `owner` has to be populated. v3 returned it as an FK column, so
-      // `order.owner` was the user id; v5 leaves an unpopulated relation
-      // undefined, the branch below never ran, and every contact came back
-      // with an empty `owners` -- the Sòcies column showed "-" for all of
-      // them. `routes` further down is matched on contact.city, a scalar,
-      // which is why that column kept working and this one did not.
-      populate: { contact: true, owner: true },
-    });
-
-    for (const order of orders) {
-      if (order.contact) {
-        const contact = contactsWithOwner.find((c) => c.id === order.contact.id);
-        if (contact) {
-          contact.num_orders = (contact.num_orders || 0) + 1;
-          // Populated, so this is the user row itself rather than an id. Taking
-          // the name from it also drops a findMany over the whole user table.
-          const owner = order.owner;
-          if (owner) {
-            contact.owners = contact.owners || [];
-            if (!contact.owners.find((o) => o.id === owner.id)) {
-              contact.owners.push({ id: owner.id, name: owner.username || 'Unknown' });
-            }
-          }
-        } else {
-          console.warn(`Order ${order.id} has contact ${order.contact.id} which is not in contactsWithOwner`);
-        }
-      }
-    }
-
-    const cityRoutes = await strapi.db.query('api::city-route.city-route').findMany({
-      populate: { city: true, route: true },
-    });
-
-    for (const contact of contactsWithOwner) {
-      contact.routes = cityRoutes
-        .filter((r) => r.city && r.city.name === contact.city)
-        .map((r) => r.route?.name)
-        .filter(Boolean);
-    }
-
-    return contactsWithOwner.map((c) => ({
-      id: c.id,
-      trade_name: c.trade_name,
-      num_orders: c.num_orders || 0,
-      routes: c.routes || [],
-      routes_flattened: c.routes ? c.routes.join(', ') : '',
-      owners: c.owners || [],
-      owners_flattened: c.owners ? c.owners.map((o) => o.name).join(', ') : '',
-    }));
+    return contactsOrdersSummary(strapi);
   },
 
   /**

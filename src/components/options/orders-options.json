@@ -30,6 +30,9 @@
     },
     "late_pickup_message": {
       "type": "text"
+    },
+    "working_days": {
+      "type": "json"
     }
   }
 }

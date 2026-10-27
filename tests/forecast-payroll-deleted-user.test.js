@@ -14,10 +14,11 @@ jest.mock('../src/services/me-settings', () => ({
   getMe: async () => ({ bank_account_default: { id: 1, name: 'Cajamar' }, options: {} }),
 }));
 
-const payroll = (id, user) => ({
+// another month each, so Tresoreria doesn't group them in one line (issues/347)
+const payroll = (id, user, month = 3) => ({
   id,
   year: { year: 2026 },
-  month: { month: 3 },
+  month: { month },
   users_permissions_user: user,
   net_base: 1000,
   irpf_base: 150,
@@ -64,7 +65,7 @@ describe('treasury forecast with payrolls of deleted users', () => {
     jest.resetModules();
     stubStrapi({
       'api::year.year': [{ id: 1, year: 2026, deductible_vat_pct: 100 }],
-      'api::payroll.payroll': [payroll(1, { id: 5, username: 'anna' }), payroll(2, null)],
+      'api::payroll.payroll': [payroll(1, { id: 5, username: 'anna' }), payroll(2, null, 4)],
     });
   });
 
@@ -76,8 +77,8 @@ describe('treasury forecast with payrolls of deleted users', () => {
     const { treasury } = await forecast();
     const concepts = treasury.filter((r) => /^Nòmina /.test(r.concept)).map((r) => r.concept);
     expect(concepts).toContain('Nòmina 2026-03-anna');
-    expect(concepts).toContain('Nòmina 2026-03-');
-    expect(concepts.filter((c) => c === 'Nòmina 2026-03-').length)
+    expect(concepts).toContain('Nòmina 2026-04-');
+    expect(concepts.filter((c) => c === 'Nòmina 2026-04-').length)
       .toBe(concepts.filter((c) => c === 'Nòmina 2026-03-anna').length);
   });
 });

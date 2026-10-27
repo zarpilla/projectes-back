@@ -30,7 +30,7 @@ For each tenant, `deploy.sh`:
 3. switches Caddy to it with a graceful reload;
 4. lets the old slot drain for 10 s, then stops it.
 
-The site never stops answering. The canary `buida` goes first, then the rest one at a time (two at a time ran the VPS out of memory on 2026-10-23). If a new slot doesn't become healthy, it is stopped (the old slot kept serving), every tenant already switched in that run goes back to its previous slot (also without downtime), and the job fails. The deployed tag is kept in `.env` (`BACK_TAG`). The log is in `deploy.log`.
+The site never stops answering. The canary `demo` goes first, then the rest one at a time (two at a time ran the VPS out of memory on 2026-10-23). If a new slot doesn't become healthy, it is stopped (the old slot kept serving), every tenant already switched in that run goes back to its previous slot (also without downtime), and the job fails. The deployed tag is kept in `.env` (`BACK_TAG`). The log is in `deploy.log`.
 
 Cron jobs take a MySQL lock per tenant database (`src/services/cron-lock.js`), so the few seconds where old and new slots overlap never run a job twice.
 
@@ -50,7 +50,7 @@ A push to the `redesign` branch publishes `esstrapis-back:redesign-<sha>` and ne
 ./deploy.sh v5-<sha> webcoop                     # back to main: unpins it
 ```
 
-A deploy without a tenant list (what CI runs) skips the tenants in `pinned.conf`. A redesign build needs a tenant list, and the canary `buida` can't take it. Going back to main is not free: its schema sync may drop the columns only the redesign has, with their data.
+A deploy without a tenant list (what CI runs) skips the tenants in `pinned.conf`. A redesign build needs a tenant list, and the canary `demo` can't take it. Going back to main is not free: its schema sync may drop the columns only the redesign has, with their data.
 
 The scripts on the server are copies of `deploy/docker/`. After changing them here, copy them to `/var/www/esstrapis-back`. Pushes that only touch `deploy/`, `docs/` or Markdown files don't build or deploy.
 
@@ -76,7 +76,7 @@ cd /var/www/esstrapis-back
 ```
 
 `create-tenant.sh`:
-1. writes `envs/<name>.env`: the shared settings (SMTP, API keys, `TICKETS_SSO_KEY`, `DOCS_SSO_KEY`) copied from `envs/buida.env`, plus new secrets and a new database password;
+1. writes `envs/<name>.env`: the shared settings (SMTP, API keys, `TICKETS_SSO_KEY`, `DOCS_SSO_KEY`) copied from `envs/_shared.env` (see below), plus new secrets and a new database password;
 2. creates the empty database `<name>_v5` and the MySQL user `<name>` (it asks for the MySQL admin password);
 3. adds the tenant to `tenants.conf` on the next free port, starts `<name>-blue`, waits for it and points the proxy at it;
 4. creates the front in `/var/www/projectes-<name>/docker`, starts it and adds it to the front's `sites.conf`;
@@ -86,7 +86,21 @@ Each step is skipped when already done, so a run that failed halfway is simply r
 
 No other tenant is copied. The database starts empty: the first boot creates the tables and seeds what an instance needs (catalogs, Configuració General with demo values, home menu, the current year and its invoice series; see `src/services/seed-new-database.js`). With `--user-email`, that boot also creates a first app user with the `admin` permission; the script prints its generated password once and then removes `SEED_USER_*` from the env file. The Strapi admin user is registered at `/admin` as usual.
 
+`envs/_shared.env` holds only what every tenant shares: SMTP and e-mail settings, API keys (`ZAI_API_KEY`, `SENDGRID_API_KEY`), `TICKETS_SSO_KEY`, `DOCS_SSO_KEY`, database host/client/pool, log settings, `IS_PROXIED`. No tenant uses it (render.sh reads `envs/<name>.env` by tenant name, and `_shared` can't be a tenant name). When a shared value changes, change it there too: `esstrapis-docs/deploy/set-docs-key.sh` already does (it updates every `envs/*.env`). Anything tenant-specific in it is dropped by `create-tenant.sh` anyway (URL, database name/user/password, secrets).
+
 It holds the deploy lock while the backend starts (a few minutes on the first boot), so a CI deploy arriving in that window fails with "Another deploy is running" and has to be rerun.
+
+### Removing a tenant
+
+```bash
+cd /var/www/esstrapis-back
+./remove-tenant.sh <name> --dry-run   # what it would do
+./remove-tenant.sh <name>
+```
+
+It makes a last full dump of the database into `~/arxiu-tenants/<name>-<date>/`, stops and removes the backend slots and the front container, takes the tenant out of `tenants.conf`, the front's `sites.conf`, `pinned.conf` and `tenant-dumps.skip` (so no more nightly dumps), reruns `render.sh` and reloads the proxy, and moves its env file, state, `/var/www/projectes-<name>` (uploads + front) and its nightly dump folder into the same archive. It refuses the deploy canary. It does not drop the database nor touch nginx (both need root/the MySQL admin): it prints those commands at the end.
+
+`buida` (the old empty template tenant) was removed this way on 2026-10-26; new tenants come from `create-tenant.sh` and the seed.
 
 `migrate-to-proxy.sh` did the one-time move from one container per port to this setup (2026-10-09). It is kept for reference.
 
@@ -99,6 +113,7 @@ App admins download last night's dump of their own database from Administració 
 - `render.sh` mounts each tenant's folder **read-only** at `/opt/app/backups` (`TENANT_DUMPS` overrides the root), so a backend never sees another tenant's copy. Without a file the page says there's no copy yet.
 - Install once (needs sudo): copy `render.sh`, `tenant-dumps.sh` and `install-tenant-dumps.sh` to `/var/www/esstrapis-back`, run `sudo bash install-tenant-dumps.sh` (patches `backup-storagebox.sh`, backup next to it, and makes a first run), then deploy so the containers get the new mount.
 - Run by hand: `sudo /usr/local/sbin/tenant-dumps.sh [tenant ...]`.
+- Tenants with no downloadable copy (e.g. `demo`): one name per line in `/var/www/esstrapis-back/tenant-dumps.skip`. `tenant-dumps.sh` skips them and removes their folder, `render.sh` doesn't mount it (on the next deploy), and the page says the entity has no copies.
 
 ## Rolling back
 

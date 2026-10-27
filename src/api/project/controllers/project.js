@@ -20,7 +20,7 @@ const { loadActivitiesByProjectMonth } = require('../services/economic-detail-ac
 const { getReadCache } = require('../../../services/read-cache');
 const { queryTables } = require('../../../services/query-tables');
 const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDocuments');
-const { lineTotal, invalidLineValueMessage } = require('../../../services/budget-line');
+const { lineTotal, invalidLineValueMessage, assignLinePositions } = require('../../../services/budget-line');
 const { touchesDates, projectDatesError } = require('../../../services/project-dates');
 const {
   buildProjectRows,
@@ -226,6 +226,14 @@ const firstLevelPopulateWithComponentRelations = (skip) => ({
   grantable_years: { populate: { year: true } },
   grantable_contacts: { populate: { contact: true } },
 });
+
+// issues/345: a line that only moved gets its new position with updateMany,
+// which runs no lifecycle (the order changes no total).
+const saveLinePositions = async (uid, moved) => {
+  for (const { id, position } of moved) {
+    await strapi.db.query(uid).updateMany({ where: { id }, data: { position } });
+  }
+};
 
 // v3 plural entity names used by the phase helpers -> v5 UIDs
 // ('project-phases' / 'project-original-phases').
@@ -2092,6 +2100,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       }
 
       if (incomes) {
+        const movedIncomes = assignLinePositions(incomes);
         for await (const income of incomes) {
           income.total_amount = lineTotal(income);
 
@@ -2150,9 +2159,11 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
               .update({ where: { id: income.id }, data: { total_estimated_hours: totalEstimatedHours } });
           }
         }
+        await saveLinePositions('api::phase-income.phase-income', movedIncomes);
       }
 
       if (expenses) {
+        const movedExpenses = assignLinePositions(expenses);
         for await (const expense of expenses) {
           expense.total_amount = lineTotal(expense);
 
@@ -2177,6 +2188,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
               .update({ where: { id: expense.id }, data: expense });
           }
         }
+        await saveLinePositions('api::phase-expense.phase-expense', movedExpenses);
       }
     }
   },

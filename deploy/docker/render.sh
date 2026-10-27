@@ -15,6 +15,8 @@ cd "$(dirname "$(readlink -f "$0")")"
 mkdir -p state caddy
 # tenant-dumps.sh writes <dir>/<name>/latest.sql.gz; each backend mounts its own folder
 TENANT_DUMPS="${TENANT_DUMPS:-/var/backups/tenant-dumps}"
+# tenants with no downloadable copy (e.g. demo): one name per line
+dump_skipped() { [ -f tenant-dumps.skip ] && grep -qxE "[[:space:]]*$1[[:space:]]*" tenant-dumps.skip; }
 
 TENANTS=()
 while read -r name port uploads; do
@@ -58,6 +60,8 @@ services:
 YAML
   for line in "${TENANTS[@]}"; do
     read -r name port uploads <<<"$line"
+    # last night's dump of its own database only (tenant-dumps.sh), read-only
+    dumps=$(dump_skipped "$name" || printf '\n      - %s/%s:/opt/app/backups:ro' "$TENANT_DUMPS" "$name")
     for color in blue green; do
       p=$([ $color = blue ] && echo $((port + 10000)) || echo $((port + 20000)))
       cat <<YAML
@@ -69,9 +73,7 @@ YAML
     environment:
       PORT: "$p"
     volumes:
-      - $uploads:/opt/app/public/uploads
-      # last night's dump of its own database only (tenant-dumps.sh), read-only
-      - $TENANT_DUMPS/$name:/opt/app/backups:ro
+      - $uploads:/opt/app/public/uploads$dumps
 YAML
     done
   done

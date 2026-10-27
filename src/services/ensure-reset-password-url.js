@@ -8,13 +8,15 @@
  * users-permissions advanced setting `email_reset_password` (v3 took it from
  * the request, which Strapi 5 refuses). Tenants migrated by the ETL don't have
  * it, so it is filled here when empty, from RESET_PASSWORD_URL or else from the
- * server URL plus the front's path (/stats/, as served behind the same host).
+ * server URL plus the front's reset path (the front is at the root of the same
+ * host since issues/342; it was under /stats/ before).
  * A value set by hand is never overwritten. Cheap and idempotent: runs on
  * every boot, so setting the env var later is enough.
  */
 
 const STORE = { type: 'plugin', name: 'users-permissions' };
-const FRONT_RESET_PATH = '/stats/reset-password';
+// the front's page for the e-mailed link (Catalan URLs since issues/343)
+const FRONT_RESET_PATH = '/canviar-clau';
 
 function resetPasswordUrl() {
   if (process.env.RESET_PASSWORD_URL) return process.env.RESET_PASSWORD_URL;

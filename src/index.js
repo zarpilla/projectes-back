@@ -25,6 +25,8 @@ const { backfillTransferDestinations } = require('./services/backfill-transfer-d
 const { repairCollectionOrderRates } = require('./services/repair-collection-order-rates');
 const { refreshUnifiedOrderSnapshots } = require('./services/refresh-unified-order-snapshots');
 const { frontUrlsWithoutHash } = require('./services/front-urls-without-hash');
+const { frontUrlsAtRoot } = require('./services/front-urls-at-root');
+const { frontUrlsInCatalan } = require('./services/front-urls-in-catalan');
 const { clearQuotePreviewLinks } = require('./services/clear-quote-preview-links');
 const { padFourDigitPostcodes } = require('./services/pad-four-digit-postcodes');
 const { refreshUndatedOriginalTotals } = require('./services/refresh-undated-original-totals');
@@ -36,7 +38,12 @@ const { clearDanglingMotherLinks } = require('./services/clear-dangling-mother-l
 const { removeUntypedProjectComponentLinks } = require('./services/remove-untyped-project-component-links');
 const { refreshTotalHoursTotals } = require('./services/refresh-total-hours-totals');
 const { addOfficialFestives } = require('./services/add-official-festives');
+const { fillEmptyRelationOrder } = require('./services/relation-order');
+const { fillEmptyYearVatPct } = require('./services/fill-empty-year-vat-pct');
+const { migratePartnerAmounts } = require('./services/capital-contributions');
 const { registerDateFieldNormalizer } = require('./services/date-fields');
+const { loadTimeZone } = require('./services/time-zone');
+const { recheckLateFlags } = require('./services/recheck-late-flags');
 const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
 const { ensureChangeLogIndex } = require('./services/ensure-change-log-index');
@@ -79,6 +86,8 @@ module.exports = {
    */
   async bootstrap({ strapi }) {
     registerDateFieldNormalizer();
+    // «Zona horària» (Configuració general) before any date is stored (issues/346)
+    await loadTimeZone();
     registerRolePermissionsInvalidation();
     // GET /api/logos is served from memory until a logo is written (issues/308)
     registerLogosCacheInvalidation();
@@ -159,6 +168,10 @@ module.exports = {
       ['refreshUnifiedOrderSnapshots', refreshUnifiedOrderSnapshots, { runOnce: true }],
       // issues/158: the front's URLs lost the "#/"; so do the links the API sends.
       ['frontUrlsWithoutHash', frontUrlsWithoutHash, { runOnce: true }],
+      // issues/342: the front moved from /stats/ to the root of the site; so do the links the API sends.
+      ['frontUrlsAtRoot', frontUrlsAtRoot, { runOnce: true }],
+      // issues/343: the front's URLs are in Catalan; so is the password-reset link.
+      ['frontUrlsInCatalan', frontUrlsInCatalan, { runOnce: true }],
       // issues/160: quotes kept a link to the front's removed quote preview as their PDF.
       ['clearQuotePreviewLinks', clearQuotePreviewLinks, { runOnce: true }],
       // issues/179: contacts loaded from a spreadsheet lost the leading zero of their postcode.
@@ -181,6 +194,15 @@ module.exports = {
       ['refreshTotalHoursTotals', refreshTotalHoursTotals, { runOnce: true }],
       // issues/310: the official holidays of 2027 (dates in the seed's FESTIVES).
       ['addOfficialFestives2027', () => addOfficialFestives(2027), { runOnce: true }],
+      // issues/334: links migrated from v3 had no order: a document's projects came in any order.
+      ['fillEmptyRelationOrder', fillEmptyRelationOrder, { runOnce: true }],
+      // issues/338: a year with no «% IVA deduïble» is 100 % (it was 0 % in «IVA»).
+      ['fillEmptyYearVatPct', fillEmptyYearVatPct, { runOnce: true }],
+      // 2026-10-25: a contact's capital contribution becomes a list (date, amount,
+      // comment); its old amount and date are its first one.
+      ['migratePartnerAmounts', migratePartnerAmounts, { runOnce: true }],
+      // issues/346: «Ruta de tarda» on the «TARDA» routes; the late marks of open orders judged again.
+      ['recheckLateFlags', recheckLateFlags, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

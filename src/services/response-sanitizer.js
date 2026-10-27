@@ -39,6 +39,9 @@ const USER_PRIVATE = [
   'daily_dedications',
 ];
 
+// a member of the energy community: what only `admin_energy` reads
+const ENERGY_CONTACT_FIELDS = ['documents', 'join_date', 'leave_date', 'privacy_accepted'];
+
 // what her own row leaves out (issues/099: her working periods come without them too)
 const SALARY = ['cost_by_hour', 'monthly_salary', 'monthly_tax'];
 
@@ -155,12 +158,22 @@ function rulesFor({ member = false, selfId = null, permissions = [] } = {}) {
   if (!permissions.some((p) => INVOICE_READERS.includes(p))) {
     rules['api::order.order'] = { drop: ['emitted_invoice'] };
   }
+  const contactDrop = [];
   if (member) {
     // the office's data on a contact
-    rules['api::contact.contact'] = {
-      drop: ['partner_amount', 'partner_amount_date', 'followup_date', 'projects', 'projectes'],
-    };
+    contactDrop.push(
+      'partner_amount',
+      'partner_amount_date',
+      'capital_contributions',
+      'followup_date',
+      'projects',
+      'projectes',
+    );
   }
+  // the energy community's data on its members (their documents: ID cards,
+  // payment receipts), only for `admin_energy` (and full access, never sanitized)
+  if (!permissions.includes('admin_energy')) contactDrop.push(...ENERGY_CONTACT_FIELDS);
+  if (contactDrop.length) rules['api::contact.contact'] = { drop: contactDrop };
   return rules;
 }
 
@@ -244,4 +257,5 @@ module.exports = {
   DEDICATION_SALARY_FIELDS,
   USER_PRIVATE,
   PROJECT_FINANCES,
+  ENERGY_CONTACT_FIELDS,
 };
