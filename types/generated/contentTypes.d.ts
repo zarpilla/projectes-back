@@ -2352,7 +2352,10 @@ export interface ApiRouteFestiveRouteFestive extends Struct.CollectionTypeSchema
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::route-festive.route-festive'> &
       Schema.Attribute.Private;
     publishedAt: Schema.Attribute.DateTime;
+    reason: Schema.Attribute.Text;
     route: Schema.Attribute.Relation<'oneToOne', 'api::route.route'>;
+    substitute_date: Schema.Attribute.Date;
+    substitute_route: Schema.Attribute.Relation<'manyToOne', 'api::route.route'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
   };

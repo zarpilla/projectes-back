@@ -270,7 +270,8 @@ async function importSeedPermissions() {
     // update: the time slot of a town in a route (issues/314)
     'city-route': ['find', 'findOne', 'create', 'update', 'delete', 'basic'],
     'form-submission': ['create', 'find', 'findOne'],
-    'route-festive': ['find', 'findOne', 'create', 'delete'],
+    // update: the reason and the substitute route of a closure (issues/355)
+    'route-festive': ['find', 'findOne', 'create', 'update', 'delete'],
     'project-phases': ['find', 'findOne', 'create', 'update', 'delete'],
     'project-original-phases': ['find', 'findOne', 'create', 'update', 'delete', 'findWithHours'],
     'estimated-hours': ['find', 'findOne', 'create', 'update', 'delete'],
