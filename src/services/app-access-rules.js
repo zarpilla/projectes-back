@@ -57,6 +57,9 @@ const api = (name) => `api::${name}.${name}`;
 // (changelog, reachable from the profile) whatever the permissions, and keeps
 // their own Inici (GET/PUT /users/me/home).
 allow('plugin::users-permissions.user', ['me', 'home', 'updateHome'], ANY);
+// the default warehouse (issues/361): her own, or anyone's for the office (checked in the controller)
+allow('plugin::users-permissions.user', ['defaultPickup', 'updateDefaultPickup'], LOGISTICS);
+allow('plugin::users-permissions.user', ['defaultPickups'], ORDERS_ADMIN);
 allow(api('me'), ['find', 'ticketsLogin', 'docsLogin'], ANY);
 allow(api('logo'), READ, ANY);
 

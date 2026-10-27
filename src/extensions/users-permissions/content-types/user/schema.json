@@ -105,6 +105,12 @@
     "home": {
       "type": "json",
       "private": true
+    },
+    "default_pickup": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::pickup.pickup",
+      "private": true
     }
   }
 }

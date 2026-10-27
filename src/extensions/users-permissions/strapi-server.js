@@ -25,6 +25,7 @@ const { isAppAdmin } = require('../../services/app-permissions');
 const { cachePermissionReads } = require('../../services/role-permissions-cache');
 const { cacheAuthenticatedUser } = require('../../services/authenticated-user-cache');
 const userHome = require('../../services/user-home');
+const userDefaultPickup = require('../../services/user-default-pickup');
 
 module.exports = (plugin) => {
   const adminOnly =
@@ -42,11 +43,13 @@ module.exports = (plugin) => {
   user.update = adminOnly(user.update);
   user.home = userHome.controllers.home;
   user.updateHome = userHome.controllers.updateHome;
+  // the member's default warehouse (issues/361)
+  Object.assign(user, userDefaultPickup.controllers);
 
   const contentApi = plugin.routes && plugin.routes['content-api'];
   if (contentApi) {
     // before the plugin's own /users/:id routes
-    contentApi.routes = [...userHome.routes, ...contentApi.routes];
+    contentApi.routes = [...userHome.routes, ...userDefaultPickup.routes, ...contentApi.routes];
   }
 
   const authFactory = plugin.controllers.auth;

@@ -1109,6 +1109,10 @@ const OWN_DATA_ACTIONS = new Set([
   'api::me.me.find',
   'plugin::users-permissions.user.home',
   'plugin::users-permissions.user.updateHome',
+  // the default warehouse: its controller checks who asks (issues/361)
+  'plugin::users-permissions.user.defaultPickup',
+  'plugin::users-permissions.user.updateDefaultPickup',
+  'plugin::users-permissions.user.defaultPickups',
 ]);
 
 function stripMe(body) {

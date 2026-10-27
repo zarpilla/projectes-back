@@ -310,7 +310,11 @@ async function importSeedPermissions() {
     // users-permissions plugin actions for authenticated users
     // (merged into the SAME call because updateRole REPLACES the role's set)
     // home/updateHome: the person's own Inici (services/user-home.js)
-    user: ['find', 'findOne', 'create', 'update', 'count', 'me', 'home', 'updateHome'],
+    // defaultPickup(s)/updateDefaultPickup: the member's default warehouse (issues/361)
+    user: [
+      'find', 'findOne', 'create', 'update', 'count', 'me', 'home', 'updateHome',
+      'defaultPickup', 'updateDefaultPickup', 'defaultPickups',
+    ],
     // POST /api/auth/logout revokes the refresh session (needs a Bearer token).
     auth: ['logout'],
     // v3 "userspermissions: getroles" -> the roles read action
