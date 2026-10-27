@@ -4,8 +4,10 @@
  * issues/154 (2026-10-18): a reply on an incidence was e-mailed to the member
  * only (when the office or a driver replied) or to contact_form_email only
  * (when the member replied), so the rest of the office staff never heard of
- * it. Now a new reply goes to contact_form_email, every active orders_admin
- * user and the order's owner, without the reply's author and without repeats.
+ * it. Now a new reply goes to contact_form_email and the order's owner,
+ * without the reply's author and without repeats. 2026-10-27: orders_admin
+ * users are no longer added (too many people got every reply); the office
+ * picks its recipients in contact_form_email.
  * Updates that add no reply keep the old recipients.
  */
 
@@ -93,7 +95,7 @@ afterEach(() => {
 });
 
 describe('incidence reply e-mails (issues/154)', () => {
-  it('an office reply reaches the member and the other office staff, not its author', async () => {
+  it('an office reply reaches the member and contact_form_email', async () => {
     const t = load({
       repliesBefore: [],
       repliesAfter: [{ text: 'Ho mirem', user: { id: 1, email: 'office-a@coop.cat' } }],
@@ -106,15 +108,14 @@ describe('incidence reply e-mails (issues/154)', () => {
     expect(html).toContain('Ho mirem');
   });
 
-  it("a member's reply reaches contact_form_email and every orders_admin user once", async () => {
+  it("a member's reply reaches contact_form_email only, not the orders_admin users", async () => {
     const t = load({
       repliesBefore: [{ text: 'Hola' }],
       repliesAfter: [{ text: 'Hola' }, { text: 'Encara no', user: { id: 10 } }],
     });
     await update(t, 10);
     const { to } = t.send.mock.calls[0][0];
-    // Office@coop.cat (ADMIN_B) is the same address as contact_form_email's office@coop.cat
-    expect(sorted(to)).toEqual(sorted(['office@coop.cat', 'logistica@coop.cat', 'office-a@coop.cat']));
+    expect(sorted(to)).toEqual(sorted(['office@coop.cat', 'logistica@coop.cat']));
   });
 
   it("a driver's reply reaches the office and the member", async () => {
@@ -122,8 +123,18 @@ describe('incidence reply e-mails (issues/154)', () => {
     await update(t, 3);
     const { to } = t.send.mock.calls[0][0];
     expect(sorted(to)).toEqual(
-      sorted(['office@coop.cat', 'logistica@coop.cat', 'office-a@coop.cat', 'member@coop.cat']),
+      sorted(['office@coop.cat', 'logistica@coop.cat', 'member@coop.cat']),
     );
+  });
+
+  it('a reply by someone in contact_form_email does not mail them back', async () => {
+    const t = load({
+      repliesBefore: [],
+      repliesAfter: [{ text: 'Fet', user: { id: 2, email: 'Office@coop.cat' } }],
+    });
+    await update(t, 2);
+    const { to } = t.send.mock.calls[0][0];
+    expect(sorted(to)).toEqual(sorted(['logistica@coop.cat', 'member@coop.cat']));
   });
 
   it('an update without a new reply still mails the member only', async () => {
