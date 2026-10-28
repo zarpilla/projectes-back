@@ -20,7 +20,7 @@ const { loadActivitiesByProjectMonth } = require('../services/economic-detail-ac
 const { getReadCache } = require('../../../services/read-cache');
 const { queryTables } = require('../../../services/query-tables');
 const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDocuments');
-const { lineTotal, invalidLineValueMessage, assignLinePositions } = require('../../../services/budget-line');
+const { lineTotal, invalidLineValueMessage, assignLinePositions, sortPhasesByPosition } = require('../../../services/budget-line');
 const { touchesDates, projectDatesError } = require('../../../services/project-dates');
 const {
   buildProjectRows,
@@ -227,8 +227,8 @@ const firstLevelPopulateWithComponentRelations = (skip) => ({
   grantable_contacts: { populate: { contact: true } },
 });
 
-// issues/345: a line that only moved gets its new position with updateMany,
-// which runs no lifecycle (the order changes no total).
+// issues/345: a line (or a phase) that only moved gets its new position with
+// updateMany, which runs no lifecycle (the order changes no total).
 const saveLinePositions = async (uid, moved) => {
   for (const { id, position } of moved) {
     await strapi.db.query(uid).updateMany({ where: { id }, data: { position } });
@@ -1294,6 +1294,10 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         },
       });
       const children = childrenAll.filter((c) => c.id != id);
+      children.forEach((c) => {
+        sortPhasesByPosition(c.project_phases);
+        sortPhasesByPosition(c.project_original_phases);
+      });
 
       const flattenMap = (arrays, prop) => _.flatten(arrays.map((a) => a[prop]));
 
@@ -1818,6 +1822,11 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         ]),
       });
 
+    if (data) {
+      sortPhasesByPosition(data.project_phases);
+      sortPhasesByPosition(data.project_original_phases);
+    }
+
     // Calculate fresh totals to ensure consistency with calculate endpoint
     // This ensures reports and lists get accurate totals from find/findOne methods
     if (data && data.id) {
@@ -1908,6 +1917,10 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         ]),
       });
 
+    if (data) {
+      sortPhasesByPosition(data.project_phases);
+      sortPhasesByPosition(data.project_original_phases);
+    }
     return data;
   },
   // doCalculateProjectInfo: async (ctx) => {
@@ -2086,17 +2099,21 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       }
     }
 
+    // the phases keep the order the form sends them in, as their lines do
+    const movedPhases = assignLinePositions(phases);
+    await saveLinePositions(PHASE_ENTITY_UIDS[entity], movedPhases);
+
     for await (const phase of phases) {
       const { incomes, expenses, ...item } = phase;
       if (!phase.id) {
         const resp = await strapi.db
           .query(PHASE_ENTITY_UIDS[entity])
-          .create({ data: { project: id, name: item.name } });
+          .create({ data: { project: id, name: item.name, position: phase.position } });
         phase.id = resp.id;
       } else if (phase.dirty) {
         await strapi.db
           .query(PHASE_ENTITY_UIDS[entity])
-          .update({ where: { id: phase.id }, data: { project: id, name: item.name } });
+          .update({ where: { id: phase.id }, data: { project: id, name: item.name, position: phase.position } });
       }
 
       if (incomes) {

@@ -6,6 +6,7 @@
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { adaptQuery } = require('../../../services/query-adapter');
+const { sortPhasesByPosition } = require('../../../services/budget-line');
 
 module.exports = createCoreController('api::project-original-phase.project-original-phase', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -22,7 +23,7 @@ module.exports = createCoreController('api::project-original-phase.project-origi
    */
   async findWithHours(ctx) {
     const opts = adaptQuery(ctx.query);
-    return strapi.db.query('api::project-original-phase.project-original-phase').findMany({
+    const phases = await strapi.db.query('api::project-original-phase.project-original-phase').findMany({
       where: opts.filters || {},
       populate: {
         incomes: {
@@ -41,5 +42,8 @@ module.exports = createCoreController('api::project-original-phase.project-origi
       limit: dbLimit(opts),
       orderBy: opts.sort,
     });
+    // the saved order of the phases and their lines (issues/345); an explicit
+    // _sort still wins
+    return opts.sort ? phases : sortPhasesByPosition(phases);
   },
 }));

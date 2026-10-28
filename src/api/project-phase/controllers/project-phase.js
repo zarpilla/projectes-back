@@ -5,6 +5,7 @@
  */
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { sortPhasesByPosition } = require('../../../services/budget-line');
 
 /**
  * The graph v3's `project-phases.find` populated (api/project-phases/controllers).
@@ -39,7 +40,15 @@ module.exports = createCoreController('api::project-phase.project-phase', ({ str
     if (!ctx.query.populate || ctx.query.populate === '*') {
       ctx.query = { ...ctx.query, populate: PHASE_GRAPH };
     }
-    return super.find(ctx);
+    const sorted = !!ctx.query.sort;
+    const response = await super.find(ctx);
+    // the saved order of the phases and their lines (issues/345); an explicit
+    // _sort still wins
+    if (response && Array.isArray(response.data)) {
+      if (sorted) response.data.forEach((phase) => sortPhasesByPosition([phase]));
+      else sortPhasesByPosition(response.data);
+    }
+    return response;
   },
 
   // Default core actions (findOne/create/update/delete) are inherited.

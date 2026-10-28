@@ -66,6 +66,7 @@ describe('updatePhases stores the line order', () => {
     const phases = [
       {
         id: 10,
+        position: 0,
         incomes: [
           { id: 101, concept: 'b', quantity: 1, amount: 2, position: 1 },
           { id: 100, concept: 'a', quantity: 1, amount: 1, position: 0 },
@@ -100,6 +101,7 @@ describe('updatePhases stores the line order', () => {
     const phases = [
       {
         id: 10,
+        position: 0,
         incomes: [
           { id: 100, concept: 'a', quantity: 1, amount: 1, position: 0 },
           { id: 101, concept: 'b', quantity: 1, amount: 2, position: 1 },

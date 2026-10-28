@@ -1873,6 +1873,7 @@ export interface ApiProjectOriginalPhaseProjectOriginalPhase extends Struct.Coll
     > &
       Schema.Attribute.Private;
     name: Schema.Attribute.String;
+    position: Schema.Attribute.Integer;
     project: Schema.Attribute.Relation<'manyToOne', 'api::project.project'>;
     publishedAt: Schema.Attribute.DateTime;
     updatedAt: Schema.Attribute.DateTime;
@@ -1899,6 +1900,7 @@ export interface ApiProjectPhaseProjectPhase extends Struct.CollectionTypeSchema
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::project-phase.project-phase'> &
       Schema.Attribute.Private;
     name: Schema.Attribute.String;
+    position: Schema.Attribute.Integer;
     project: Schema.Attribute.Relation<'manyToOne', 'api::project.project'>;
     publishedAt: Schema.Attribute.DateTime;
     updatedAt: Schema.Attribute.DateTime;
