@@ -1261,6 +1261,80 @@ export interface ApiIncomeTypeIncomeType extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiIntegrationApiKey extends Struct.CollectionTypeSchema {
+  collectionName: 'api_keys';
+  info: {
+    description: "Keys of the integrations API (x-api-key), one user each; only the key's SHA-256 is stored";
+    displayName: 'API keys';
+    pluralName: 'api-keys';
+    singularName: 'api-key';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  pluginOptions: {
+    'content-manager': {
+      visible: false;
+    };
+    'content-type-builder': {
+      visible: false;
+    };
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    issued_by: Schema.Attribute.Integer;
+    key_hash: Schema.Attribute.String & Schema.Attribute.Required & Schema.Attribute.Private;
+    last_used_at: Schema.Attribute.DateTime;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::integration.api-key'> &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String;
+    prefix: Schema.Attribute.String & Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    revoked_at: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    user_id: Schema.Attribute.Integer & Schema.Attribute.Required;
+  };
+}
+
+export interface ApiIntegrationIntegrationRef extends Struct.CollectionTypeSchema {
+  collectionName: 'integration_refs';
+  info: {
+    description: "Which order or delivery point each external_id of a member's system is; unique per (owner_id, kind, external_id) by a database index";
+    displayName: 'Integration refs';
+    pluralName: 'integration-refs';
+    singularName: 'integration-ref';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  pluginOptions: {
+    'content-manager': {
+      visible: false;
+    };
+    'content-type-builder': {
+      visible: false;
+    };
+  };
+  attributes: {
+    contact_id: Schema.Attribute.Integer;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    external_id: Schema.Attribute.String & Schema.Attribute.Required;
+    kind: Schema.Attribute.Enumeration<['order', 'contact']> & Schema.Attribute.Required;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::integration.integration-ref'> &
+      Schema.Attribute.Private;
+    order_id: Schema.Attribute.Integer;
+    owner_id: Schema.Attribute.Integer & Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
 export interface ApiJustificationJustification extends Struct.CollectionTypeSchema {
   collectionName: 'justifications';
   info: {
@@ -3533,6 +3607,8 @@ declare module '@strapi/strapi' {
       'api::home-menu.home-menu': ApiHomeMenuHomeMenu;
       'api::incidence.incidence': ApiIncidenceIncidence;
       'api::income-type.income-type': ApiIncomeTypeIncomeType;
+      'api::integration.api-key': ApiIntegrationApiKey;
+      'api::integration.integration-ref': ApiIntegrationIntegrationRef;
       'api::justification.justification': ApiJustificationJustification;
       'api::kanban-view.kanban-view': ApiKanbanViewKanbanView;
       'api::legal-form.legal-form': ApiLegalFormLegalForm;

@@ -8,6 +8,7 @@ const { registerUserDeleteGuard } = require('./services/user-delete-guard');
 const { seedNewDatabase } = require('./services/seed-new-database');
 const { recalcZeroDocumentTotals } = require('./services/recalc-zero-document-totals');
 const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoice-unique-index');
+const { ensureRefsIndex } = require('./services/integrations/refs');
 const { normalizeComponentTypes } = require('./services/normalize-component-types');
 const { backfillActivityCosts } = require('./services/backfill-activity-costs');
 const { mergeInvalidPeriodificationYears } = require('./services/merge-invalid-periodification-years');
@@ -129,6 +130,8 @@ module.exports = {
       // tenant rebuilt by the ETL (which recreates the composite-only unique)
       // gets the real one-invoice-per-order constraint back.
       ['ensureOrderInvoiceUniqueIndex', ensureOrderInvoiceUniqueIndex, { runOnce: false }],
+      // integrations API: one order or point per (member, external_id)
+      ['ensureRefsIndex', ensureRefsIndex, { runOnce: false }],
       // a record's history is read by (entity, entity_id), newest first (issues/161)
       ['ensureChangeLogIndex', ensureChangeLogIndex, { runOnce: false }],
       // Rerun on every boot for the same reason: the ETL used to copy v3's

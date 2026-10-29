@@ -1,0 +1,44 @@
+{
+  "kind": "collectionType",
+  "collectionName": "api_keys",
+  "info": {
+    "singularName": "api-key",
+    "pluralName": "api-keys",
+    "displayName": "API keys",
+    "description": "Keys of the integrations API (x-api-key), one user each; only the key's SHA-256 is stored"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {
+    "content-manager": { "visible": false },
+    "content-type-builder": { "visible": false }
+  },
+  "attributes": {
+    "user_id": {
+      "type": "integer",
+      "required": true
+    },
+    "name": {
+      "type": "string"
+    },
+    "prefix": {
+      "type": "string",
+      "required": true
+    },
+    "key_hash": {
+      "type": "string",
+      "required": true,
+      "private": true
+    },
+    "issued_by": {
+      "type": "integer"
+    },
+    "last_used_at": {
+      "type": "datetime"
+    },
+    "revoked_at": {
+      "type": "datetime"
+    }
+  }
+}

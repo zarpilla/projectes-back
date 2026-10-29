@@ -1,0 +1,38 @@
+{
+  "kind": "collectionType",
+  "collectionName": "integration_refs",
+  "info": {
+    "singularName": "integration-ref",
+    "pluralName": "integration-refs",
+    "displayName": "Integration refs",
+    "description": "Which order or delivery point each external_id of a member's system is; unique per (owner_id, kind, external_id) by a database index"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {
+    "content-manager": { "visible": false },
+    "content-type-builder": { "visible": false }
+  },
+  "attributes": {
+    "owner_id": {
+      "type": "integer",
+      "required": true
+    },
+    "kind": {
+      "type": "enumeration",
+      "enum": ["order", "contact"],
+      "required": true
+    },
+    "external_id": {
+      "type": "string",
+      "required": true
+    },
+    "order_id": {
+      "type": "integer"
+    },
+    "contact_id": {
+      "type": "integer"
+    }
+  }
+}

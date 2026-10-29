@@ -132,6 +132,9 @@ async function importSeedPermissions() {
     'read-cache': ['stats', 'clear'],
     // «Còpia de seguretat»: last night's database dump (isAdmin on the routes)
     backup: ['latest', 'download'],
+    // the API keys of the integrations API, from Administració › Usuàries
+    // (isAdmin on the routes); the API itself is public, behind the api-key policy
+    integration: ['listApiKeys', 'createApiKey', 'revokeApiKey'],
     // Comunitat energètica (api/energy; who may call them: app-access-rules)
     energy: [
       'listPartners',

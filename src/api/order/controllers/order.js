@@ -974,6 +974,16 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   },
 }));
 
+// The order rules the controller applies, for the integrations API
+// (api/integration), which writes a member's orders without these routes.
+// A property of the factory: Strapi only calls the factory itself.
+module.exports.orderRules = {
+  missingOrderFields,
+  deliveryDateRefusal,
+  applyLateFlags,
+  exemptFromDateRules,
+};
+
 // Guards order.invoice against overlapping runs (one process per tenant in
 // fork mode, so a module-level flag covers every request).
 let invoiceRunInFlight = false;
