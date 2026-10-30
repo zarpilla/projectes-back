@@ -368,7 +368,7 @@ describe('route of an order without one (route-assignment)', () => {
     { id: 3, name: 'DC - VALLÈS', active: true, wednesday: true },
     { id: 2, name: 'DJ - MARESME', active: true, thursday: true },
     { id: 9, name: 'DT - VELLA', active: false, tuesday: true },
-    { id: 8, name: 'TRANSFER', active: true, is_transfer_route: true, monday: true },
+    { id: 8, name: 'DLL - TRANSFER', active: true, is_transfer_route: true, sunday: true },
   ];
   const lookups = {
     routes: async () => routes,
@@ -401,8 +401,10 @@ describe('route of an order without one (route-assignment)', () => {
   it('moves to the first day after it with a route of the town', async () => {
     // Wednesday: the Vallès route is not Mataró's
     expect(await assign('2026-11-04')).toMatchObject({ route: { id: 2 }, date: '2026-11-05', moved: true });
-    // Friday → next Tuesday; Monday's transfer route and the inactive one never count
-    expect(await assign('2026-11-06')).toMatchObject({ route: { id: 1 }, date: '2026-11-10', moved: true });
+    // Friday → Sunday's route, which also does transfers (it counts, as in the order form)
+    expect(await assign('2026-11-06')).toMatchObject({ route: { id: 8 }, date: '2026-11-08', moved: true });
+    // the inactive Tuesday route never counts: Tuesday goes on route 1
+    expect(await assign('2026-11-10')).toMatchObject({ route: { id: 1 }, date: '2026-11-10', moved: false });
   });
 
   it('skips a closed day, or takes its substitute route', async () => {

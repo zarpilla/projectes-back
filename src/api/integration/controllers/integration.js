@@ -111,7 +111,7 @@ module.exports = () => ({
     );
     ctx.body = {
       routes: routes
-        .filter((r) => r.active && !r.is_transfer_route)
+        .filter((r) => r.active)
         .map((r) => ({
           id: r.id,
           name: r.name,

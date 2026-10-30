@@ -123,7 +123,7 @@ const lineKey = (lines) =>
   );
 
 async function resolveRoute(value, lookups) {
-  const routes = (await lookups.routes()).filter((r) => r.active && !r.is_transfer_route);
+  const routes = (await lookups.routes()).filter((r) => r.active);
   const found = resolveNamed(routes, value, ['name', 'short_name']);
   if (found.error === 'ambiguous')
     reject('ROUTE_AMBIGUOUS', `Hi ha més d'una ruta «${value}»`, { field: 'route' });

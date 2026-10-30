@@ -8,9 +8,10 @@
  * day after it that one does.
  *
  * - The town's routes are those of «Poblacions i rutes» (city-route) for the
- *   point's town, matched by name like the order form does, active and not
- *   transfer routes; with several on the same day, the first in the routes'
- *   order.
+ *   point's town, matched by name, and active, like the order form's
+ *   validCityRoutes (a route that also does transfers, is_transfer_route, is
+ *   one of them: La Garriga only has such routes); with several on the same
+ *   day, the first in the routes' order.
  * - A route runs on its weekdays unless «Rutes i dies» closes it that day
  *   (route-days.js). A closure with a substitute route and day (issues/355)
  *   puts the substitute on that day for the town, which a member can choose
@@ -44,9 +45,7 @@ async function townRoutesOf(point, lookups) {
   const routeIds = new Set(
     (await lookups.cityRoutes()).filter((cr) => cityIds.has(idOf(cr.city))).map((cr) => idOf(cr.route)),
   );
-  const routes = (await lookups.routes()).filter(
-    (r) => r.active && !r.is_transfer_route && routeIds.has(r.id),
-  );
+  const routes = (await lookups.routes()).filter((r) => r.active && routeIds.has(r.id));
   return { town, routes };
 }
 
