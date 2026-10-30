@@ -132,7 +132,7 @@ const LINE_AMOUNTS = ['amount', 'total_amount', 'bank_account', 'invoice', 'inco
  * `selfId` the user's own id.
  */
 function rulesFor({ member = false, selfId = null, permissions = [] } = {}) {
-  const others = member ? { keep: ['id', 'documentId', 'username', 'fullname'] } : { drop: USER_PRIVATE };
+  const others = member ? { keep: ['id', 'documentId', 'username', 'fullname', 'display_name'] } : { drop: USER_PRIVATE };
   const rules = {
     [USER]: { pick: (row) => (selfId !== null && row.id === selfId ? { drop: SALARY } : others) },
     'api::daily-dedication.daily-dedication': { drop: DEDICATION_SALARY_FIELDS },
