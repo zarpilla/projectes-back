@@ -28,5 +28,10 @@ module.exports = {
       path: '/treasuries/irpf',
       handler: 'treasury.irpf',
     },
+    {
+      method: 'POST',
+      path: '/treasuries/movement-dates',
+      handler: 'treasury.updateMovementDates',
+    },
   ],
 };
