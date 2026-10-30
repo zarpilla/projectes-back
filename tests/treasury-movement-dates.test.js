@@ -7,8 +7,8 @@ const { treasuryDb } = require('./helpers/treasury-db');
  * pending movements can be changed there, and the project lines follow. Only
  * what isn't paid or collected moves: an expected line («Previsió pag.»), or
  * an unpaid document («Previsió cobrament» and «Venciment» of incomes,
- * «Venciment» of expenses) with the lines it is assigned to. Anything paid refuses the whole
- * save.
+ * «Venciment» of expenses) with the lines it is assigned to. Anything paid, or
+ * a document whose «Modificable» is off, refuses the whole save.
  */
 
 const moment = require('moment');
@@ -50,6 +50,7 @@ describe('updateMovementDates (issues/370)', () => {
         { id: 10, code: 'F-10', paid: false, paid_date: null },
         { id: 11, code: 'F-11', paid: true, paid_date: '2026-10-01' },
         { id: 12, code: 'F-12', paid: false, paid_date: '2026-10-02' },
+        { id: 13, code: 'F-13', paid: false, paid_date: null, updatable: false },
       ],
       'api::received-invoice.received-invoice': [{ id: 30, code: 'R-30', paid: false }],
     };
@@ -106,6 +107,7 @@ describe('updateMovementDates (issues/370)', () => {
     ['a paid invoice', { kind: 'emitted-invoices', id: 11 }, /ja està pagat o cobrat/],
     ['an invoice with a payment date', { kind: 'emitted-invoices', id: 12 }, /ja està pagat o cobrat/],
     ['a line with a document', { kind: 'phase-income', id: 2 }, /document assignat/],
+    ['a document not «Modificable»', { kind: 'emitted-invoices', id: 13 }, /no és modificable/],
   ])('refuses %s and changes nothing', async (_, change, message) => {
     await expect(
       updateMovementDates([{ kind: 'phase-income', id: 1, date: '2026-12-15' }, { ...change, date: '2026-12-15' }]),
@@ -158,6 +160,7 @@ describe('treasury forecast: which movements can change date (issues/370)', () =
       'api::emitted-invoice.emitted-invoice': [
         { id: 10, code: 'F-10', total: 100, paid: false, emitted: soon(0), paybefore: soon(1), state: 'real' },
         { id: 11, code: 'F-11', total: 100, paid: true, paid_date: soon(0), emitted: soon(0), state: 'real' },
+        { id: 13, code: 'F-13', total: 100, paid: false, emitted: soon(0), paybefore: soon(1), state: 'real', updatable: false },
       ],
     };
     global.strapi = {
@@ -191,12 +194,13 @@ describe('treasury forecast: which movements can change date (issues/370)', () =
     const actions = controller({ strapi: global.strapi });
     const result = (await actions.forecast(ctx)) || ctx.body;
     const edit = Object.fromEntries(
-      result.treasury.filter((r) => ['Esperada', 'F-10', 'F-11'].includes(r.concept)).map((r) => [r.concept, [r.date_edit, r.date_edit_id]]),
+      result.treasury.filter((r) => ['Esperada', 'F-10', 'F-11', 'F-13'].includes(r.concept)).map((r) => [r.concept, [r.date_edit, r.date_edit_id]]),
     );
     expect(edit).toEqual({
       Esperada: ['phase-expense', 7],
       'F-10': ['emitted-invoices', 10],
       'F-11': [null, 11],
+      'F-13': [null, 13], // «Modificable» off
     });
   });
 });

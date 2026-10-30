@@ -15,8 +15,9 @@
  *         «Venciment» (`paybefore`). The PDF of an issued invoice is not
  *         drawn again, as when its form is saved;
  *       · received invoices and other expenses: «Venciment» (`paybefore`).
- * A paid line or document, or one with a payment date, is refused, and then
- * nothing is changed.
+ * A paid line or document, one with a payment date, or a document whose
+ * «Modificable» is off (`updatable` false) is refused, and then nothing is
+ * changed.
  *
  * Documents are written straight to their table: a date for the forecast
  * must not regenerate the PDF, queue FACe or Verifactu, or hit the guard of
@@ -93,6 +94,8 @@ async function updateMovementDates(changes) {
       }
     } else if (row.paid || row.paid_date) {
       throw new MovementDateError(`«${describe(row, c.id)}» ja està pagat o cobrat: no se'n pot canviar la data`);
+    } else if (row.updatable === false) {
+      throw new MovementDateError(`«${describe(row, c.id)}» no és modificable: no se'n pot canviar la data`);
     }
     loaded.push({ c, k });
   }
