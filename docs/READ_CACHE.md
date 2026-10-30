@@ -166,7 +166,7 @@ verification compares with sorted keys (`canonicalJson`).
 | `READ_CACHE_TTL_S` | 600 | no answer is kept longer |
 | `READ_CACHE_STAMPS_MS` | 2000 | max age of MySQL's stamps when an answer is served |
 | `READ_CACHE_LOG_SLOW_MS` | 1000 | a load someone waits this long or more is logged («slow load») |
-| `READ_CACHE_VERIFY` | 0.05 | share of hits loaded again and compared (0..1); 5 % for the first weeks in production (from 2026-10-21), then 0. The big datasets (Tresoreria, Ingressos/Despeses, Dedicació) set their own 0: a check would redo the whole load. A difference drops the entry; if the stamps then report a write from outside on its tables it was the normal delay for those (warning «served up to a few seconds after a write from outside»), otherwise it is a detection failure: `[read-cache] STALE entry` error with the first difference |
+| `READ_CACHE_VERIFY` | 0 | share of hits loaded again and compared (0..1). It was 0.05 in production from 2026-10-21 to 2026-10-30: ~5,000 checks on 16 tenants, 0 mismatches, so the default went back to 0 (issues/331). To check a tenant again, set `READ_CACHE_VERIFY=0.05` in its `envs/<t>.env` and redeploy it. The big datasets (Tresoreria, Ingressos/Despeses, Dedicació) set their own 0: a check would redo the whole load. A difference drops the entry; if the stamps then report a write from outside on its tables it was the normal delay for those (warning «served up to a few seconds after a write from outside»), otherwise it is a detection failure: `[read-cache] STALE entry` error with the first difference |
 
 ## Administration
 
