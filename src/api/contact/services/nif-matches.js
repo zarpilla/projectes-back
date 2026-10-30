@@ -23,13 +23,19 @@ function nifMatches(contacts, nif, excludeId = null) {
     .map(({ id, name, trade_name, nif: n }) => ({ id, name, trade_name, nif: n }));
 }
 
+// The SQL side of nifKey for the usual separators; nifMatches still compares
+// exactly, so another separator only means a missed warning.
+const NIF_KEY_SQL = "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(nif, ' ', ''), '-', ''), '.', ''), '/', ''))";
+
 async function findNifMatches(strapi, nif, excludeId) {
   const key = nifKey(nif);
   if (key.length < MIN_KEY_LENGTH) return [];
-  // Narrowed by the last digits in SQL, then compared exactly here.
+  // Normalised in SQL: a LIKE on the stored text misses "B-12.345.678".
+  const rows = await strapi.db.connection('contacts').select('id').whereRaw(`${NIF_KEY_SQL} = ?`, [key]);
+  if (!rows.length) return [];
   const contacts = await strapi.db.query('api::contact.contact').findMany({
     select: ['id', 'name', 'trade_name', 'nif'],
-    where: { nif: { $containsi: key.slice(-4) } },
+    where: { id: { $in: rows.map((r) => r.id) } },
     populate: { owner: { select: ['id'] } },
   });
   return nifMatches(contacts, nif, excludeId);
