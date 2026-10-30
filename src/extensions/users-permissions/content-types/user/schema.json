@@ -88,6 +88,9 @@
     "fullname": {
       "type": "string"
     },
+    "display_name": {
+      "type": "string"
+    },
     "permissions": {
       "type": "component",
       "repeatable": true,
