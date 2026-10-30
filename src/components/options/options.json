@@ -43,6 +43,11 @@
     "grantable_fiscal_years": {
       "type": "boolean",
       "default": false
+    },
+    "default_billing_mode": {
+      "type": "enumeration",
+      "enum": ["project", "hours"],
+      "default": "project"
     }
   }
 }

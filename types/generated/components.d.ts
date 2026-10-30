@@ -285,6 +285,8 @@ export interface OptionsOptions extends Struct.ComponentSchema {
   };
   attributes: {
     deductible_vat_pct: Schema.Attribute.Decimal & Schema.Attribute.DefaultTo<100>;
+    default_billing_mode: Schema.Attribute.Enumeration<['project', 'hours']> &
+      Schema.Attribute.DefaultTo<'project'>;
     fiscal_year_start_month: Schema.Attribute.Integer &
       Schema.Attribute.SetMinMax<
         {
