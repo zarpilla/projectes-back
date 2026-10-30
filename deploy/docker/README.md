@@ -123,3 +123,7 @@ App admins download last night's dump of their own database from Administració 
 ```
 
 Every `main` commit has its image on Docker Hub (`webcoop/esstrapis-back:v5-<sha>`); `deploy.log` lists what was deployed when. There is no PM2 fallback any more: since 2026-10-09 the tenant directories hold only `uploads/` (and the fronts' `docker/`), not the backend code.
+
+Migrations only go forward, so not every older image can come back:
+
+- **Before issues/328 (back `179d1d2`, 2026-10-24)**: those images read the project totals and `dirty` from columns of `projects`. issues/328 moved them to `project_totals`, and issues/329 (migration `2026.10.30T00.00.00.drop-old-project-total-columns`) dropped the old columns, so an image from before 328 fails on every project read. Rolling back that far means adding the columns back first (the types are in `createTable`, `src/api/project/services/project-totals.js`), copying the values from `project_totals`, and `UPDATE projects SET dirty = 1` so its cron recomputes them.
