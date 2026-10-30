@@ -20,11 +20,13 @@
  *
  * Documents are written straight to their table: a date for the forecast
  * must not regenerate the PDF, queue FACe or Verifactu, or hit the guard of
- * issued invoices (their lifecycles). Phase lines go through the query layer,
+ * issued invoices (their lifecycles). The change still goes to the
+ * document's «Historial» (services/change-log.js). Phase lines go through the query layer,
  * whose lifecycles mark the projects' totals to be recomputed.
  */
 
 const moment = require('moment');
+const changeLog = require('../../../services/change-log');
 
 const KINDS = {
   'phase-income': { uid: 'api::phase-income.phase-income', line: true },
@@ -103,10 +105,16 @@ async function updateMovementDates(changes) {
       continue;
     }
     const { tableName } = strapi.db.metadata.get(k.uid);
+    // the raw UPDATE skips the document service: the document's «Historial»
+    // gets the change here, with who made it
+    const before = changeLog.isTracked(k.uid)
+      ? await changeLog.rowWith(k.uid, { id: c.id }, k.fields).catch(() => null)
+      : null;
     await strapi.db
       .connection(tableName)
       .where({ id: c.id })
       .update(Object.fromEntries(k.fields.map((f) => [f, c.date])));
+    await changeLog.logRawUpdate(k.uid, before, k.fields);
     const assigned = await strapi.db
       .query(k.lines.uid)
       .findMany({ where: { [k.lines.relation]: { id: c.id } }, select: ['id', 'date'] });

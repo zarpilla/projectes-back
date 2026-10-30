@@ -39,6 +39,11 @@ module.exports = {
       handler: 'contact.nifMatches',
     },
     {
+      method: 'GET',
+      path: '/contacts/:id/summary',
+      handler: 'contact.summary',
+    },
+    {
       method: 'POST',
       path: '/contacts/unify',
       handler: 'contact.unify',

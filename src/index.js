@@ -52,7 +52,6 @@ const { registerAppPermissions } = require('./services/register-app-permissions'
 const { registerReadCacheRoutes } = require('./services/read-cache/routes');
 const { initReadCache } = require('./services/read-cache');
 const { ensureProjectTotals } = require('./api/project/services/project-totals');
-const { reconcileLegacyProjectTotals } = require('./services/reconcile-legacy-project-totals');
 
 module.exports = {
   /**
@@ -211,16 +210,6 @@ module.exports = {
         strapi.log.error(`[bootstrap] startup script ${name} failed: ${error && error.message}`);
       }
     }
-
-    // issues/328: once the previous backend of a blue/green deploy is gone,
-    // the projects it changed in the old total columns are recomputed.
-    const reconcileAfterMs = Number(process.env.PROJECT_TOTALS_RECONCILE_MIN || 10) * 60 * 1000;
-    const reconcile = setTimeout(() => {
-      runStartupScript('reconcileLegacyProjectTotals', reconcileLegacyProjectTotals, { runOnce: true }).catch(
-        (error) => strapi.log.error(`[bootstrap] reconcileLegacyProjectTotals failed: ${error && error.message}`),
-      );
-    }, reconcileAfterMs);
-    if (reconcile.unref) reconcile.unref();
 
     // Last: the read cache turns itself on only if change detection works
     // (issues/307). The roles' permissions kept in memory follow the same

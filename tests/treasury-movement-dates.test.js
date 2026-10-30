@@ -29,9 +29,16 @@ describe('updateMovementDates (issues/370)', () => {
   let queryUpdates;
   let tableUpdates;
   let updateMovementDates;
+  let logged;
 
   beforeEach(() => {
     jest.resetModules();
+    logged = [];
+    jest.doMock('../src/services/change-log', () => ({
+      isTracked: () => true,
+      rowWith: async (uid, where, fields) => ({ id: where.id, fields }),
+      logRawUpdate: async (uid, before, fields) => logged.push({ uid, id: before.id, fields }),
+    }));
     rows = {
       'api::phase-income.phase-income': [
         { id: 1, concept: 'Pendent', paid: false, date: '2026-11-01' },
@@ -80,6 +87,10 @@ describe('updateMovementDates (issues/370)', () => {
   it('moves an unpaid invoice\'s «Previsió cobrament» and «Venciment», and the lines it is assigned to', async () => {
     const r = await updateMovementDates([{ kind: 'emitted-invoices', id: 10, date: '2026-12-15' }]);
     expect(tableUpdates).toEqual([{ table: 'emitted_invoices', id: 10, estimated_payment: '2026-12-15', paybefore: '2026-12-15' }]);
+    // in the invoice's «Historial»
+    expect(logged).toEqual([
+      { uid: 'api::emitted-invoice.emitted-invoice', id: 10, fields: ['estimated_payment', 'paybefore'] },
+    ]);
     // line 3 already had that date
     expect(queryUpdates).toEqual([{ uid: 'api::phase-income.phase-income', id: 2, date: '2026-12-15' }]);
     expect(r).toEqual({ updated: 1, lines: 1 });
@@ -101,6 +112,7 @@ describe('updateMovementDates (issues/370)', () => {
     ).rejects.toThrow(message);
     expect(queryUpdates).toEqual([]);
     expect(tableUpdates).toEqual([]);
+    expect(logged).toEqual([]);
   });
 
   it.each([
