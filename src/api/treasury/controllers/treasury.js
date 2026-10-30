@@ -75,6 +75,9 @@ const getValidationKey = (entityType, entityId, subType = null) => {
 const { walkBalances, sortRows, round2 } = require('../services/balances');
 const { treasuryDisplayDate } = require('../services/display-date');
 
+// a populated relation as { id, name }, or null
+const namedRef = (r) => (r && r.id ? { id: r.id, name: r.name } : null);
+
 // A project as the treasury screens list it (issues/309).
 const forecastProjectOption = (p) => ({
   id: p.id,
@@ -173,6 +176,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       // relation entirely, so the state/type/likelihood filters below would
       // see `undefined` for every project and match nothing.
       ...Object.fromEntries(FILTER_RELATIONS.map((r) => [r, true])),
+      // Previsió econòmica › Resum per projectes groups by it (issues/368)
+      project_scope: true,
     };
 
     // read before any load starts: a throw here leaves no load unawaited
@@ -313,6 +318,17 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       fallback_deductible_vat_pct,
       periodification,
     );
+    // Previsió econòmica › Resum per projectes (issues/368): the same sums per
+    // project, only when asked (Tresoreria doesn't read them)
+    const forecast_by_project = ['1', 'true'].includes(String(ctx.query.by_project))
+      ? projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          project_type: namedRef(p.project_type),
+          project_scope: namedRef(p.project_scope),
+          years: buildEstimatedForecastByYear([p], deductibleVatPctByYear, fallback_deductible_vat_pct, periodification),
+        }))
+      : undefined;
 
     // Full payroll cost per year (net + IRPF + SS + other), paid or not.
     // Accumulated in the payrolls loop below.
@@ -1269,6 +1285,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       vat_by_quarter: vatByQuarter,
       forecast_by_year,
       forecast_payrolls_by_year,
+      ...(forecast_by_project ? { forecast_by_project } : {}),
     };
   },
 
