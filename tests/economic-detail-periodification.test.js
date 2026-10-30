@@ -4,6 +4,9 @@
  * pushPeriodificationRows had nothing to add and the yearly figures differed
  * from the form's (project 583: 2024 0 € in the report against 7.599,97 € in
  * the form). The search branch (`_q`) loaded nothing at all.
+ *
+ * issues/369 (2026-10-30): the periodification rows showed «-» as phase and
+ * subphase in the Ingressos i despeses pivot; they now say «Periodificació».
  */
 
 describe('economic detail: periodification', () => {
@@ -58,6 +61,14 @@ describe('economic detail: periodification', () => {
     const rows2024 = periodificationRows(rows).filter((r) => r.year === '2024');
     expect(rows2024.find((r) => r.type === 'income').income_real).toBe(7599.97);
     expect(rows2024.find((r) => r.type === 'expense').expense_real).toBe(-100);
+  });
+
+  it('names the phase and subphase «Periodificació» (issues/369)', async () => {
+    const rows = await controller.findWithEconomicDetail({ query: {} });
+    for (const r of periodificationRows(rows)) {
+      expect(r.phase).toBe('Periodificació');
+      expect(r.subphase).toBe('Periodificació');
+    }
   });
 
   it('also when searching by name', async () => {
