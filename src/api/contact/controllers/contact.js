@@ -19,6 +19,7 @@ const {
 const { contactsWithOrders } = require('../services/with-orders');
 const { contactsOrdersSummary } = require('../services/orders-summary');
 const { contactSnapshot, loadContact } = require('../../order/services/contact-snapshot');
+const { findNifMatches } = require('../services/nif-matches');
 
 const ORDER = 'api::order.order';
 
@@ -93,6 +94,15 @@ module.exports = createCoreController('api::contact.contact', ({ strapi }) => ({
     // not already contain, so these rows are rendered by the same columns
     // and need the same relations.
     return contactsWithOrders(strapi, ctx.state.user.id, ctx.query.contact_id, BASIC_POPULATE);
+  },
+
+  /**
+   * GET /api/contacts/nif-matches?nif=B12345678&exclude=12
+   * The other contacts with this NIF (delivery points left out), for the
+   * warning of the contact form.
+   */
+  async nifMatches(ctx) {
+    return findNifMatches(strapi, ctx.query.nif, ctx.query.exclude);
   },
 
   /**

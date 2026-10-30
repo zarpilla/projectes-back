@@ -152,7 +152,7 @@ allow(api('contact'), [...READ, 'create', 'update', 'forOrders', 'withorders'], 
 // delete points, and «Poblacions i rutes» / «Rutes i dies» let them add towns,
 // link them to routes and close routes (canEdit there is orders_admin or
 // orders_delivery), even if those two are not in their menu.
-allow(api('contact'), ['delete', 'orders', 'unify'], STAFF);
+allow(api('contact'), ['delete', 'orders', 'unify', 'nifMatches'], STAFF);
 allow(api('city'), ['create'], STAFF);
 allow(api('city-route'), WRITE, STAFF);
 allow(api('route-festive'), WRITE, STAFF);

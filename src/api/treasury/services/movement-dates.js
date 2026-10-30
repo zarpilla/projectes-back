@@ -11,8 +11,9 @@
  *   - an unpaid document → the date the treasury reads for it, and the
  *     «Previsió pag.» of the project lines it is assigned to:
  *       · emitted invoices and other incomes: «Previsió cobrament»
- *         (`estimated_payment`). The «Venciment» of an issued invoice is
- *         printed on it and was sent to the client, so it stays;
+ *         (`estimated_payment`), which the treasury reads first, and
+ *         «Venciment» (`paybefore`). The PDF of an issued invoice is not
+ *         drawn again, as when its form is saved;
  *       · received invoices and other expenses: «Venciment» (`paybefore`).
  * A paid line or document, or one with a payment date, is refused, and then
  * nothing is changed.
@@ -30,22 +31,22 @@ const KINDS = {
   'phase-expense': { uid: 'api::phase-expense.phase-expense', line: true },
   'emitted-invoices': {
     uid: 'api::emitted-invoice.emitted-invoice',
-    field: 'estimated_payment',
+    fields: ['estimated_payment', 'paybefore'],
     lines: { uid: 'api::phase-income.phase-income', relation: 'invoice' },
   },
   'received-incomes': {
     uid: 'api::received-income.received-income',
-    field: 'estimated_payment',
+    fields: ['estimated_payment', 'paybefore'],
     lines: { uid: 'api::phase-income.phase-income', relation: 'income' },
   },
   'received-invoices': {
     uid: 'api::received-invoice.received-invoice',
-    field: 'paybefore',
+    fields: ['paybefore'],
     lines: { uid: 'api::phase-expense.phase-expense', relation: 'invoice' },
   },
   'received-expenses': {
     uid: 'api::received-expense.received-expense',
-    field: 'paybefore',
+    fields: ['paybefore'],
     lines: { uid: 'api::phase-expense.phase-expense', relation: 'expense' },
   },
 };
@@ -102,7 +103,10 @@ async function updateMovementDates(changes) {
       continue;
     }
     const { tableName } = strapi.db.metadata.get(k.uid);
-    await strapi.db.connection(tableName).where({ id: c.id }).update({ [k.field]: c.date });
+    await strapi.db
+      .connection(tableName)
+      .where({ id: c.id })
+      .update(Object.fromEntries(k.fields.map((f) => [f, c.date])));
     const assigned = await strapi.db
       .query(k.lines.uid)
       .findMany({ where: { [k.lines.relation]: { id: c.id } }, select: ['id', 'date'] });

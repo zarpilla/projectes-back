@@ -6,8 +6,8 @@ const { treasuryDb } = require('./helpers/treasury-db');
  * issues/370 (2026-10-30) — Tresoreria › Moviments bancaris: the dates of the
  * pending movements can be changed there, and the project lines follow. Only
  * what isn't paid or collected moves: an expected line («Previsió pag.»), or
- * an unpaid document («Previsió cobrament» of incomes, «Venciment» of
- * expenses) with the lines it is assigned to. Anything paid refuses the whole
+ * an unpaid document («Previsió cobrament» and «Venciment» of incomes,
+ * «Venciment» of expenses) with the lines it is assigned to. Anything paid refuses the whole
  * save.
  */
 
@@ -77,9 +77,9 @@ describe('updateMovementDates (issues/370)', () => {
     expect(r).toEqual({ updated: 1, lines: 1 });
   });
 
-  it('moves an unpaid invoice\'s «Previsió cobrament» and the lines it is assigned to', async () => {
+  it('moves an unpaid invoice\'s «Previsió cobrament» and «Venciment», and the lines it is assigned to', async () => {
     const r = await updateMovementDates([{ kind: 'emitted-invoices', id: 10, date: '2026-12-15' }]);
-    expect(tableUpdates).toEqual([{ table: 'emitted_invoices', id: 10, estimated_payment: '2026-12-15' }]);
+    expect(tableUpdates).toEqual([{ table: 'emitted_invoices', id: 10, estimated_payment: '2026-12-15', paybefore: '2026-12-15' }]);
     // line 3 already had that date
     expect(queryUpdates).toEqual([{ uid: 'api::phase-income.phase-income', id: 2, date: '2026-12-15' }]);
     expect(r).toEqual({ updated: 1, lines: 1 });

@@ -220,7 +220,7 @@ async function importSeedPermissions() {
       'createPhasesForAllProjects',
     ],
     quote: ['create', 'find', 'findOne', 'update', 'delete'],
-    contacts: ['create', 'find', 'findOne', 'update', 'delete', 'basic', 'withorders', 'orders', 'unify', 'forOrders'],
+    contacts: ['create', 'find', 'findOne', 'update', 'delete', 'basic', 'withorders', 'orders', 'unify', 'forOrders', 'nifMatches'],
     // Taules auxiliars (issues/140): the writes are admin-only by the router's isAdmin policy
     'festive-type': ['find', 'findOne', 'create', 'update', 'delete'],
     festive: ['create', 'find', 'findOne', 'update', 'delete'],

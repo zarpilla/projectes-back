@@ -34,6 +34,11 @@ module.exports = {
       handler: 'contact.orders',
     },
     {
+      method: 'GET',
+      path: '/contacts/nif-matches',
+      handler: 'contact.nifMatches',
+    },
+    {
       method: 'POST',
       path: '/contacts/unify',
       handler: 'contact.unify',
