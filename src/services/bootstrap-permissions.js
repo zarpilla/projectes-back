@@ -223,7 +223,7 @@ async function importSeedPermissions() {
       'createPhasesForAllProjects',
     ],
     quote: ['create', 'find', 'findOne', 'update', 'delete'],
-    contacts: ['create', 'find', 'findOne', 'update', 'delete', 'basic', 'withorders', 'orders', 'unify', 'forOrders'],
+    contacts: ['create', 'find', 'findOne', 'update', 'delete', 'basic', 'withorders', 'orders', 'unify', 'forOrders', 'nifMatches', 'summary'],
     // Taules auxiliars (issues/140): the writes are admin-only by the router's isAdmin policy
     'festive-type': ['find', 'findOne', 'create', 'update', 'delete'],
     festive: ['create', 'find', 'findOne', 'update', 'delete'],
@@ -234,7 +234,7 @@ async function importSeedPermissions() {
     'task-comment': ['create', 'find', 'findOne', 'update', 'delete'],
     'task-template': ['create', 'find', 'findOne', 'update', 'delete'],
     'task-state': ['find', 'findOne'],
-    treasury: ['create', 'find', 'forecast', 'invoicingForecast', 'irpf', 'findOne', 'update', 'delete'],
+    treasury: ['create', 'find', 'forecast', 'invoicingForecast', 'irpf', 'updateMovementDates', 'findOne', 'update', 'delete'],
     'treasury-validation': ['toggle', 'find', 'findByKey', 'delete'],
     'kanban-view': ['create', 'find', 'findOne', 'update', 'delete'],
     justifications: ['create', 'find', 'findOne', 'update', 'delete'],

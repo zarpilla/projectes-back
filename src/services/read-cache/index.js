@@ -26,11 +26,12 @@
  *   READ_CACHE_STAMPS_MS=2000   how old the stamps of MySQL may be when an
  *                               answer is served (writes from outside the
  *                               process are seen within this, + 2 s)
- *   READ_CACHE_VERIFY=0.05      share of hits loaded again and compared
+ *   READ_CACHE_VERIFY=0         share of hits loaded again and compared
  *                               (0..1); a difference is logged as an error.
- *                               5 % for the first weeks in production
- *                               (2026-10-21); then 0. Big datasets set
- *                               their own 0 (a check would redo the load).
+ *                               Was 0.05 from 2026-10-21 to 2026-10-30 (no
+ *                               mismatch in ~5,000 checks); set 0.05 on a
+ *                               tenant to check again. Big datasets always
+ *                               use 0 (a check would redo the load).
  *   READ_CACHE_LOG_SLOW_MS=1000 a load someone waits this long or more is
  *                               logged («[read-cache] slow load: …»)
  */
@@ -45,9 +46,9 @@ const { CACHED_ROUTES, PERMISSION_TABLES, tablesOf } = require('./routes');
 const KEY = Symbol.for('esstrapis.readCache.cache');
 
 // the share of hits checked against the database when READ_CACHE_VERIFY isn't
-// set: on for the first weeks in production, to see a detection failure in
-// the logs («[read-cache] STALE entry») if there is one
-const DEFAULT_VERIFY_RATE = 0.05;
+// set. Off: the first 9 days in production at 5 % found no detection failure
+// («[read-cache] STALE entry»), and each check redoes the load in the request.
+const DEFAULT_VERIFY_RATE = 0;
 
 const number = (value, fallback) => {
   const n = Number(value);

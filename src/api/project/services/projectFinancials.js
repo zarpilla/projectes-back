@@ -24,6 +24,8 @@ const { lineTotal } = require('../../../services/budget-line');
 /* global strapi */ // strapi injected at runtime for the stored-totals refresh functions.
 
 const noPhaseInfo = { phase: '-', subphase: '-' };
+// periodification rows name themselves in the phase columns (issues/369)
+const periodificationPhaseInfo = { phase: 'Periodificació', subphase: 'Periodificació' };
 
 /**
  * Resolve a project's default year, used when a row has no date and we
@@ -738,7 +740,7 @@ const pushPeriodificationRows = (out, p, projectInfo, startMonth = 1) => {
     // aggregator) sum the column directly.
     out.push({
       ...projectInfo,
-      ...noPhaseInfo,
+      ...periodificationPhaseInfo,
       type: 'income',
       income_orig: 0,
       income_esti: pp.incomes || 0,
@@ -749,7 +751,7 @@ const pushPeriodificationRows = (out, p, projectInfo, startMonth = 1) => {
 
     out.push({
       ...projectInfo,
-      ...noPhaseInfo,
+      ...periodificationPhaseInfo,
       type: 'expense',
       expense_orig: 0,
       expense_orig_vat: 0,

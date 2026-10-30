@@ -197,6 +197,8 @@ describe('app permissions (issues/099)', () => {
       'api::incidence.incidence.infoAll',
       'api::contact.contact.delete',
       'api::contact.contact.unify',
+      'api::contact.contact.nifMatches',
+      'api::contact.contact.summary',
       'api::contact.contact.orders',
       'api::city-route.city-route.create',
       'api::route-festive.route-festive.create',
@@ -230,6 +232,7 @@ describe('app permissions (issues/099)', () => {
         'api::incidence.incidence.infoAll',
         'api::emitted-invoice.emitted-invoice.find',
         'api::contact.contact.unify',
+        'api::contact.contact.nifMatches',
         'api::contact.contact.orders',
         'api::contact.contact.delete',
         'api::me.me.dir3SearchNif',
@@ -241,6 +244,8 @@ describe('app permissions (issues/099)', () => {
         body: { data: { identifier: 'orders-pivot' } },
       });
       await expectRefused('api::payroll.payroll.find');
+      // the «Resum» of a contact is the projects' finances
+      await expectRefused('api::contact.contact.summary');
       await expectRefused('api::project.project.update');
       await expectRefused('api::emitted-invoice.emitted-invoice.update');
     });

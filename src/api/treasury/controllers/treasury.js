@@ -35,6 +35,7 @@ const { irpfSummary } = require('../services/irpf-summary');
 const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../services/vat-forecast');
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
 const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
+const { updateMovementDates, MovementDateError } = require('../services/movement-dates');
 
 // The deductible part of a document's supported VAT: its year's «% IVA
 // deduïble»; a year without one is 100 % (it was 0 %, issues/338), as in the
@@ -59,6 +60,10 @@ const getBankAccountName = (bankAccount, defaultBankAccount) => {
 };
 
 // Helper to generate validation key
+// the kind of a document's movement whose date «Moviments bancaris» can
+// change: only while it isn't paid and its «Modificable» is on (issues/370)
+const dateEdit = (doc, kind) => (doc.paid || doc.paid_date || doc.updatable === false ? null : kind);
+
 const getValidationKey = (entityType, entityId, subType = null) => {
   if (subType) {
     return `${entityType}:${entityId}:${subType}`;
@@ -69,6 +74,9 @@ const getValidationKey = (entityType, entityId, subType = null) => {
 // running balances per account and in total
 const { walkBalances, sortRows, round2 } = require('../services/balances');
 const { treasuryDisplayDate } = require('../services/display-date');
+
+// a populated relation as { id, name }, or null
+const namedRef = (r) => (r && r.id ? { id: r.id, name: r.name } : null);
 
 // A project as the treasury screens list it (issues/309).
 const forecastProjectOption = (p) => ({
@@ -168,6 +176,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       // relation entirely, so the state/type/likelihood filters below would
       // see `undefined` for every project and match nothing.
       ...Object.fromEntries(FILTER_RELATIONS.map((r) => [r, true])),
+      // Previsió econòmica › Resum per projectes groups by it (issues/368)
+      project_scope: true,
     };
 
     // read before any load starts: a throw here leaves no load unawaited
@@ -308,6 +318,17 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       fallback_deductible_vat_pct,
       periodification,
     );
+    // Previsió econòmica › Resum per projectes (issues/368): the same sums per
+    // project, only when asked (Tresoreria doesn't read them)
+    const forecast_by_project = ['1', 'true'].includes(String(ctx.query.by_project))
+      ? projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          project_type: namedRef(p.project_type),
+          project_scope: namedRef(p.project_scope),
+          years: buildEstimatedForecastByYear([p], deductibleVatPctByYear, fallback_deductible_vat_pct, periodification),
+        }))
+      : undefined;
 
     // Full payroll cost per year (net + IRPF + SS + other), paid or not.
     // Accumulated in the payrolls loop below.
@@ -345,6 +366,9 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
               project_name: p.name,
               project_id: p.id,
               type: 'Despesa esperada',
+              // its date can be changed at «Moviments bancaris» (issues/370)
+              date_edit: 'phase-expense',
+              date_edit_id: e.id,
               concept: e.concept,
               total_amount: -1 * totalWithVat,
               date: moment(e.date, 'YYYY-MM-DD') || moment(),
@@ -433,6 +457,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
               project_name: p.name,
               project_id: p.id,
               type: 'Ingrés esperat',
+              date_edit: 'phase-income',
+              date_edit_id: i.id,
               concept: i.concept,
               total_amount: totalWithVat,
               date: moment(i.date, 'YYYY-MM-DD') || moment(),
@@ -623,6 +649,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             ? i.projects[0].id
             : 0,
         type: i.paid ? 'Factura cobrada' : 'Factura emesa',
+        date_edit: dateEdit(i, 'emitted-invoices'),
+        date_edit_id: i.id,
         concept: i.code,
         total_amount: i.total ? i.total : 0,
         date: date,
@@ -691,6 +719,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             ? i.projects[0].id
             : 0,
         type: `${i.paid ? 'Ingrés cobrat' : 'Ingrés emès'} (${i.document_type.name})`,
+        date_edit: dateEdit(i, 'received-incomes'),
+        date_edit_id: i.id,
         concept: i.code,
         total_amount: i.total ? i.total : 0,
         date: date,
@@ -755,6 +785,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             ? e.projects[0].id
             : 0,
         type: e.paid ? 'Factura pagada' : 'Factura rebuda',
+        date_edit: dateEdit(e, 'received-invoices'),
+        date_edit_id: e.id,
         concept: e.code,
         total_amount: e.total ? -1 * e.total : 0,
         date: date,
@@ -851,6 +883,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
             ? e.projects[0].id
             : 0,
         type: `${e.paid ? 'Despesa pagada' : 'Despesa rebuda'} (${e.document_type.name})`,
+        date_edit: dateEdit(e, 'received-expenses'),
+        date_edit_id: e.id,
         concept: e.code,
         total_amount: e.total ? -1 * e.total : 0,
         date: date,
@@ -1251,6 +1285,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       vat_by_quarter: vatByQuarter,
       forecast_by_year,
       forecast_payrolls_by_year,
+      ...(forecast_by_project ? { forecast_by_project } : {}),
     };
   },
 
@@ -1261,6 +1296,17 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
    * GET /api/treasuries/irpf?year=YYYY — the IRPF page (issues/348): the
    * withholdings paid to Hisenda that year, per quarter and per document.
    */
+  // POST /treasuries/movement-dates { changes: [{ kind, id, date }] } (issues/370)
+  async updateMovementDates(ctx) {
+    const body = ctx.request.body || {};
+    try {
+      ctx.body = await updateMovementDates(body.changes);
+    } catch (e) {
+      if (e instanceof MovementDateError) return ctx.badRequest(e.message);
+      throw e;
+    }
+  },
+
   async irpf(ctx) {
     const year = parseInt(ctx.query.year, 10) || moment().year();
     const from = `${year}-01-01`;

@@ -2071,6 +2071,7 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
   attributes: {
     activities: Schema.Attribute.Relation<'oneToMany', 'api::activity.activity'>;
     activity_types: Schema.Attribute.Relation<'oneToMany', 'api::activity-type.activity-type'>;
+    billing_mode: Schema.Attribute.Enumeration<['project', 'hours']>;
     clients: Schema.Attribute.Relation<'manyToMany', 'api::contact.contact'>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;

@@ -22,6 +22,7 @@ const { queryTables } = require('../../../services/query-tables');
 const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDocuments');
 const { lineTotal, invalidLineValueMessage, assignLinePositions, sortPhasesByPosition } = require('../../../services/budget-line');
 const { touchesDates, projectDatesError } = require('../../../services/project-dates');
+const { BILLING_MODES, priceHoursLines } = require('../../../services/hours-billing');
 const {
   buildProjectRows,
   aggregateRowsByYear,
@@ -1653,6 +1654,15 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     // End before start is refused (issues/212)
     const datesError = projectDatesError(data);
     if (datesError) return ctx.badRequest(datesError);
+    // A new project is billed per project or by the hour as Configuració says (issues/371)
+    if (!BILLING_MODES.includes(data.billing_mode)) {
+      // settings that can't be read don't stop the create: «Projecte», as before
+      const me = await Promise.resolve()
+        .then(() => getMe({ options: true }))
+        .catch(() => null);
+      data.billing_mode = (me && me.options && me.options.default_billing_mode) === 'hours' ? 'hours' : 'project';
+      if (ctx.request.body && ctx.request.body.data) ctx.request.body.data = data;
+    }
     return super.create(ctx);
   },
 
@@ -1709,6 +1719,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     // edits roll back too instead of surviving a 500. db.query and the
     // document service both join the ambient transaction.
     return strapi.db.transaction(async () => {
+      let phasesEdited = false;
       for (const section of sections) {
         const info = data[section.info];
         if (data[section.flag] && data[section.phases] && info) {
@@ -1728,6 +1739,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
               info.deletedHours || [],
             );
           if (execution) {
+            phasesEdited = true;
             await refreshLineWarnings(mergeDocuments(linkedBefore, await documentsOfProject(id)));
           }
         }
@@ -1739,6 +1751,22 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         delete data[section.phases];
         delete data[section.flag];
         delete data[section.info];
+      }
+
+      // A project billed by the hour prices its income lines with estimated
+      // hours as hours × price/hour, before beforeUpdate recomputes the totals
+      // from the stored lines (issues/371)
+      if (phasesEdited || 'billing_mode' in data || 'invoice_hours_price' in data) {
+        const where = /^\d+$/.test(String(id)) ? { id: Number(id) } : { documentId: id };
+        const stored = await strapi.db
+          .query('api::project.project')
+          .findOne({ where, select: ['id', 'billing_mode', 'invoice_hours_price'] });
+        if (stored) {
+          await priceHoursLines(stored.id, {
+            mode: 'billing_mode' in data ? data.billing_mode : stored.billing_mode,
+            pricePerHour: 'invoice_hours_price' in data ? data.invoice_hours_price : stored.invoice_hours_price,
+          });
+        }
       }
 
       // The saved project is echoed back with the v3 default populate, which

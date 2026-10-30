@@ -67,6 +67,10 @@
       "type": "decimal",
       "default": 0
     },
+    "billing_mode": {
+      "type": "enumeration",
+      "enum": ["project", "hours"]
+    },
     "emitted_invoices": {
       "type": "relation",
       "relation": "oneToMany",

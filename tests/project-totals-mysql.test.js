@@ -11,8 +11,8 @@
  *     the transaction in progress too, while it holds the project row;
  *   - deleting a project deletes its totals (foreign key);
  *   - at boot a project without a row gets one, dirty;
- *   - after the deploy, a project the old backend changed in the old columns
- *     (dirty, or other totals) is marked dirty.
+ *   - issues/329: a later release drops the old columns from `projects`
+ *     (only those still there, rerunnable), totals untouched.
  * Needs READ_CACHE_TEST_MYSQL=mysql://user:password@host:port (creates and
  * drops a database project_totals_<pid>). Skipped without it.
  */
@@ -168,19 +168,31 @@ describeDb('project_totals on MySQL (issues/328)', () => {
     expect((await totals(4)).dirty).toBe(1);
   });
 
-  it('after the deploy: what the old backend changed in the old columns is marked dirty, nothing else', async () => {
+  const dropOld = () => {
+    const migration = require('../database/migrations/2026.10.30T00.00.00.drop-old-project-total-columns');
+    return knex.transaction((trx) => migration.up(trx));
+  };
+
+  it('issues/329: the later release drops the old columns, keeps the rest of projects and the totals', async () => {
     await migrate();
-    // what the previous backend did meanwhile, in the old columns
-    await knex('projects').where({ id: 1 }).update({ total_real_hours: 5 }); // its cron rewrote totals
-    await knex('projects').where({ id: 3 }).update({ dirty: 1 }); // an hours entry marked it
-    await knex('project_totals').update({ dirty: 0 });
-    await knex('projects').insert({ id: 5, name: 'untouched' });
-    await knex('project_totals').insert({ project_id: 5, dirty: 0 });
-    const { reconcileLegacyProjectTotals } = require('../src/services/reconcile-legacy-project-totals');
-    // 2 was already dirty in the old column when copied: marked again, one
-    // more recompute at worst
-    expect(await reconcileLegacyProjectTotals()).toEqual({ marked: 3, legacy: true });
-    const dirty = (await knex('project_totals').where({ dirty: 1 }).select('project_id')).map((r) => r.project_id).sort();
-    expect(dirty).toEqual([1, 2, 3]);
+    await dropOld();
+    expect(await columnsOfProjects()).toEqual(['id', 'name']);
+    expect((await knex('projects').orderBy('id')).map((r) => [r.id, r.name])).toEqual([[1, 'p1'], [2, 'p2'], [3, 'p3']]);
+    const rows = await knex('project_totals').orderBy('project_id');
+    expect(rows.map((r) => [r.project_id, r.balance, r.dirty])).toEqual([[1, '10.50', 0], [2, null, 1], [3, '-4.00', 0]]);
+    // runs again (or on a tenant that never had them): nothing to do
+    await dropOld();
+    expect(await columnsOfProjects()).toEqual(['id', 'name']);
+  });
+
+  it('issues/329: only the old columns still there are dropped', async () => {
+    await knex.raw('ALTER TABLE projects DROP COLUMN balance, DROP COLUMN dirty');
+    await dropOld();
+    expect(await columnsOfProjects()).toEqual(['id', 'name']);
+  });
+
+  it('issues/329: a database without projects yet: nothing to drop', async () => {
+    await knex.raw('DROP TABLE projects');
+    await expect(dropOld()).resolves.toBeUndefined();
   });
 });
