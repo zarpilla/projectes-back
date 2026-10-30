@@ -8,10 +8,14 @@
  *
  * - Created pending, in her name; the rate, the price and the discounts are
  *   the server's (app-permissions memberOrderPayload, order lifecycles).
- * - Delivery date: a day the route runs and is open, from tomorrow on
+ * - Route and day: without a route (the usual way, the user's decision
+ *   2026-10-30), the day she wants puts the order on the route of the point's
+ *   town that runs that day, or on the first day after it that one does
+ *   (route-assignment.js); the day asked is kept on its integration ref, so
+ *   sending it again is no change. With a route, the day must be one the
+ *   route runs (DATE_NOT_ON_ROUTE). Either way from tomorrow on
  *   (deliveryDateRefusal); past the cutoff it is late and pays the surcharge
- *   (applyLateFlags). Without a date, the route's next open day, like the CSV
- *   import.
+ *   (applyLateFlags). Without a day, the first one from tomorrow.
  * - Only a pending order changes; one the office has taken is refused
  *   (ORDER_LOCKED), and cancelled is final (ORDER_CANCELLED). The same order
  *   sent again unchanged is `unchanged`, whatever its state.
@@ -32,11 +36,13 @@ const { toLocalDay } = require('../../../services/date-fields');
 const refs = require('../../../services/integrations/refs');
 const { norm, normNif, isBlank, resolveNamed } = require('./lookups');
 const { reject } = require('./sync-common');
+const { assignRouteDay } = require('./route-assignment');
 
 const ORDER = 'api::order.order';
 const CONTACT = 'api::contact.contact';
 
-// what the CSV import checks on the delivery point of an order
+// what the CSV import checks on the delivery point of an order, but the sector
+// (the user's decision 2026-10-30: a point without it still takes orders)
 const POINT_REQUIRED = {
   nif: 'NIF',
   phone: 'telèfon',
@@ -45,7 +51,6 @@ const POINT_REQUIRED = {
   city: 'població',
   time_slot_1_ini: 'horari',
   time_slot_1_end: 'horari',
-  sector: 'sector',
 };
 
 const ymd = (value) => {
@@ -195,7 +200,7 @@ async function resolvePoint(value, ctx) {
   const missing = [
     ...new Set(
       Object.keys(POINT_REQUIRED)
-        .filter((f) => isBlank(f === 'sector' ? idOf(point.sector) : point[f]))
+        .filter((f) => isBlank(point[f]))
         .map((f) => POINT_REQUIRED[f]),
     ),
   ];
@@ -241,6 +246,38 @@ async function pointByNifAndName(value, ctx) {
     });
   }
   return pool[0].id;
+}
+
+const tomorrow = () => moment(today(), 'YYYY-MM-DD').add(1, 'day').format('YYYY-MM-DD');
+
+/** The day asked for (YYYY-MM-DD), from tomorrow on; blank → tomorrow. */
+async function requestedDayOf(value, ctx, { moving = false } = {}) {
+  if (isBlank(value)) return tomorrow();
+  const text = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || !moment(text, 'YYYY-MM-DD', true).isValid()) {
+    reject('INVALID', 'estimated_delivery_date ha de ser una data AAAA-MM-DD', {
+      field: 'estimated_delivery_date',
+    });
+  }
+  const refusal = await orderRules.deliveryDateRefusal(text, ctx.user);
+  if (refusal) {
+    reject('DATE_NOT_ALLOWED', moving ? refusal.replace('crear', 'moure') : refusal, {
+      field: 'estimated_delivery_date',
+    });
+  }
+  return text;
+}
+
+/** The route and day for the day asked, and the warning when it moved. */
+async function assignedFor(point, day, ctx) {
+  const assigned = await assignRouteDay(point, day, { lookups: ctx.lookups, today: today() });
+  const warning = assigned.moved
+    ? {
+        code: 'DATE_MOVED',
+        message: `Cap ruta de ${point.city} no surt el ${dayText(day)}: la comanda va el ${dayText(assigned.date)} amb la ruta ${assigned.route.name}`,
+      }
+    : null;
+  return { ...assigned, warning };
 }
 
 /** The delivery date sent, checked against the route; or the route's next open day. */
@@ -325,8 +362,8 @@ async function loadOrder(id) {
     select: ORDER_SELECT,
     populate: {
       owner: { select: ['id'] },
-      route: { select: ['id'] },
-      contact: { select: ['id'] },
+      route: { select: ['id', 'name'] },
+      contact: { select: ['id', 'city'] },
       pickup: { select: ['id'] },
       delivery_type: { select: ['id', 'refrigerated'] },
       collection_point: { select: ['id'] },
@@ -336,6 +373,11 @@ async function loadOrder(id) {
   });
 }
 
+const routeOut = (route) => {
+  if (!route) return null;
+  return typeof route === 'object' ? { id: route.id, name: route.name || null } : { id: route, name: null };
+};
+
 /** What the answer tells of an order. */
 function orderOut(order) {
   if (!order) return {};
@@ -343,6 +385,7 @@ function orderOut(order) {
   return {
     order_id: order.id,
     status: order.status,
+    route: routeOut(order.route),
     estimated_delivery_date: ymd(order.estimated_delivery_date),
     price,
     late_order: Boolean(order.late_order),
@@ -392,6 +435,7 @@ async function storedOrder(externalId, ctx) {
   if (!found) return null;
   const order = found.target ? await loadOrder(found.target) : null;
   if (!order && !ctx.dryRun) await refs.release(found.id);
+  if (order) order.ref = found;
   if (order && idOf(order.owner) !== ctx.userId) {
     reject('FORBIDDEN', "Aquesta comanda ja no és teva: l'oficina l'ha canviat. Parla amb l'oficina.", {
       order_id: order.id,
@@ -409,13 +453,24 @@ async function syncOrder(item, externalId, ctx) {
 }
 
 async function createOrder(item, externalId, ctx) {
-  const missing = ['route', 'delivery_point', 'units', 'kilograms'].filter((f) => isBlank(item[f]));
+  const missing = ['delivery_point', 'units', 'kilograms'].filter((f) => isBlank(item[f]));
   if (missing.length)
     reject('INVALID', `Falten camps obligatoris: ${missing.join(', ')}`, { fields: missing });
   const wanted = await wantedOf(item, ctx);
   const pickup = wanted.pickup || (await resolvePickup(null, ctx.lookups, ctx.userId));
   const deliveryType = await deliveryTypeOf(Boolean(wanted.refrigerated), ctx.lookups);
-  const date = await deliveryDateOf(item.estimated_delivery_date, wanted.route, ctx);
+  let date;
+  let requested = null;
+  const extraWarnings = [];
+  if (wanted.route) {
+    date = await deliveryDateOf(item.estimated_delivery_date, wanted.route, ctx);
+  } else {
+    requested = await requestedDayOf(item.estimated_delivery_date, ctx);
+    const assigned = await assignedFor(wanted.point, requested, ctx);
+    wanted.route = assigned.route;
+    date = assigned.date;
+    if (assigned.warning && !isBlank(item.estimated_delivery_date)) extraWarnings.push(assigned.warning);
+  }
 
   const payload = {
     ...contactSnapshot(wanted.point),
@@ -443,13 +498,16 @@ async function createOrder(item, externalId, ctx) {
   if (missingField) reject('INVALID', missingField);
   await orderRules.applyLateFlags(payload, ctx.user);
 
-  if (ctx.dryRun) return { result: 'created', ...(await dryRunOut(payload)) };
+  if (ctx.dryRun) {
+    const out = await dryRunOut({ ...payload, route: wanted.route });
+    return { result: 'created', ...out, warnings: [...extraWarnings, ...out.warnings] };
+  }
   const refId = await refs.reserve(ctx.userId, 'order', externalId);
   if (!refId) reject('BUSY', "Aquest external_id ja s'està desant en una altra petició");
   let created;
   try {
     created = await strapi.service(ORDER).create({ data: payload });
-    await refs.complete(refId, 'order', created.id);
+    await refs.complete(refId, 'order', created.id, { requested_date: requested });
   } catch (error) {
     if (created)
       await strapi.db
@@ -460,11 +518,11 @@ async function createOrder(item, externalId, ctx) {
     throw error;
   }
   const order = await loadOrder(created.id);
-  return { result: 'created', ...orderOut(order), warnings: warningsOf(order) };
+  return { result: 'created', ...orderOut(order), warnings: [...extraWarnings, ...warningsOf(order)] };
 }
 
 /** The fields of an update that differ from the stored order. */
-function changesOf(wanted, stored, item) {
+function changesOf(wanted, stored, item, { requestedDate = null } = {}) {
   const payload = {};
   const changed = [];
   const set = (field, value, label = field) => {
@@ -499,10 +557,9 @@ function changesOf(wanted, stored, item) {
     set('provider_order_number', wanted.provider_order_number);
   }
   if ('lines' in wanted && lineKey(wanted.lines) !== lineKey(stored.lines)) set('lines', wanted.lines);
-  if (
-    !isBlank(item.estimated_delivery_date) &&
-    String(item.estimated_delivery_date).trim() !== ymd(stored.estimated_delivery_date)
-  ) {
+  // the day asked: the stored one, or the one asked before it moved to a later route day
+  const day = isBlank(item.estimated_delivery_date) ? null : String(item.estimated_delivery_date).trim();
+  if (day && day !== ymd(stored.estimated_delivery_date) && day !== ymd(requestedDate)) {
     changed.push('estimated_delivery_date');
   }
   return { payload, changed };
@@ -510,14 +567,43 @@ function changesOf(wanted, stored, item) {
 
 async function updateOrder(item, stored, ctx) {
   const wanted = await wantedOf(item, ctx);
-  const { payload, changed } = changesOf(wanted, stored, item);
+  const ref = stored.ref || {};
+  const { payload, changed } = changesOf(wanted, stored, item, { requestedDate: ref.requestedDate });
   if (!changed.length) return { result: 'unchanged', ...orderOut(stored) };
   refuseIfNotPending(stored);
 
   if (changed.includes('refrigerated'))
     payload.delivery_type = (await deliveryTypeOf(wanted.refrigerated, ctx.lookups)).id;
   const route = wanted.route || (await ctx.lookups.routes()).find((r) => r.id === idOf(stored.route));
-  if (changed.includes('estimated_delivery_date')) {
+  const warnings = [];
+  let requested;
+  if (!wanted.route && (changed.includes('estimated_delivery_date') || changed.includes('delivery_point'))) {
+    // a new day, or a point in another town: the route and day are assigned again
+    const dateSent = changed.includes('estimated_delivery_date');
+    const before = ymd(ref.requestedDate) || ymd(stored.estimated_delivery_date);
+    requested = dateSent
+      ? await requestedDayOf(item.estimated_delivery_date, ctx, { moving: true })
+      : moment.max(moment(before, 'YYYY-MM-DD'), moment(tomorrow(), 'YYYY-MM-DD')).format('YYYY-MM-DD');
+    const point = wanted.point || (await loadPoint(idOf(stored.contact)));
+    const assigned = await assignedFor(point, requested, ctx);
+    if (assigned.warning && dateSent) warnings.push(assigned.warning);
+    if (assigned.route.id !== idOf(stored.route)) {
+      payload.route = assigned.route.id;
+      changed.push('route');
+    }
+    const at = changed.indexOf('estimated_delivery_date');
+    if (assigned.date !== ymd(stored.estimated_delivery_date)) {
+      payload.estimated_delivery_date = assigned.date;
+      if (at < 0) changed.push('estimated_delivery_date');
+    } else if (at >= 0) {
+      changed.splice(at, 1);
+    }
+    if (!changed.length) {
+      // another day asked that lands on the same route day: nothing to write
+      if (!ctx.dryRun && ref.id) await refs.setRequestedDate(ref.id, requested);
+      return { result: 'unchanged', ...orderOut(stored), warnings };
+    }
+  } else if (changed.includes('estimated_delivery_date')) {
     payload.estimated_delivery_date = await deliveryDateOf(item.estimated_delivery_date, route, ctx, {
       moving: true,
     });
@@ -539,15 +625,25 @@ async function updateOrder(item, stored, ctx) {
 
   if (ctx.dryRun) {
     const repriced = 'price' in payload;
+    const newRoute = payload.route
+      ? (await ctx.lookups.routes()).find((r) => r.id === payload.route)
+      : stored.route;
     const out = await dryRunOut(
-      { ...stored, ...payload, ...(repriced ? {} : { price: stored.price }) },
+      { ...stored, ...payload, route: newRoute, ...(repriced ? {} : { price: stored.price }) },
       stored,
     );
-    return { result: 'updated', ...out, order_id: stored.id, changed };
+    return {
+      result: 'updated',
+      ...out,
+      order_id: stored.id,
+      changed,
+      warnings: [...warnings, ...out.warnings],
+    };
   }
   await strapi.service(ORDER).update(stored.documentId, { data: payload });
+  if (requested !== undefined && ref.id) await refs.setRequestedDate(ref.id, requested);
   const order = await loadOrder(stored.id);
-  return { result: 'updated', ...orderOut(order), changed, warnings: warningsOf(order) };
+  return { result: 'updated', ...orderOut(order), changed, warnings: [...warnings, ...warningsOf(order)] };
 }
 
 /**

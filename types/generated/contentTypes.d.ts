@@ -1302,7 +1302,7 @@ export interface ApiIntegrationApiKey extends Struct.CollectionTypeSchema {
 export interface ApiIntegrationIntegrationRef extends Struct.CollectionTypeSchema {
   collectionName: 'integration_refs';
   info: {
-    description: "Which order or delivery point each external_id of a member's system is; unique per (owner_id, kind, external_id) by a database index";
+    description: "Which order or delivery point each external_id of a member's system is; unique per (owner_id, kind, external_id) by a database index; requested_date = the day the member asked for, when the order went to a later route day";
     displayName: 'Integration refs';
     pluralName: 'integration-refs';
     singularName: 'integration-ref';
@@ -1330,6 +1330,7 @@ export interface ApiIntegrationIntegrationRef extends Struct.CollectionTypeSchem
     order_id: Schema.Attribute.Integer;
     owner_id: Schema.Attribute.Integer & Schema.Attribute.Required;
     publishedAt: Schema.Attribute.DateTime;
+    requested_date: Schema.Attribute.Date;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
   };

@@ -8,7 +8,11 @@
  * - An external_id not seen yet: if she already has exactly one point with
  *   the same NIF and the same trade name, it is linked to it (`linked`, and
  *   updated with what was sent); otherwise a new point is created, hers,
- *   with every field the CSV import requires.
+ *   with the fields the CSV import requires but the sector and the legal form
+ *   (the user's decision 2026-10-30: a point without them is not refused, and
+ *   an unknown one is left empty with a warning).
+ * - A point whose town has no route is saved with a warning
+ *   (TOWN_WITHOUT_ROUTES): its orders can't be given a route.
  * - An external_id seen before: the fields sent are written (`updated`), the
  *   ones not sent are kept; nothing different → `unchanged`.
  *
@@ -20,6 +24,7 @@ const { memberRules } = require('../../../middlewares/app-permissions');
 const refs = require('../../../services/integrations/refs');
 const { norm, normNif, isBlank, resolveNamed } = require('./lookups');
 const { reject } = require('./sync-common');
+const { townRoutesOf } = require('./route-assignment');
 
 const CONTACT = 'api::contact.contact';
 // «Punt d'entrega»: the type the members' point form gives a new point (ContactsUserForm)
@@ -52,7 +57,6 @@ const REQUIRED = {
   city: 'la població (city)',
   time_slot_1_ini: "l'hora d'inici de l'horari (time_slot_1_ini)",
   time_slot_1_end: "l'hora de final de l'horari (time_slot_1_end)",
-  sector: 'el sector (sector)',
 };
 
 const MIN_SLOT_HOURS = 3;
@@ -73,7 +77,7 @@ function postcodeOf(value) {
 }
 
 /** The point's fields as sent (only the ones present), normalised. */
-async function dataOf(item, lookups) {
+async function dataOf(item, lookups, warnings = []) {
   const data = {};
   for (const field of TEXT_FIELDS) {
     if (!(field in item)) continue;
@@ -100,20 +104,28 @@ async function dataOf(item, lookups) {
     if (isBlank(item.sector)) data.sector = null;
     else {
       const found = resolveNamed(await lookups.sectors(), item.sector);
-      if (!found.item) reject('SECTOR_NOT_FOUND', `Sector «${item.sector}» no trobat`, { field: 'sector' });
-      data.sector = found.item.id;
+      if (found.item) data.sector = found.item.id;
+      else {
+        warnings.push({
+          code: 'SECTOR_NOT_FOUND',
+          message: `Sector «${item.sector}» no trobat: es deixa buit`,
+          field: 'sector',
+        });
+      }
     }
   }
   if ('legal_form' in item) {
     if (isBlank(item.legal_form)) data.legal_form = null;
     else {
       const found = resolveNamed(await lookups.legalForms(), item.legal_form);
-      if (!found.item) {
-        reject('LEGAL_FORM_NOT_FOUND', `Forma jurídica «${item.legal_form}» no trobada`, {
+      if (found.item) data.legal_form = found.item.id;
+      else {
+        warnings.push({
+          code: 'LEGAL_FORM_NOT_FOUND',
+          message: `Forma jurídica «${item.legal_form}» no trobada: es deixa buida`,
           field: 'legal_form',
         });
       }
-      data.legal_form = found.item.id;
     }
   }
   return data;
@@ -195,12 +207,31 @@ async function samePoints(userId, data, cache) {
 
 const pointOut = (id) => ({ contact_id: id });
 
+/** A warning when the point's town has no route: its orders can't get one. */
+async function townWarnings(point, lookups) {
+  if (!point || isBlank(point.city)) return [];
+  const { routes } = await townRoutesOf(point, lookups);
+  if (routes.length) return [];
+  return [
+    {
+      code: 'TOWN_WITHOUT_ROUTES',
+      message: `La població «${String(point.city).trim()}» no té cap ruta: les comandes a aquest punt no es podran fer fins que l'oficina n'hi posi una`,
+      field: 'city',
+    },
+  ];
+}
+
 /** The write of one point; `ctx` = { userId, lookups, dryRun, cache }. */
 async function syncContact(item, externalId, ctx) {
   const { userId, lookups, dryRun } = ctx;
   if (!item || typeof item !== 'object' || Array.isArray(item))
     reject('INVALID', 'Cada punt ha de ser un objecte');
-  const data = await dataOf(item, lookups);
+  const warnings = [];
+  const data = await dataOf(item, lookups, warnings);
+  const done = async (out, point) => ({
+    ...out,
+    warnings: [...warnings, ...(await townWarnings(point, lookups))],
+  });
   // the trade name is required on a point: the name stands in, as in the CSV import
   if (!('trade_name' in data) && data.name) data.trade_name = data.name;
 
@@ -219,7 +250,7 @@ async function syncContact(item, externalId, ctx) {
         pointOut(stored.id),
       );
     }
-    return writeUpdate(stored, data, ctx, 'updated');
+    return done(await writeUpdate(stored, data, ctx, 'updated'), { ...stored, ...data });
   }
 
   const same = await samePoints(userId, data, ctx.cache);
@@ -243,10 +274,10 @@ async function syncContact(item, externalId, ctx) {
     if (!dryRun && !(await refs.link(userId, 'contact', externalId, stored.id))) {
       reject('BUSY', "Aquest external_id ja s'està desant en una altra petició");
     }
-    return writeUpdate(stored, data, ctx, 'linked');
+    return done(await writeUpdate(stored, data, ctx, 'linked'), { ...stored, ...data });
   }
 
-  return writeCreate(externalId, data, ctx);
+  return done(await writeCreate(externalId, data, ctx), data);
 }
 
 async function writeUpdate(stored, data, ctx, result) {

@@ -71,6 +71,14 @@ function createLookups() {
           .query('api::legal-form.legal-form')
           .findMany({ select: ['id', 'name'], orderBy: { id: 'asc' } }),
       ),
+    cities: () =>
+      once('cities', () => strapi.db.query('api::city.city').findMany({ select: ['id', 'name'] })),
+    cityRoutes: () =>
+      once('cityRoutes', () =>
+        strapi.db
+          .query('api::city-route.city-route')
+          .findMany({ select: ['id'], populate: { city: { select: ['id'] }, route: { select: ['id'] } } }),
+      ),
     deliveryTypes: () =>
       once('deliveryTypes', () =>
         strapi.db

@@ -49,7 +49,12 @@ async function findRefs(ownerId, kind, externalIds) {
   const rows = await strapi.db
     .query(UID)
     .findMany({ where: { owner_id: ownerId, kind, external_id: { $in: externalIds } } });
-  return new Map(rows.map((r) => [r.external_id, { id: r.id, target: r[targetColumn(kind)] || null }]));
+  return new Map(
+    rows.map((r) => [
+      r.external_id,
+      { id: r.id, target: r[targetColumn(kind)] || null, requestedDate: r.requested_date || null },
+    ]),
+  );
 }
 
 /** The external ids of these targets: Map target id → external_id. */
@@ -82,8 +87,15 @@ async function reserve(ownerId, kind, externalId) {
   }
 }
 
-async function complete(refId, kind, targetId) {
-  await strapi.db.query(UID).update({ where: { id: refId }, data: { [targetColumn(kind)]: targetId } });
+async function complete(refId, kind, targetId, extra = {}) {
+  await strapi.db
+    .query(UID)
+    .update({ where: { id: refId }, data: { [targetColumn(kind)]: targetId, ...extra } });
+}
+
+/** The day the member asked for an order (it may have gone to a later route day). */
+async function setRequestedDate(refId, day) {
+  await strapi.db.query(UID).update({ where: { id: refId }, data: { requested_date: day || null } });
 }
 
 async function release(refId) {
@@ -108,6 +120,7 @@ module.exports = {
   externalIdsOf,
   reserve,
   complete,
+  setRequestedDate,
   release,
   link,
   isDuplicate,

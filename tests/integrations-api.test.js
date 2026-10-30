@@ -14,7 +14,10 @@
  *   it (ORDER_LOCKED) or it was cancelled (ORDER_CANCELLED); cancelling is
  *   pending → cancelled only;
  * - a delivery point needs what the CSV import checks (NIF, phone, address,
- *   schedule of 3 h at least, sector…).
+ *   schedule of 3 h at least), but not the sector nor the legal form;
+ * - an order without a route goes on the route of the point's town that runs
+ *   the day asked, or the first day after (2026-10-30); the day asked again,
+ *   once moved, is no change.
  */
 
 const path = require('path');
@@ -221,7 +224,9 @@ describe('delivery points (contacts-sync)', () => {
 
   it('asks for what the CSV import checks and a schedule of 3 hours', () => {
     expect(() => sync.checkComplete(complete)).not.toThrow();
-    expect(() => sync.checkComplete({ ...complete, sector: null })).toThrow(/sector/);
+    // no sector nor legal form is fine (the user's decision 2026-10-30)
+    expect(() => sync.checkComplete({ ...complete, sector: null, legal_form: null })).not.toThrow();
+    expect(() => sync.checkComplete({ ...complete, phone: null })).toThrow(/telèfon/);
     expect(() => sync.checkComplete({ ...complete, time_slot_1_end: 11 })).toThrow(/3 hores/);
     expect(() =>
       sync.checkComplete({ ...complete, time_slot_1_end: 11, time_slot_2_ini: 16, time_slot_2_end: 19 }),
@@ -291,6 +296,14 @@ describe('orders (orders-sync)', () => {
     lookups: {},
   });
 
+  it('takes the day asked before it moved as no change', () => {
+    // asked for Monday 2026-11-02, went on Tuesday's route
+    const asked = { estimated_delivery_date: '2026-11-02' };
+    expect(sync.changesOf({}, order, asked, { requestedDate: '2026-11-02' }).changed).toEqual([]);
+    expect(sync.changesOf({}, order, asked, {}).changed).toEqual(['estimated_delivery_date']);
+    expect(sync.changesOf({}, order, { estimated_delivery_date: '2026-11-03' }, {}).changed).toEqual([]);
+  });
+
   it('finds no change when the same order comes again', () => {
     const wanted = {
       units: 2,
@@ -343,5 +356,69 @@ describe('orders (orders-sync)', () => {
     ]);
     expect(() => sync.linesOf([{ units: 0 }])).toThrow(/més gran que 0/);
     expect(() => sync.linesOf('x')).toThrow(/llista/);
+  });
+});
+
+describe('route of an order without one (route-assignment)', () => {
+  let assignRouteDay;
+  let closures;
+  // 2026-11-03 is a Tuesday
+  const routes = [
+    { id: 1, name: 'DT - MARESME', active: true, tuesday: true },
+    { id: 3, name: 'DC - VALLÈS', active: true, wednesday: true },
+    { id: 2, name: 'DJ - MARESME', active: true, thursday: true },
+    { id: 9, name: 'DT - VELLA', active: false, tuesday: true },
+    { id: 8, name: 'TRANSFER', active: true, is_transfer_route: true, monday: true },
+  ];
+  const lookups = {
+    routes: async () => routes,
+    cities: async () => [
+      { id: 10, name: 'Mataró' },
+      { id: 11, name: 'Granollers' },
+    ],
+    cityRoutes: async () => [
+      { city: { id: 10 }, route: { id: 1 } },
+      { city: { id: 10 }, route: { id: 2 } },
+      { city: { id: 10 }, route: { id: 9 } },
+      { city: { id: 10 }, route: { id: 8 } },
+      { city: { id: 11 }, route: { id: 3 } },
+    ],
+  };
+  const point = { city: ' mataro ' };
+  const assign = (from) => assignRouteDay(point, from, { lookups, today: '2026-10-30' });
+
+  beforeEach(() => {
+    jest.resetModules();
+    closures = [];
+    global.strapi = { db: { query: () => ({ findMany: async () => closures }) } };
+    ({ assignRouteDay } = require(src('api', 'integration', 'services', 'route-assignment')));
+  });
+
+  it("takes the town's route of the day asked", async () => {
+    expect(await assign('2026-11-03')).toMatchObject({ route: { id: 1 }, date: '2026-11-03', moved: false });
+  });
+
+  it('moves to the first day after it with a route of the town', async () => {
+    // Wednesday: the Vallès route is not Mataró's
+    expect(await assign('2026-11-04')).toMatchObject({ route: { id: 2 }, date: '2026-11-05', moved: true });
+    // Friday → next Tuesday; Monday's transfer route and the inactive one never count
+    expect(await assign('2026-11-06')).toMatchObject({ route: { id: 1 }, date: '2026-11-10', moved: true });
+  });
+
+  it('skips a closed day, or takes its substitute route', async () => {
+    closures = [{ date: '2026-11-03', route: { id: 1 } }];
+    expect(await assign('2026-11-03')).toMatchObject({ route: { id: 2 }, date: '2026-11-05' });
+    closures = [
+      { date: '2026-11-03', route: { id: 1 }, substitute_route: { id: 3 }, substitute_date: '2026-11-04' },
+    ];
+    expect(await assign('2026-11-03')).toMatchObject({ route: { id: 3 }, date: '2026-11-04', moved: true });
+  });
+
+  it('refuses a town without routes', async () => {
+    await expect(
+      assignRouteDay({ city: 'Lleida' }, '2026-11-03', { lookups, today: '2026-10-30' }),
+    ).rejects.toMatchObject({
+      code: 'TOWN_WITHOUT_ROUTES',
+    });
   });
 });
