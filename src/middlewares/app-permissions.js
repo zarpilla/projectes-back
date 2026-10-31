@@ -251,6 +251,38 @@ function narrowQuery(ctx, clause, v5Clause) {
   query._where = { _and: [clause, ...(query._where !== undefined ? [query._where] : [])] };
   if (query.filters !== undefined) query.filters = { $and: [v5Clause, query.filters] };
   ctx.query = query;
+  // Assigning ctx.query re-serialises it and qs parses it back with a limit on
+  // the number of parameters: past it, the last ones (the scope) were cut off
+  // silently (issues/386). Refuse rather than answer unscoped.
+  const kept = ctx.query && ctx.query._where && ctx.query._where._and;
+  if (!Array.isArray(kept) || !sameClause(kept[0], clause)) throw forbidden();
+  if (query.filters !== undefined) {
+    const keptFilters = ctx.query.filters && ctx.query.filters.$and;
+    if (!Array.isArray(keptFilters) || !sameClause(keptFilters[0], v5Clause)) throw forbidden();
+  }
+}
+
+/** Whether `kept` (read back from the query string) is `clause`: qs turns every value into a string. */
+function sameClause(kept, clause) {
+  const plain = (value) => {
+    if (Array.isArray(value)) return value.map(plain);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.keys(value).sort().map((key) => [key, plain(value[key])]));
+    }
+    return value === null || value === undefined ? value : String(value);
+  };
+  return JSON.stringify(plain(kept)) === JSON.stringify(plain(clause));
+}
+
+// Users without full access: a request with more parameters than any screen
+// sends is refused (issues/386: ~1,000 junk parameters pushed the scope out).
+const MAX_QUERY_PARAMS = 300;
+
+function refuseTooManyParams(ctx) {
+  const raw = ctx.querystring || '';
+  if (raw && raw.split('&').length > MAX_QUERY_PARAMS) {
+    throw new errors.ValidationError('Massa paràmetres a la consulta');
+  }
 }
 
 function ordersClause(userId, contactIds) {
@@ -1333,6 +1365,7 @@ module.exports = (config, { strapi }) =>
     const permissions = await appPermissionsOf(strapi, user.id);
     if (!isAllowed(action, permissions)) throw forbidden();
     const full = permissions.some((p) => FULL_ACCESS.includes(p));
+    if (!full) refuseTooManyParams(ctx);
     refuseForbiddenFilters(ctx, full ? sets.everybody : sets.limited);
     if (ORDER_CREATES.has(action)) createdPending(ctx, action);
     // a member's rate is set by her scope (memberRouteRate)
