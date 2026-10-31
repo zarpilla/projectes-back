@@ -1140,14 +1140,37 @@ async function scopeOwnList(ctx, next, { userId }) {
 /** The payload may only name her as the person (or leave it out). */
 function checkOwnPayload(ctx, userId) {
   const payload = payloadOf(ctx);
-  if (
-    payload.users_permissions_user !== undefined &&
-    payload.users_permissions_user !== null &&
-    idOf(payload.users_permissions_user) !== userId
-  ) {
-    throw forbidden();
-  }
+  const user = payload.users_permissions_user;
+  // null on her own row made it everybody's: a personal holiday became a
+  // holiday for every worker (issues/389)
+  if (user === null && ctx.method !== 'POST') throw forbidden();
+  if (user !== undefined && user !== null && idOf(user) !== userId) throw forbidden();
   return payload;
+}
+
+// What the server computes on her hours, never what she sends (issues/389): a
+// worker stored cost_by_hour 999 and it went into the projects' real cost.
+const ACTIVITY_SERVER_FIELDS = ['cost_by_hour', 'invoice_hours_price', 'invoiced'];
+
+/**
+ * The relations she sets on her own rows point to rows she may use: a
+ * workday log linked to someone else's activity showed that activity (hours,
+ * project, person) when she read her logs (issues/389).
+ */
+async function checkOwnRelations(ctx, uid, strapi, userId) {
+  const payload = payloadOf(ctx);
+  if (uid === ACTIVITY) for (const field of ACTIVITY_SERVER_FIELDS) delete payload[field];
+  if (uid === WORKDAY_LOG && payload.activity !== undefined && payload.activity !== null) {
+    if (typeof payload.activity === 'object' && !('id' in payload.activity) && !('documentId' in payload.activity)) {
+      throw forbidden();
+    }
+    const ref = idOf(payload.activity);
+    const where = /^\d+$/.test(String(ref)) ? { id: Number(ref) } : { documentId: ref };
+    const activity = await strapi.db
+      .query(ACTIVITY)
+      .findOne({ where, populate: { users_permissions_user: { select: ['id'] } } });
+    if (!activity || idOf(activity.users_permissions_user) !== userId) throw forbidden();
+  }
 }
 
 /**
@@ -1177,10 +1200,12 @@ async function scopeFestiveRow(ctx, next, { strapi, userId }) {
   return next();
 }
 
-const scopeOwnCreate = (ctx, next, { userId }) => {
-  checkOwnPayload(ctx, userId).users_permissions_user = userId;
-  return next();
-};
+const scopeOwnCreateOf = (uid) =>
+  async function scopeOwnCreate(ctx, next, { strapi, userId }) {
+    checkOwnPayload(ctx, userId).users_permissions_user = userId;
+    await checkOwnRelations(ctx, uid, strapi, userId);
+    return next();
+  };
 
 const scopeOwnRow = (uid) =>
   async function scopeOwn(ctx, next, { strapi, userId }) {
@@ -1191,7 +1216,10 @@ const scopeOwnRow = (uid) =>
       .findOne({ where, populate: { users_permissions_user: { select: ['id'] } } });
     if (!row) return next();
     if (idOf(row.users_permissions_user) !== userId) throw forbidden();
-    if (ctx.method === 'PUT') checkOwnPayload(ctx, userId);
+    if (ctx.method === 'PUT') {
+      checkOwnPayload(ctx, userId);
+      await checkOwnRelations(ctx, uid, strapi, userId);
+    }
     return next();
   };
 
@@ -1230,19 +1258,19 @@ const OWN_SCOPES = {
   [`${ACTIVITY}.find`]: scopeOwnList,
   [`${ACTIVITY}.getForCalendar`]: scopeOwnList,
   [`${ACTIVITY}.findOne`]: scopeOwnRow(ACTIVITY),
-  [`${ACTIVITY}.create`]: scopeOwnCreate,
+  [`${ACTIVITY}.create`]: scopeOwnCreateOf(ACTIVITY),
   [`${ACTIVITY}.update`]: scopeOwnRow(ACTIVITY),
   [`${ACTIVITY}.delete`]: scopeOwnRow(ACTIVITY),
   [`${ACTIVITY}.move`]: scopeActivityMove,
   [`${ACTIVITY}.importCalendar`]: scopeActivityImportCalendar,
   [`${TIME_COUNTER}.find`]: scopeOwnList,
   [`${TIME_COUNTER}.findOne`]: scopeOwnRow(TIME_COUNTER),
-  [`${TIME_COUNTER}.create`]: scopeOwnCreate,
+  [`${TIME_COUNTER}.create`]: scopeOwnCreateOf(TIME_COUNTER),
   [`${TIME_COUNTER}.update`]: scopeOwnRow(TIME_COUNTER),
   [`${TIME_COUNTER}.delete`]: scopeOwnRow(TIME_COUNTER),
   [`${WORKDAY_LOG}.find`]: scopeOwnList,
   [`${WORKDAY_LOG}.findOne`]: scopeOwnRow(WORKDAY_LOG),
-  [`${WORKDAY_LOG}.create`]: scopeOwnCreate,
+  [`${WORKDAY_LOG}.create`]: scopeOwnCreateOf(WORKDAY_LOG),
   [`${WORKDAY_LOG}.update`]: scopeOwnRow(WORKDAY_LOG),
   [`${WORKDAY_LOG}.delete`]: scopeOwnRow(WORKDAY_LOG),
   // without the salary fields: the response sanitizer drops them
@@ -1252,7 +1280,7 @@ const OWN_SCOPES = {
   // already keeps their changes to admins (issues/140)
   [`${FESTIVE}.find`]: scopeFestiveList,
   [`${FESTIVE}.findOne`]: scopeFestiveRow,
-  [`${FESTIVE}.create`]: scopeOwnCreate,
+  [`${FESTIVE}.create`]: scopeOwnCreateOf(FESTIVE),
   [`${FESTIVE}.update`]: scopeOwnRow(FESTIVE),
   [`${FESTIVE}.delete`]: scopeOwnRow(FESTIVE),
 };
