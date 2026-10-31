@@ -1181,6 +1181,31 @@ const OWN_DATA_ACTIONS = new Set([
   'plugin::users-permissions.user.updateHome',
 ]);
 
+// Flags the server sets on the data it writes itself; never from a request
+// (issues/375): `_internal: true` skipped the price of a member's CSV order.
+const SERVER_ONLY_KEYS = ['_internal', '_previousOrderData', '_incidencesToProcess'];
+
+/**
+ * Drops the server-only flags from the request body at any depth (a CSV order
+ * carries its new contact nested), and records every change in the name of
+ * whoever makes it: `_tracking_user` was taken as sent, so a change could be
+ * signed with someone else's name in the order's history.
+ */
+function cleanServerFlags(ctx, user) {
+  const body = ctx.request && ctx.request.body;
+  const visit = (node, depth) => {
+    if (!node || typeof node !== 'object' || depth > 10) return;
+    if (Array.isArray(node)) {
+      for (const entry of node) visit(entry, depth + 1);
+      return;
+    }
+    for (const key of SERVER_ONLY_KEYS) delete node[key];
+    if ('_tracking_user' in node) node._tracking_user = user || null;
+    for (const value of Object.values(node)) visit(value, depth + 1);
+  };
+  visit(body, 0);
+}
+
 /**
  * A filter or sort on a field the user can't read is refused (issues/384):
  * whether rows come back would tell its value (services/query-guard.js).
@@ -1202,6 +1227,7 @@ module.exports = (config, { strapi }) =>
     const user = ctx.state && ctx.state.user;
     const action = actionOf(ctx.state && ctx.state.route);
     const sets = guardSets(strapi);
+    cleanServerFlags(ctx, user);
     if (!user || !action) {
       refuseForbiddenFilters(ctx, sets.everybody);
       return next();
