@@ -58,7 +58,7 @@ const { rulesFor, sanitizeResponse, modelUidOfAction } = require('../services/re
 const { findOrderRouteRate } = require('../api/order/services/route-price');
 const { relationId } = require('../services/relation-input');
 const { appPermissionsOf: cachedAppPermissionsOf } = require('../services/app-permissions');
-const { forbiddenField, guardSets } = require('../services/query-guard');
+const { forbiddenField, guardSets, filterPaths } = require('../services/query-guard');
 
 const ORDER = 'api::order.order';
 const CONTACT = 'api::contact.contact';
@@ -1325,8 +1325,20 @@ const DRIVER_SCOPES = {
   'api::orders-import.orders-import.create': asMember(scopeOrdersImport),
 };
 
+/**
+ * «Factures» asks which documents are assigned to a budget line with
+ * `_limit=-1` only. Any other filter (an amount, the invoice's contact) made it
+ * a yes/no oracle on the entity's budget lines (issues/391): they are dropped.
+ */
+function scopeAssignedIncomes(ctx, next) {
+  const { _limit } = ctx.query || {};
+  ctx.query = _limit !== undefined ? { _limit } : {};
+  return next();
+}
+
 // for every user without full access
 const GENERAL_SCOPES = {
+  'api::phase-income.phase-income.findAssigned': scopeAssignedIncomes,
   [`${PIVOT_VIEW}.find`]: scopePivotViewList,
   [`${PIVOT_VIEW}.findOne`]: scopePivotViewRow,
   [`${PIVOT_VIEW}.update`]: scopePivotViewRow,
@@ -1400,6 +1412,68 @@ function refuseForbiddenFilters(ctx, names) {
   if (field) throw new errors.ValidationError(`No es pot filtrar ni ordenar per «${field}»`);
 }
 
+// ---------------------------------------------------------------------------
+// Filters that answer questions about hidden data (issues/391).
+// ---------------------------------------------------------------------------
+
+// What a member may filter or sort users by: what she sees of them.
+const MEMBER_USER_FIELDS = new Set(['id', 'documentId', 'username', 'fullname', 'display_name']);
+
+/**
+ * A member sees only the names of the other users, but could filter them by
+ * e-mail (character by character), permissions or discounts, directly or
+ * through a relation (`contacts?_where[owner.email_contains]=…`). Every filter
+ * and sort path is followed along the schema from the route's model; on a user
+ * only the fields she sees are allowed.
+ */
+function refuseHiddenUserFilters(strapi, rootUid, ctx) {
+  if (!rootUid) return;
+  for (const path of filterPaths(ctx.query || {})) {
+    let model = strapi.contentTypes && strapi.contentTypes[rootUid];
+    let uid = rootUid;
+    for (const segment of path) {
+      if (uid === USER && !MEMBER_USER_FIELDS.has(segment)) {
+        throw new errors.ValidationError(`No es pot filtrar ni ordenar per «${segment}»`);
+      }
+      const attribute = model && model.attributes && model.attributes[segment];
+      if (!attribute) break;
+      if (attribute.type === 'relation' && attribute.target) {
+        uid = attribute.target;
+        model = strapi.contentTypes[uid];
+      } else if (attribute.type === 'component') {
+        uid = attribute.component;
+        model = strapi.components && strapi.components[uid];
+      } else break;
+    }
+  }
+}
+
+// The fields `_q` searches for users without full access: what they see.
+// db.query's own `_q` searched every text and number column, a project's
+// internal notes and amounts included (issues/391).
+// Members get only the projects' names (projects/basic, issues/383); workers
+// and the logistics staff also their description and purpose.
+const SEARCH_FIELDS = {
+  'api::project.project': ['name', 'description', 'purpose', 'grantable_reference'],
+  'api::contact.contact': ['name', 'trade_name', 'nif', 'city', 'contact_person', 'email', 'contact_email', 'phone'],
+};
+const MEMBER_SEARCH_FIELDS = { ...SEARCH_FIELDS, 'api::project.project': ['name'] };
+
+function narrowSearch(ctx, rootUid, member) {
+  const q = ctx.query && ctx.query._q;
+  const fields = (member ? MEMBER_SEARCH_FIELDS : SEARCH_FIELDS)[rootUid];
+  if (q === undefined || !fields) return;
+  const { _q, ...rest } = ctx.query;
+  ctx.query = rest;
+  const term = String(q).trim();
+  if (!term) return;
+  narrowQuery(
+    ctx,
+    { _or: fields.map((field) => ({ [`${field}_contains`]: term })) },
+    { $or: fields.map((field) => ({ [field]: { $containsi: term } })) },
+  );
+}
+
 const RELATION_OPERATIONS = ['connect', 'disconnect', 'set'];
 
 /**
@@ -1462,6 +1536,8 @@ module.exports = (config, { strapi }) =>
     if (ORDER_WRITES.has(action) && !isOrdersMember(permissions)) await officeRouteRate(strapi, ctx, action);
     if (full) return next();
     refuseRelationOperations(strapi, action, ctx);
+    if (isOrdersMember(permissions)) refuseHiddenUserFilters(strapi, modelUidOfAction(action), ctx);
+    narrowSearch(ctx, modelUidOfAction(action), isOrdersMember(permissions));
 
     if (action === 'api::me.me.find') {
       await next();

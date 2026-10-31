@@ -148,9 +148,79 @@ function guardSets(app = global.strapi) {
     ...PROJECT_FINANCES,
     'cost_by_hour',
     'invoice_hours_price',
+    // a task's comments are dropped from workers' answers, so not filterable either (issues/391)
+    'task_comments',
   ]);
   cached = { app, everybody, limited };
   return cached;
 }
 
-module.exports = { forbiddenField, guardSets, nameSet, CREDENTIALS };
+// Keys that only group conditions, and request parameters that aren't fields.
+const LOGIC = new Set(['_where', 'filters', '_or', '_and', 'or', 'and', '$or', '$and', '$not']);
+// (`limit`/`start`: the users-permissions routes take them at the top level)
+const NOT_FIELDS = new Set([
+  'populate',
+  'fields',
+  'pagination',
+  '_limit',
+  '_start',
+  'limit',
+  'start',
+  'offset',
+  'page',
+  'pageSize',
+  '_q',
+  'published_at_null',
+  'status',
+  'locale',
+  'publicationState',
+]);
+
+/**
+ * Every field path a query filters or sorts on, as lists of attribute names
+ * (`_where[owner.email_contains]` → ['owner', 'email'], `filters[owner][email][$eq]`
+ * → ['owner', 'email'], `_sort=owner.username:ASC` → ['owner', 'username']).
+ */
+function filterPaths(query) {
+  const paths = [];
+  const sortPaths = (value) => {
+    for (const entry of [].concat(value)) {
+      if (typeof entry === 'string') {
+        for (const part of entry.split(',')) {
+          const field = part.split(':')[0].trim();
+          if (field) paths.push(field.split('.'));
+        }
+      } else if (entry && typeof entry === 'object') walk(entry, []);
+    }
+  };
+  function walk(node, prefix) {
+    if (!node || typeof node !== 'object') {
+      if (prefix.length) paths.push(prefix);
+      return;
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'sort' || key === '_sort') {
+        sortPaths(value);
+        continue;
+      }
+      if (!prefix.length && NOT_FIELDS.has(key)) continue;
+      if (LOGIC.has(key) || /^\d+$/.test(key)) {
+        walk(value, prefix);
+        continue;
+      }
+      if (key.startsWith('$')) {
+        if (prefix.length) paths.push(prefix);
+        continue;
+      }
+      const segments = key.split('.');
+      segments[segments.length - 1] = segments[segments.length - 1].replace(OPERATOR_SUFFIX, '');
+      const next = [...prefix, ...segments.filter(Boolean)];
+      if (value && typeof value === 'object' && !Array.isArray(value)) walk(value, next);
+      else paths.push(next);
+    }
+  }
+  walk(query, []);
+  return paths;
+}
+
+module.exports = { forbiddenField, guardSets, nameSet, filterPaths, CREDENTIALS };
