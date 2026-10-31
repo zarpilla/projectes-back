@@ -124,6 +124,18 @@ const NESTED_PROJECT_DATA = [
   'grantable_contacts',
 ];
 
+// What a member doesn't get of another member's order (issues/388)
+const OTHER_ORDER_MONEY = [
+  'emitted_invoice',
+  'emitted_invoice_datetime',
+  'price',
+  'finalPrice',
+  'multidelivery_discount',
+  'contact_pickup_discount',
+  'volume_discount',
+  'late_surcharge',
+];
+
 // The amounts of a budget line and of its planned hours (the hours stay)
 const LINE_AMOUNTS = ['amount', 'total_amount', 'bank_account', 'invoice', 'income', 'vat_pct'];
 
@@ -157,6 +169,20 @@ function rulesFor({ member = false, selfId = null, permissions = [] } = {}) {
   // whole invoice (issues/188)
   if (!permissions.some((p) => INVOICE_READERS.includes(p))) {
     rules['api::order.order'] = { drop: ['emitted_invoice'] };
+  } else if (member) {
+    // A member reaches other members' orders delivered to her point (pickup
+    // access): their invoice, price and discounts are not hers (issues/388).
+    // An order whose owner isn't in the answer keeps its money only at the root
+    // of her own lists; nested (an incidence's order) it loses the invoice.
+    rules['api::order.order'] = {
+      pick: (row, nested) => {
+        const owner = row.owner && typeof row.owner === 'object' ? row.owner.id : row.owner;
+        if (owner !== undefined && owner !== null) return owner === selfId ? { drop: [] } : { drop: OTHER_ORDER_MONEY };
+        return { drop: nested ? ['emitted_invoice'] : [] };
+      },
+    };
+    // the office's notes on an invoice (issues/388)
+    rules['api::emitted-invoice.emitted-invoice'] = { drop: ['comments_internal'] };
   }
   const contactDrop = [];
   if (member) {
