@@ -595,8 +595,28 @@ describe('app permissions (issues/099)', () => {
       await expectRefused('api::order.order.pdfmultiple', { method: 'POST', body: { orders: [1, 2] } });
     });
 
+    // issues/372: only the date range of «Rutes i dies» reaches other members' rows
+    const ROUTE_DAYS = { _where: { estimated_delivery_date_gte: '2026-10-19', estimated_delivery_date_lte: '2026-10-25' }, _limit: '-1' };
+
     it("keeps the route-day counts but not the other members' order details", async () => {
-      const ctx = makeCtx({ handler: 'api::order.order.table' });
+      const ctx = makeCtx({ handler: 'api::order.order.table', query: { ...ROUTE_DAYS } });
+      await run(ctx);
+      expect(ctx.query).toEqual(ROUTE_DAYS);
+    });
+
+    it.each([
+      ['a filter on another field', { _where: { id: 24886, price_gt: 30 } }],
+      ['a sort', { ...ROUTE_DAYS, _sort: 'price:DESC' }],
+      ['an owner filter', { _where: { owner: OTHER } }],
+      ['no filter', {}],
+    ])('narrows orders/table to her orders with %s (issues/372)', async (_label, query) => {
+      const ctx = makeCtx({ handler: 'api::order.order.table', query });
+      await run(ctx);
+      expect(ctx.query._where._and[0]).toEqual({ _or: [{ 'owner.id': ME }, { 'contact.id_in': [MY_CONTACT] }] });
+    });
+
+    it("cuts other members' rows that come back on the route-day query", async () => {
+      const ctx = makeCtx({ handler: 'api::order.order.table', query: { ...ROUTE_DAYS } });
       await run(ctx, [
         {
           id: 1,

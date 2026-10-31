@@ -578,6 +578,14 @@ async function scopeOrderPdf(ctx, next, { strapi, userId }) {
  */
 async function scopeOrderTable(ctx, next, { strapi, userId }) {
   const contactIds = await memberContactIds(strapi, userId);
+  // Only the counts of «Rutes i dies» (a date range, nothing else) see other
+  // members' orders. Any other filter or sort would answer questions about
+  // their rows (issues/372: `_where[price_gt]=30` on another member's order),
+  // so the list is narrowed to her own orders, as the Comandes list needs.
+  if (!isRouteDaysQuery(ctx.query)) {
+    const { v3, v5 } = ordersClause(userId, contactIds);
+    narrowQuery(ctx, v3, v5);
+  }
   await next();
   if (!Array.isArray(ctx.body)) return;
   ctx.body = ctx.body.map((order) =>
@@ -589,6 +597,22 @@ async function scopeOrderTable(ctx, next, { strapi, userId }) {
           estimated_delivery_date: order.estimated_delivery_date,
           route: order.route ? { id: idOf(order.route) } : null,
         },
+  );
+}
+
+const ROUTE_DAYS_PARAMS = new Set(['_where', '_limit', '_start']);
+const ROUTE_DAYS_WHERE = new Set(['estimated_delivery_date_gte', 'estimated_delivery_date_lte']);
+
+/** `orders/table?_where[estimated_delivery_date_gte]=…&_where[…_lte]=…&_limit=-1` (RouteDays.vue). */
+function isRouteDaysQuery(query = {}) {
+  const keys = Object.keys(query);
+  if (!keys.every((key) => ROUTE_DAYS_PARAMS.has(key))) return false;
+  const where = query._where;
+  if (!where || typeof where !== 'object' || Array.isArray(where)) return false;
+  const whereKeys = Object.keys(where);
+  return (
+    whereKeys.length > 0 &&
+    whereKeys.every((key) => ROUTE_DAYS_WHERE.has(key) && typeof where[key] === 'string')
   );
 }
 
