@@ -13,6 +13,11 @@
  * the reset link's URL, which Strapi 5 refuses as an unknown key. The link now
  * comes from the `email_reset_password` setting (services/ensure-reset-password-url.js).
  *
+ * A reset link lasts RESET_LINK_HOURS (issues/384): the plugin's token never
+ * expired, so a token left unused could be read or guessed at leisure. The time
+ * of the request is kept on the user (`reset_password_requested_at`); an older
+ * or undated token is cleared and refused.
+ *
  * The role's permissions are kept in memory between requests instead of being
  * read on each one (issues/016, services/role-permissions-cache.js), and so is
  * the authenticated user (issues/307, services/authenticated-user-cache.js).
@@ -42,6 +47,15 @@ const findUser = (where) => global.strapi.db.query(USER).findOne({ where });
 async function assertPasswordOk(password, user) {
   const problem = passwordProblem(password, await contextFor(user));
   if (problem) throw new errors.ValidationError(problem);
+}
+
+const RESET_LINK_HOURS = 1;
+
+/** Whether a reset requested at `requestedAt` can still be used. */
+function resetLinkAlive(requestedAt, now = Date.now()) {
+  if (!requestedAt) return false;
+  const time = new Date(requestedAt).getTime();
+  return Number.isFinite(time) && now - time <= RESET_LINK_HOURS * 3600 * 1000;
 }
 
 const isNewPassword = (body) => !!body && typeof body.password === 'string' && body.password !== '';
@@ -98,15 +112,36 @@ module.exports = (plugin) => {
     auth.forgotPassword = async (ctx, ...rest) => {
       const body = ctx.request && ctx.request.body;
       if (body && typeof body === 'object') delete body.url;
-      return forgotPassword(ctx, ...rest);
+      try {
+        return await forgotPassword(ctx, ...rest);
+      } finally {
+        // dated even when the mail failed: the plugin stores the token first
+        const email = body && typeof body.email === 'string' ? body.email.toLowerCase() : null;
+        if (email) {
+          try {
+            await global.strapi.db.query(USER).updateMany({
+              where: { email, resetPasswordToken: { $notNull: true } },
+              data: { reset_password_requested_at: new Date() },
+            });
+          } catch (error) {
+            global.strapi.log.warn(`[auth] reset date not saved: ${error.message}`);
+          }
+        }
+      }
     };
 
     auth.resetPassword = async (ctx, ...rest) => {
       const body = ctx.request && ctx.request.body;
       // a wrong code is left to the plugin («Incorrect code provided»)
-      if (isNewPassword(body) && typeof body.code === 'string' && body.code) {
+      if (body && typeof body.code === 'string' && body.code) {
         const owner = await findUser({ resetPasswordToken: body.code });
-        if (owner) await assertPasswordOk(body.password, owner);
+        if (owner && !resetLinkAlive(owner.reset_password_requested_at)) {
+          await global.strapi.db
+            .query(USER)
+            .update({ where: { id: owner.id }, data: { resetPasswordToken: null } });
+          throw new errors.ValidationError("L'enllaç per canviar la contrasenya ha caducat: demana'n un de nou");
+        }
+        if (owner && isNewPassword(body)) await assertPasswordOk(body.password, owner);
       }
       return resetPassword(ctx, ...rest);
     };
@@ -158,3 +193,4 @@ module.exports = (plugin) => {
 
   return plugin;
 };
+module.exports.resetLinkAlive = resetLinkAlive;

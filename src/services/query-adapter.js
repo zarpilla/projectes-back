@@ -23,6 +23,14 @@
  *   - populate passed separately (2nd positional arg in v3) → merged in
  */
 
+const { errors } = require('@strapi/utils');
+const { forbiddenField, nameSet, CREDENTIALS } = require('./query-guard');
+
+// Never a filter or a sort, whoever asks (issues/384): the middleware checks
+// every request first, this is the second line for code that adapts a query
+// of its own.
+const CREDENTIAL_NAMES = nameSet(CREDENTIALS);
+
 const OPERATOR_SUFFIXES = [
   '_eq',
   '_ne',
@@ -197,6 +205,8 @@ function adaptQuery(query, opts = {}) {
   };
 
   if (!query || typeof query !== 'object') return out;
+  const credential = forbiddenField(query, CREDENTIAL_NAMES);
+  if (credential) throw new errors.ValidationError(`No es pot filtrar ni ordenar per «${credential}»`);
 
   // 1. _where (nested form) — translate first so flat params can override/duplicate safely.
   if (query._where) {

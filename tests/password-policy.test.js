@@ -22,6 +22,8 @@ const USERS = {
     username: 'mpuig',
     fullname: 'Maria Puig Soler',
     resetPasswordToken: 'code-7',
+    // asked for a moment ago: the link is still alive (issues/384)
+    reset_password_requested_at: new Date(),
     permissions: [{ permission: 'hours' }],
   },
 };

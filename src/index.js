@@ -28,6 +28,7 @@ const { frontUrlsWithoutHash } = require('./services/front-urls-without-hash');
 const { frontUrlsAtRoot } = require('./services/front-urls-at-root');
 const { frontUrlsInCatalan } = require('./services/front-urls-in-catalan');
 const { clearQuotePreviewLinks } = require('./services/clear-quote-preview-links');
+const { clearPendingResetTokens } = require('./services/clear-pending-reset-tokens');
 const { padFourDigitPostcodes } = require('./services/pad-four-digit-postcodes');
 const { refreshUndatedOriginalTotals } = require('./services/refresh-undated-original-totals');
 const { widenBudgetLineDecimals } = require('./services/widen-budget-line-decimals');
@@ -173,6 +174,8 @@ module.exports = {
       ['frontUrlsInCatalan', frontUrlsInCatalan, { runOnce: true }],
       // issues/160: quotes kept a link to the front's removed quote preview as their PDF.
       ['clearQuotePreviewLinks', clearQuotePreviewLinks, { runOnce: true }],
+      // issues/384: reset tokens could be read through filters and never expired.
+      ['clearPendingResetTokens', clearPendingResetTokens, { runOnce: true }],
       // issues/179: contacts loaded from a spreadsheet lost the leading zero of their postcode.
       ['padFourDigitPostcodes', padFourDigitPostcodes, { runOnce: true }],
       // issues/195: undated original-budget lines were left out of the Original totals.

@@ -58,6 +58,7 @@ const { rulesFor, sanitizeResponse, modelUidOfAction } = require('../services/re
 const { findOrderRouteRate } = require('../api/order/services/route-price');
 const { relationId } = require('../services/relation-input');
 const { appPermissionsOf: cachedAppPermissionsOf } = require('../services/app-permissions');
+const { forbiddenField, guardSets } = require('../services/query-guard');
 
 const ORDER = 'api::order.order';
 const CONTACT = 'api::contact.contact';
@@ -1111,6 +1112,15 @@ const OWN_DATA_ACTIONS = new Set([
   'plugin::users-permissions.user.updateHome',
 ]);
 
+/**
+ * A filter or sort on a field the user can't read is refused (issues/384):
+ * whether rows come back would tell its value (services/query-guard.js).
+ */
+function refuseForbiddenFilters(ctx, names) {
+  const field = forbiddenField(ctx.query || {}, names);
+  if (field) throw new errors.ValidationError(`No es pot filtrar ni ordenar per «${field}»`);
+}
+
 function stripMe(body) {
   const me =
     body && typeof body === 'object' && body.data && typeof body.data === 'object' ? body.data : body;
@@ -1122,14 +1132,20 @@ module.exports = (config, { strapi }) =>
   async function appPermissions(ctx, next) {
     const user = ctx.state && ctx.state.user;
     const action = actionOf(ctx.state && ctx.state.route);
-    if (!user || !action) return next();
+    const sets = guardSets(strapi);
+    if (!user || !action) {
+      refuseForbiddenFilters(ctx, sets.everybody);
+      return next();
+    }
 
     const permissions = await appPermissionsOf(strapi, user.id);
     if (!isAllowed(action, permissions)) throw forbidden();
+    const full = permissions.some((p) => FULL_ACCESS.includes(p));
+    refuseForbiddenFilters(ctx, full ? sets.everybody : sets.limited);
     if (ORDER_CREATES.has(action)) createdPending(ctx, action);
     // a member's rate is set by her scope (memberRouteRate)
     if (ORDER_WRITES.has(action) && !isOrdersMember(permissions)) await officeRouteRate(strapi, ctx, action);
-    if (permissions.some((p) => FULL_ACCESS.includes(p))) return next();
+    if (full) return next();
 
     if (action === 'api::me.me.find') {
       await next();
