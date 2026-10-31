@@ -12,6 +12,7 @@
 const _ = require('lodash');
 const fs = require('fs');
 const { stableToken } = require('../../../services/pdf-names');
+const { documentPdfPath } = require('../../../services/document-pdf-path');
 const moment = require('moment');
 const sharp = require('sharp');
 const MicroInvoice = require('../../../../utils/microinvoice');
@@ -494,12 +495,17 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
         .query('api::emitted-invoice.emitted-invoice')
         .findOne({ where: { id }, populate: { contact: true } });
 
-      if (invoice && invoice.contact?.contact_email && invoice.pdf) {
+      // only the document's own PDF under uploads/documents (issues/385)
+      const pdfPath = invoice ? documentPdfPath(invoice.pdf) : null;
+      if (invoice && invoice.pdf && !pdfPath) {
+        return ctx.send({ done: false, msg: 'Could not sent email. Invalid pdf' }, 400);
+      }
+      if (invoice && invoice.contact?.contact_email && pdfPath) {
         const me = await getMe();
         const attachments = [
           {
             filename: `Factura-${invoice.code}.pdf`,
-            content: fs.readFileSync(`./public${invoice.pdf}`).toString('base64'),
+            content: fs.readFileSync(pdfPath).toString('base64'),
             encoding: 'base64',
           },
         ];

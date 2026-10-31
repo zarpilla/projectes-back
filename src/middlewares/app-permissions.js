@@ -1237,6 +1237,26 @@ const OWN_DATA_ACTIONS = new Set([
 // (issues/375): `_internal: true` skipped the price of a member's CSV order.
 const SERVER_ONLY_KEYS = ['_internal', '_previousOrderData', '_incidencesToProcess'];
 
+// Fields of a type that only the server writes, whoever sends the request:
+// the path of the drawn PDF, which the invoice e-mail reads from disk
+// (issues/385). The front sends back the value it got; it is dropped.
+const SERVER_ONLY_FIELDS = {
+  'api::emitted-invoice.emitted-invoice': ['pdf'],
+  'api::quote.quote': ['pdf'],
+};
+
+function dropServerOnlyFields(ctx, action) {
+  const uid = action && action.slice(0, action.lastIndexOf('.'));
+  const fields = SERVER_ONLY_FIELDS[uid];
+  if (!fields || !['POST', 'PUT', 'PATCH'].includes(ctx.method)) return;
+  const body = ctx.request && ctx.request.body;
+  for (const target of [body, body && body.data]) {
+    if (target && typeof target === 'object' && !Array.isArray(target)) {
+      for (const field of fields) delete target[field];
+    }
+  }
+}
+
 /**
  * Drops the server-only flags from the request body at any depth (a CSV order
  * carries its new contact nested), and records every change in the name of
@@ -1304,6 +1324,7 @@ module.exports = (config, { strapi }) =>
     const action = actionOf(ctx.state && ctx.state.route);
     const sets = guardSets(strapi);
     cleanServerFlags(ctx, user);
+    dropServerOnlyFields(ctx, action);
     if (!user || !action) {
       refuseForbiddenFilters(ctx, sets.everybody);
       return next();
