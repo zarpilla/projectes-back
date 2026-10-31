@@ -977,7 +977,8 @@ describe('app permissions (issues/099)', () => {
       );
       expect(ctx.request.body.data).toEqual({ address: 'C/ Nou', notes_delivery: 'x', pickup_point: true, owner: ME });
       await expectAllowed('api::contact.contact.update', put(10, { owner: { id: ME } }, DRIVER));
-      await expectAllowed('api::contact.contact.update', put(11, { owner: null }, DRIVER));
+      // contact 11 has no owner: not a delivery point, so not hers to change (issues/392)
+      await expectRefused('api::contact.contact.update', put(11, { owner: null }, DRIVER));
       await expectRefused('api::contact.contact.update', put(10, { owner: DRIVER }, DRIVER));
       await expectRefused('api::contact.contact.update', put(11, { owner: DRIVER }, DRIVER));
     });

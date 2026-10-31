@@ -982,6 +982,56 @@ async function scopePartnerDocuments(ctx, { strapi }) {
   if (linked.size) throw forbidden();
 }
 
+// ---------------------------------------------------------------------------
+// Logistics staff without full access and contacts (issues/392). Drivers and
+// the office change delivery points (contacts with an owner, the 2026-10-19
+// decision), not the entity's clients or the energy community's members: a
+// driver changed a client's e-mail, where its invoices are sent.
+// ---------------------------------------------------------------------------
+
+async function isDeliveryPointRef(strapi, ref) {
+  if (ref === undefined || ref === null || ref === '') return false;
+  const where = /^\d+$/.test(String(ref)) ? { id: Number(ref) } : { documentId: String(ref) };
+  const contact = await strapi.db.query(CONTACT).findOne({ where, select: ['id'], populate: { owner: { select: ['id'] } } });
+  if (!contact) return true; // the controller answers its 404
+  if (contact.owner) return true;
+  // Points migrated from v3 keep an owner link to a user that no longer exists
+  // (79 on La Diligència): the link, not the user, makes it a delivery point.
+  const joinTable = ownerJoinTable(strapi);
+  if (!joinTable) return false;
+  const link = await strapi.db.connection(joinTable.name).where(joinTable.joinColumn.name, contact.id).first();
+  return Boolean(link);
+}
+
+function ownerJoinTable(strapi) {
+  try {
+    const attribute = strapi.db.metadata.get(CONTACT).attributes.owner;
+    return attribute && attribute.joinTable ? attribute.joinTable : null;
+  } catch {
+    return null;
+  }
+}
+
+async function scopeStaffContacts(ctx, { strapi }) {
+  if (ctx.state.route && String(ctx.state.route.handler).endsWith('unify')) {
+    const { sourceContactId, targetContactId } = ctx.request.body || {};
+    for (const ref of [sourceContactId, targetContactId]) {
+      if (ref !== undefined && !(await isDeliveryPointRef(strapi, ref))) throw forbidden();
+    }
+    return;
+  }
+  const where = addressedRow(ctx);
+  if (!where) return;
+  const ref = where.id !== undefined ? where.id : where.documentId;
+  if (!(await isDeliveryPointRef(strapi, ref))) throw forbidden();
+}
+
+const STAFF_CONTACT_SCOPES = {
+  [`${CONTACT}.update`]: scopeStaffContacts,
+  [`${CONTACT}.delete`]: scopeStaffContacts,
+  [`${CONTACT}.unify`]: scopeStaffContacts,
+};
+
 // for every user without full access, whatever her other scopes
 const FILE_LINK_SCOPES = {
   'api::orders-import.orders-import.create': scopeOrdersImportFile,
@@ -1546,6 +1596,7 @@ module.exports = (config, { strapi }) =>
     }
     if (FILE_LINK_SCOPES[action]) await FILE_LINK_SCOPES[action](ctx, { strapi, userId: user.id });
     const member = isOrdersMember(permissions);
+    if (!member && STAFF_CONTACT_SCOPES[action]) await STAFF_CONTACT_SCOPES[action](ctx, { strapi });
     const scope =
       OWN_SCOPES[action] ||
       (member && MEMBER_SCOPES[action]) ||
