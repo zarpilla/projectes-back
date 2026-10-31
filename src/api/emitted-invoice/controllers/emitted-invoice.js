@@ -11,7 +11,7 @@
  */
 const _ = require('lodash');
 const fs = require('fs');
-const crypto = require('crypto');
+const { stableToken } = require('../../../services/pdf-names');
 const moment = require('moment');
 const sharp = require('sharp');
 const MicroInvoice = require('../../../../utils/microinvoice');
@@ -463,11 +463,10 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     if (!fs.existsSync('./public/uploads/documents')) {
       fs.mkdirSync('./public/uploads/documents', { recursive: true });
     }
-    const hash = crypto
-      .createHash('md5')
-      .update(`${myInvoice.options.data.invoice.name}-${invoice.code}-${id}`)
-      .digest('hex');
-    const docName = `./public/uploads/documents/${myInvoice.options.data.invoice.name}-${invoice.contact?.name}-${invoice.code}-H${hash.substring(16)}.pdf`;
+    // keyed with a server secret: /uploads is public, and an md5 of the type,
+    // code and id was computable by anyone who knew them (issues/374)
+    const hash = stableToken(myInvoice.options.data.invoice.name, invoice.code, docUid, id);
+    const docName = `./public/uploads/documents/${myInvoice.options.data.invoice.name}-${invoice.contact?.name}-${invoice.code}-H${hash}.pdf`;
     await myInvoice.generate(docName);
 
     // Update the document's pdf path. `strapi.db.query().update()` still runs the

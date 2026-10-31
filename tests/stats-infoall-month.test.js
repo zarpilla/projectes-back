@@ -99,8 +99,16 @@ describe('GET /api/incidences/infoall', () => {
   it('a month of a year', async () => {
     const { ctrl, calls } = load('incidence', rows.filter((r) => r.id === 2));
     await ctrl.infoAll({ query: { _limit: '-1', year: '2026', month: '10' } });
-    expect(whereDates(calls[0].where)).toContain('2026-10-01');
-    expect(whereDates(calls[0].where)).toContain('2026-10-31');
+    expect(calls[0].where.created_at).toEqual({ $gte: '2026-10-01', $lt: '2026-11-01' });
+  });
+
+  // 2026-10-31: an incidence created that day was missing from October's
+  // «Informe d'incidències» (`created_at <= 2026-10-31` = before midnight); the
+  // e2e test that counts a new incidence failed only on the last day of a month.
+  it("keeps the period's last day: a whole year ends before 1 January", async () => {
+    const { ctrl, calls } = load('incidence', []);
+    await ctrl.infoAll({ query: { _limit: '-1', year: '2026' } });
+    expect(calls[0].where.created_at).toEqual({ $gte: '2026-01-01', $lt: '2027-01-01' });
   });
 
   it('gives the member and route ids, not the populated relations', async () => {

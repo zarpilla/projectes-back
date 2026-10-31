@@ -29,6 +29,8 @@ const { frontUrlsWithoutHash } = require('./services/front-urls-without-hash');
 const { frontUrlsAtRoot } = require('./services/front-urls-at-root');
 const { frontUrlsInCatalan } = require('./services/front-urls-in-catalan');
 const { clearQuotePreviewLinks } = require('./services/clear-quote-preview-links');
+const { clearPendingResetTokens } = require('./services/clear-pending-reset-tokens');
+const { renameGuessablePdfs } = require('./services/rename-guessable-pdfs');
 const { padFourDigitPostcodes } = require('./services/pad-four-digit-postcodes');
 const { refreshUndatedOriginalTotals } = require('./services/refresh-undated-original-totals');
 const { widenBudgetLineDecimals } = require('./services/widen-budget-line-decimals');
@@ -176,6 +178,10 @@ module.exports = {
       ['frontUrlsInCatalan', frontUrlsInCatalan, { runOnce: true }],
       // issues/160: quotes kept a link to the front's removed quote preview as their PDF.
       ['clearQuotePreviewLinks', clearQuotePreviewLinks, { runOnce: true }],
+      // issues/384: reset tokens could be read through filters and never expired.
+      ['clearPendingResetTokens', clearPendingResetTokens, { runOnce: true }],
+      // issues/374: generated PDFs in the public /uploads had computable names.
+      ['renameGuessablePdfs', renameGuessablePdfs, { runOnce: true }],
       // issues/179: contacts loaded from a spreadsheet lost the leading zero of their postcode.
       ['padFourDigitPostcodes', padFourDigitPostcodes, { runOnce: true }],
       // issues/195: undated original-budget lines were left out of the Original totals.
@@ -205,6 +211,9 @@ module.exports = {
       ['migratePartnerAmounts', migratePartnerAmounts, { runOnce: true }],
       // issues/346: «Ruta de tarda» on the «TARDA» routes; the late marks of open orders judged again.
       ['recheckLateFlags', recheckLateFlags, { runOnce: true }],
+      // 2026-10-31: a «Total» planned-hours line took the €/h of its first day for
+      // its whole range (webcoop RE web: 454,94 € of 2026 hours at a 0 € period).
+      ['refreshTotalHoursTotalsPerDayCost', refreshTotalHoursTotals, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

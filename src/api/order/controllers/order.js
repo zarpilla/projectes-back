@@ -13,7 +13,7 @@
  */
 const fs = require('fs');
 const { resolvePdfLogo } = require('../../../services/pdf-logo');
-const crypto = require('crypto');
+const { randomToken } = require('../../../services/pdf-names');
 const moment = require('moment');
 const { toQueryDay } = require('../../../services/date-fields');
 const { orderLineConcept, invoiceConcept, invoicePdfConcept } = require('../services/invoice-line-concept');
@@ -744,17 +744,12 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       if (!fs.existsSync('./public/uploads/orders')) {
         fs.mkdirSync('./public/uploads/orders', { recursive: true });
       }
-      const hash = crypto
-        .createHash('md5')
-        .update(`${myInvoice.options.data.invoice.name}-${order.createdAt}-${order.id}`)
-        .digest('hex');
-      const docName = `./public/uploads/orders/${order.id}-H${hash.substring(16)}.pdf`;
+      // random names: /uploads is public (issues/374)
+      const docName = `./public/uploads/orders/${order.id}-H${randomToken()}.pdf`;
       await myInvoice.generate(docName);
       urls.push(docName);
     }
 
-    const fileName =
-      orderIds.length === 1 ? orderIds[0] : crypto.createHash('md5').update(orderIds.join('-')).digest('hex');
     // Merged in-process: pdf-merge shelled out to pdftk, which the Docker image
     // does not have (issues/036).
     const merged = await PDFDocument.create();
@@ -764,8 +759,11 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       for (const page of pages) merged.addPage(page);
     }
     const mergedPdf = await merged.save();
-    const mergedPdfPath = `./public/uploads/orders/orders-${fileName}.pdf`;
+    // `orders-<id>.pdf` let anyone download any delivery note by its id (issues/374)
+    const mergedPdfPath = `./public/uploads/orders/orders-${randomToken()}.pdf`;
     fs.writeFileSync(mergedPdfPath, mergedPdf);
+    // each order's own file was only the input of the merge
+    for (const url of urls) fs.rmSync(url, { force: true });
     return { urls: mergedPdfPath.substring('./public'.length) };
   },
 

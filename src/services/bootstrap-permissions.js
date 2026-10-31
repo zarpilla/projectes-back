@@ -135,6 +135,8 @@ async function importSeedPermissions() {
     // the API keys of the integrations API, from Administració › Usuàries
     // (isAdmin on the routes); the API itself is public, behind the api-key policy
     integration: ['listApiKeys', 'createApiKey', 'revokeApiKey'],
+    // «Desbloqueja» a received document whose «Modificable» is off (isAdmin on the route)
+    'document-unlock': ['unlock'],
     // Comunitat energètica (api/energy; who may call them: app-access-rules)
     energy: [
       'listPartners',

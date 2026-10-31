@@ -58,6 +58,7 @@ const { rulesFor, sanitizeResponse, modelUidOfAction } = require('../services/re
 const { findOrderRouteRate } = require('../api/order/services/route-price');
 const { relationId } = require('../services/relation-input');
 const { appPermissionsOf: cachedAppPermissionsOf } = require('../services/app-permissions');
+const { forbiddenField, guardSets } = require('../services/query-guard');
 
 const ORDER = 'api::order.order';
 const CONTACT = 'api::contact.contact';
@@ -577,6 +578,14 @@ async function scopeOrderPdf(ctx, next, { strapi, userId }) {
  */
 async function scopeOrderTable(ctx, next, { strapi, userId }) {
   const contactIds = await memberContactIds(strapi, userId);
+  // Only the counts of «Rutes i dies» (a date range, nothing else) see other
+  // members' orders. Any other filter or sort would answer questions about
+  // their rows (issues/372: `_where[price_gt]=30` on another member's order),
+  // so the list is narrowed to her own orders, as the Comandes list needs.
+  if (!isRouteDaysQuery(ctx.query)) {
+    const { v3, v5 } = ordersClause(userId, contactIds);
+    narrowQuery(ctx, v3, v5);
+  }
   await next();
   if (!Array.isArray(ctx.body)) return;
   ctx.body = ctx.body.map((order) =>
@@ -588,6 +597,22 @@ async function scopeOrderTable(ctx, next, { strapi, userId }) {
           estimated_delivery_date: order.estimated_delivery_date,
           route: order.route ? { id: idOf(order.route) } : null,
         },
+  );
+}
+
+const ROUTE_DAYS_PARAMS = new Set(['_where', '_limit', '_start']);
+const ROUTE_DAYS_WHERE = new Set(['estimated_delivery_date_gte', 'estimated_delivery_date_lte']);
+
+/** `orders/table?_where[estimated_delivery_date_gte]=…&_where[…_lte]=…&_limit=-1` (RouteDays.vue). */
+function isRouteDaysQuery(query = {}) {
+  const keys = Object.keys(query);
+  if (!keys.every((key) => ROUTE_DAYS_PARAMS.has(key))) return false;
+  const where = query._where;
+  if (!where || typeof where !== 'object' || Array.isArray(where)) return false;
+  const whereKeys = Object.keys(where);
+  return (
+    whereKeys.length > 0 &&
+    whereKeys.every((key) => ROUTE_DAYS_WHERE.has(key) && typeof where[key] === 'string')
   );
 }
 
@@ -807,6 +832,50 @@ async function scopeContactUpdate(ctx, next, { strapi, userId }) {
 async function scopeOrdersImport(ctx, next, { userId }) {
   const payload = payloadOf(ctx);
   payload.users_permissions_user = userId;
+  return next();
+}
+
+// ---------------------------------------------------------------------------
+// Uploads (issues/373). The upload action also replaces a file
+// (`POST /upload?id=<file>` with a file) or renames it (without one), whoever
+// owns it: a member overwrote the entity's logo. Users without full access only
+// add new files: unattached (the energy partners' documents, linked on save)
+// or for their own orders import (the CSV of «Importa CSV»). No SVG for them:
+// it is served from the app's own domain and can carry scripts; the logos are
+// uploaded by full-access users.
+// ---------------------------------------------------------------------------
+
+const ORDERS_IMPORT = 'api::orders-import.orders-import';
+const UPLOAD_TARGETS = { [ORDERS_IMPORT]: { field: 'file', owner: 'users_permissions_user' } };
+
+function uploadedFiles(ctx) {
+  const files = ctx.request && ctx.request.files && ctx.request.files.files;
+  if (!files) return [];
+  return Array.isArray(files) ? files : [files];
+}
+
+function isSvg(file) {
+  const type = String(file.mimetype || file.type || '').toLowerCase();
+  const name = String(file.originalFilename || file.name || '').toLowerCase();
+  return type.includes('svg') || name.endsWith('.svg') || name.endsWith('.svgz');
+}
+
+async function scopeUpload(ctx, next, { strapi, userId }) {
+  if (ctx.query && ctx.query.id !== undefined) throw forbidden();
+  const body = (ctx.request && ctx.request.body) || {};
+  const { ref, refId, field } = body;
+  if (ref !== undefined || refId !== undefined || field !== undefined) {
+    const target = typeof ref === 'string' ? UPLOAD_TARGETS[ref] : null;
+    if (!target || field !== target.field || !/^\d+$/.test(String(refId))) throw forbidden();
+    const row = await strapi.db.query(ref).findOne({
+      where: { id: Number(refId) },
+      populate: { [target.owner]: { select: ['id'] } },
+    });
+    if (!row || idOf(row[target.owner]) !== userId) throw forbidden();
+  }
+  if (uploadedFiles(ctx).some(isSvg)) {
+    throw new errors.ValidationError('No es poden pujar imatges SVG');
+  }
   return next();
 }
 
@@ -1100,6 +1169,7 @@ const GENERAL_SCOPES = {
   [`${PIVOT_VIEW}.create`]: scopePivotViewCreate,
   [`${CONTACT}.basic`]: scopeContactBasic,
   [`${INCIDENCE}.update`]: scopeIncidenceUpdate,
+  'plugin::upload.content-api.upload': scopeUpload,
 };
 
 // the user's own data: nothing to clean. `users/me` is not one of them: it
@@ -1115,6 +1185,40 @@ const OWN_DATA_ACTIONS = new Set([
   'plugin::users-permissions.user.defaultPickups',
 ]);
 
+// Flags the server sets on the data it writes itself; never from a request
+// (issues/375): `_internal: true` skipped the price of a member's CSV order.
+const SERVER_ONLY_KEYS = ['_internal', '_previousOrderData', '_incidencesToProcess'];
+
+/**
+ * Drops the server-only flags from the request body at any depth (a CSV order
+ * carries its new contact nested), and records every change in the name of
+ * whoever makes it: `_tracking_user` was taken as sent, so a change could be
+ * signed with someone else's name in the order's history.
+ */
+function cleanServerFlags(ctx, user) {
+  const body = ctx.request && ctx.request.body;
+  const visit = (node, depth) => {
+    if (!node || typeof node !== 'object' || depth > 10) return;
+    if (Array.isArray(node)) {
+      for (const entry of node) visit(entry, depth + 1);
+      return;
+    }
+    for (const key of SERVER_ONLY_KEYS) delete node[key];
+    if ('_tracking_user' in node) node._tracking_user = user || null;
+    for (const value of Object.values(node)) visit(value, depth + 1);
+  };
+  visit(body, 0);
+}
+
+/**
+ * A filter or sort on a field the user can't read is refused (issues/384):
+ * whether rows come back would tell its value (services/query-guard.js).
+ */
+function refuseForbiddenFilters(ctx, names) {
+  const field = forbiddenField(ctx.query || {}, names);
+  if (field) throw new errors.ValidationError(`No es pot filtrar ni ordenar per «${field}»`);
+}
+
 function stripMe(body) {
   const me =
     body && typeof body === 'object' && body.data && typeof body.data === 'object' ? body.data : body;
@@ -1126,14 +1230,21 @@ module.exports = (config, { strapi }) =>
   async function appPermissions(ctx, next) {
     const user = ctx.state && ctx.state.user;
     const action = actionOf(ctx.state && ctx.state.route);
-    if (!user || !action) return next();
+    const sets = guardSets(strapi);
+    cleanServerFlags(ctx, user);
+    if (!user || !action) {
+      refuseForbiddenFilters(ctx, sets.everybody);
+      return next();
+    }
 
     const permissions = await appPermissionsOf(strapi, user.id);
     if (!isAllowed(action, permissions)) throw forbidden();
+    const full = permissions.some((p) => FULL_ACCESS.includes(p));
+    refuseForbiddenFilters(ctx, full ? sets.everybody : sets.limited);
     if (ORDER_CREATES.has(action)) createdPending(ctx, action);
     // a member's rate is set by her scope (memberRouteRate)
     if (ORDER_WRITES.has(action) && !isOrdersMember(permissions)) await officeRouteRate(strapi, ctx, action);
-    if (permissions.some((p) => FULL_ACCESS.includes(p))) return next();
+    if (full) return next();
 
     if (action === 'api::me.me.find') {
       await next();

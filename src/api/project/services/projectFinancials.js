@@ -350,11 +350,17 @@ const calculateEstimatedTotals = async (
                   subphase_estimated_hours += hours.quantity * mdiff;
                   total_estimated_hours += hours.quantity * mdiff;
 
-                  const dd = userDedications.find((d) => d.from <= hours.from && d.to >= hours.from);
-                  const costByHour = dd && dd.costByHour ? dd.costByHour : 0;
-
-                  hoursAmount = (hours.quantity ? hours.quantity : 0) * mdiff * costByHour;
-                  total_estimated_hours_price += (hours.quantity ? hours.quantity : 0) * mdiff * costByHour;
+                  // the days come in order: reuse the last period while it covers them
+                  let lastDd = null;
+                  const costOn = (str) => {
+                    const dd =
+                      lastDd && lastDd.from <= str && lastDd.to >= str
+                        ? lastDd
+                        : userDedications.find((d) => d.from <= str && d.to >= str);
+                    if (dd) lastDd = dd;
+                    return dd && dd.costByHour ? dd.costByHour : 0;
+                  };
+                  const costByHour = costOn(hours.from);
 
                   // issues/259: a «Total» amount is spread evenly over the
                   // working days of its range, from and to included, whatever
@@ -374,19 +380,33 @@ const calculateEstimatedTotals = async (
                   const days = workingDays.length ? workingDays : allDays;
                   const q = (hours.quantity ? hours.quantity : 0) / days.length;
 
-                  for (const day of days) {
+                  // Each day is priced with the work period that covers it, as
+                  // the monthly and weekly amounts are. It used to take the
+                  // period of `from` for the whole range, so a 2023–2026 line
+                  // kept costing the 2023–2025 €/h in 2026 after a 0 € period
+                  // (webcoop RE web, 2026-10-31). A range under one period
+                  // keeps the old product, bit for bit.
+                  const dayCosts = days.map((day) => costOn(day.str));
+                  const oneCost = dayCosts.every((c) => c === costByHour);
+                  const rangeAmount = oneCost
+                    ? (hours.quantity ? hours.quantity : 0) * mdiff * costByHour
+                    : dayCosts.reduce((sum, c) => sum + q * c, 0);
+                  hoursAmount = rangeAmount;
+                  total_estimated_hours_price += rangeAmount;
+
+                  days.forEach((day, i) => {
                     totalsByDay.push({
                       day: dayValue(day),
                       q,
-                      costByHour,
+                      costByHour: dayCosts[i],
                       userId: userId,
                       project: data.id,
                       project_name: data.name,
                     });
 
                     pushYear({ year: day.year, total_estimated_hours: q });
-                    pushYear({ year: day.year, total_estimated_hours_price: q * costByHour });
-                  }
+                    pushYear({ year: day.year, total_estimated_hours_price: q * dayCosts[i] });
+                  });
                 }
               }
               keep(hours, 'total_amount', hoursAmount);

@@ -29,9 +29,25 @@ const KEY_MATERIAL = /\.(p12|pfx|pem|key|jks|p8|p7b|p7s|asc|gpg|der|crt|cer|json
 /** Only the upload tree — the rest of public/ is app assets. */
 const UPLOADS = /^\/uploads\//i;
 
+/**
+ * The path as written and as the static server reads it: koa-send decodes it,
+ * so `/uploads/key%2Ejson` served the .json (issues/374). A path that doesn't
+ * decode is refused too.
+ */
+function pathsOf(raw) {
+  try {
+    return [raw, decodeURIComponent(raw)];
+  } catch {
+    return null;
+  }
+}
+
+const isKeyMaterial = (path) => UPLOADS.test(path) && KEY_MATERIAL.test(path);
+
 module.exports = (config, { strapi }) => async (ctx, next) => {
   const path = ctx.path || '';
-  if (UPLOADS.test(path) && KEY_MATERIAL.test(path)) {
+  const paths = pathsOf(path);
+  if (!paths || paths.some(isKeyMaterial)) {
     strapi.log.warn(`[security] refused key-material request: ${path} (ip ${ctx.ip})`);
     // 404 rather than 403: do not confirm that the file is there.
     return ctx.notFound();

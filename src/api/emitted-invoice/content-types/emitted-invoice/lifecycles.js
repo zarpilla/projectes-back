@@ -5,8 +5,8 @@
  * emitted-invoice lifecycles (v5). Ported from v3 api/emitted-invoice/models/emitted-invoice.js.
  *
  * State machine: drafts start as code=ESBORRANY; converting to real assigns the
- * serie counter number (SERIE-000N) and locks core fields. Real invoices are
- * immutable (updatable=false) and cannot be deleted. Deletions bulk-unlink
+ * serie counter number (SERIE-000N) and locks core fields. Real invoices
+ * cannot be deleted; `updatable` («Modificable») is ignored here. Deletions bulk-unlink
  * orders via parameterized raw SQL (rawExecute — no lifecycle re-entry).
  *
  * afterUpdate enqueues VeriFactu-chain and FACe-queue items when the org
@@ -71,9 +71,10 @@ module.exports = {
       .query('api::emitted-invoice.emitted-invoice')
       .findOne({ where: event.params.where });
 
-    if (invoice && invoice.updatable === false && !(data.updatable_admin === true)) {
-      throw new ApplicationError('emitted-invoice NOT updatable');
-    }
+    // «Modificable» no longer applies to emitted invoices: issuing one locks
+    // its fiscal data below (what VeriFactu needs), and the switch only kept
+    // users from marking it paid or assigning it to a budget line. Old rows
+    // with updatable = false are not refused any more.
 
     cleanupUserFields(data);
 

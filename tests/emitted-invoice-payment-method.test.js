@@ -175,9 +175,10 @@ describe('emitted-invoice beforeUpdate with the payment-method payload (issues/0
     expect(data.updatable_admin).toBe(false);
   });
 
-  it('still refuses a plain update of a non-updatable invoice', async () => {
+  // 2026-10-31: «Modificable» no longer applies to emitted invoices.
+  it('lets a plain update through on an invoice whose old «Modificable» is off', async () => {
     await expect(
       lifecycles.beforeUpdate({ params: { where: { id: 7 }, data: { payment_method: 2 } } }),
-    ).rejects.toThrow('emitted-invoice NOT updatable');
+    ).resolves.not.toThrow();
   });
 });

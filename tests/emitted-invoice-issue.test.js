@@ -343,11 +343,14 @@ describe('an issued invoice', () => {
     expect((await update({ number: 999 })).number).toBe(42);
   });
 
-  it('refuses every save once it is not updatable, unless an admin unlocks it', async () => {
+  // 2026-10-31: «Modificable» no longer applies to emitted invoices: issuing
+  // one locks its fiscal data (the tests above), and an old row with the
+  // switch off can still be marked paid.
+  it('ignores an old «Modificable» off and keeps the fiscal data locked', async () => {
     db.invoice.updatable = false;
 
-    await expect(update({ paid: true })).rejects.toThrow('emitted-invoice NOT updatable');
-    await expect(update({ paid: true, updatable_admin: true })).resolves.toMatchObject({ paid: true });
+    const saved = await update({ paid: true, number: 999 });
+    expect(saved).toMatchObject({ paid: true, number: 42 });
   });
 
   it('cannot be deleted', async () => {

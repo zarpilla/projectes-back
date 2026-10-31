@@ -23,6 +23,14 @@
  *   - populate passed separately (2nd positional arg in v3) → merged in
  */
 
+const { errors } = require('@strapi/utils');
+const { forbiddenField, nameSet, CREDENTIALS } = require('./query-guard');
+
+// Never a filter or a sort, whoever asks (issues/384): the middleware checks
+// every request first, this is the second line for code that adapts a query
+// of its own.
+const CREDENTIAL_NAMES = nameSet(CREDENTIALS);
+
 const OPERATOR_SUFFIXES = [
   '_eq',
   '_ne',
@@ -55,6 +63,15 @@ const OP_MAP = {
 
 // Params that are NOT field filters (control params).
 const CONTROL_PARAMS = new Set(['_limit', '_start', '_sort', '_q', 'published_at_null', '_where']);
+
+const LOGIC_KEYS = new Set(['_and', '_or', 'and', 'or', '_not', 'not']);
+
+/** A flat key that is (or walks into) a logical operator rather than a field. */
+function isLogicKey(key) {
+  return String(key)
+    .split('.')
+    .some((segment) => segment.startsWith('$') || LOGIC_KEYS.has(segment));
+}
 
 function splitFieldOp(key) {
   // Returns { field, op } where op is the v3 suffix (e.g. '_gte') or null for bare field.
@@ -197,6 +214,8 @@ function adaptQuery(query, opts = {}) {
   };
 
   if (!query || typeof query !== 'object') return out;
+  const credential = forbiddenField(query, CREDENTIAL_NAMES);
+  if (credential) throw new errors.ValidationError(`No es pot filtrar ni ordenar per «${credential}»`);
 
   // 1. _where (nested form) — translate first so flat params can override/duplicate safely.
   if (query._where) {
@@ -256,6 +275,12 @@ function adaptQuery(query, opts = {}) {
     if (key === '_where') continue;
     // v5-native params (populate, fields, status…) are not v3 field filters.
     if (V5_REST_PARAMS.has(key)) continue;
+    // A flat `$and`, `$or.0`, `_and`… would replace the clauses the permissions
+    // middleware put in `_where` (issues/372: `$and[0][id][$gt]=0` gave a
+    // member every order). Logic goes inside `_where` or `filters`.
+    if (isLogicKey(key)) {
+      throw new errors.ValidationError(`Paràmetre de consulta no permès: «${key}»`);
+    }
     const { field, op } = splitFieldOp(key);
     applyOp(filters, field, op, coerceValue(op, rawValue));
   }

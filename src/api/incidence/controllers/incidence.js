@@ -126,7 +126,9 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
     const range = statsDateRange(year, month);
     if (range) {
       query['created_at_gte'] = range.from;
-      query['created_at_lte'] = range.to;
+      // `createdAt` is a date and time: `<= 2026-10-31` stopped at midnight and
+      // left out every incidence of the period's last day. Before the next day.
+      query['created_at_lt'] = moment(range.to).add(1, 'day').format('YYYY-MM-DD');
     }
 
     // v3 sent _limit=-1 for 'all rows'; db.query says that by omitting the limit.

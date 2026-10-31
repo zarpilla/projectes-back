@@ -123,7 +123,7 @@ describe('planned hours', () => {
     expect(unpriced.total_estimated_hours_price).toBe(0);
   });
 
-  it('takes a total amount as it is, priced at its first day and split evenly over its working days', async () => {
+  it('takes a total amount as it is, split evenly over its working days, each priced with its work period', async () => {
     // Monday 22 December 2025 to Friday 9 January 2026, both included: 15
     // weekdays, 25 and 26 December and 1 January are festive, so 12 count,
     // 6 in 2025 and 6 in 2026: 2 h each.
@@ -135,15 +135,37 @@ describe('planned hours', () => {
     const result = await calculateEstimatedTotals(project(), phaseWithHours(hours), dedications, festives, false);
 
     expect(result.total_estimated_hours).toBe(24);
-    expect(result.total_estimated_hours_price).toBe(240);
+    // 2026 has no work period: its 12 h cost nothing
+    expect(result.total_estimated_hours_price).toBe(120);
     const days = result.totalsByDay.map((d) => d.day.format('YYYY-MM-DD'));
     expect(days).toEqual([
       '2025-12-22', '2025-12-23', '2025-12-24', '2025-12-29', '2025-12-30', '2025-12-31',
       '2026-01-02', '2026-01-05', '2026-01-06', '2026-01-07', '2026-01-08', '2026-01-09',
     ]);
-    expect(result.totalsByDay.every((d) => d.q === 2 && d.costByHour === 10)).toBe(true);
+    expect(result.totalsByDay.every((d) => d.q === 2)).toBe(true);
+    expect(result.totalsByDay.map((d) => d.costByHour)).toEqual([10, 10, 10, 10, 10, 10, 0, 0, 0, 0, 0, 0]);
     expect(byYear(result)['2025']).toMatchObject({ total_estimated_hours: 12, total_estimated_hours_price: 120 });
-    expect(byYear(result)['2026']).toMatchObject({ total_estimated_hours: 12, total_estimated_hours_price: 120 });
+    expect(byYear(result)['2026']).toMatchObject({ total_estimated_hours: 12, total_estimated_hours_price: 0 });
+    expect(hours.total_amount).toBe(120);
+  });
+
+  it('prices a total amount across a change of work period day by day (webcoop RE web, 2026-10-31)', async () => {
+    // Webcoop's «RE web» plans 100 h from 2023 to 2026 in one «Total» line. The
+    // 2026 work period costs 0 €/h, but Informes › Ingressos i despeses still
+    // showed 454,94 € of 2026 hours: the whole range took the €/h of its first
+    // day (2023–2025, 17,69 €/h). Here: 5 working days, 2 in 2025 at 10 €, 3 in
+    // 2026 at 0 €.
+    const hours = { from: '2025-12-30', to: '2026-01-05', quantity: 10, users_permissions_user: USER };
+    const dedications = [
+      { users_permissions_user: USER, from: '2023-01-01', to: '2025-12-31', costByHour: 10 },
+      { users_permissions_user: USER, from: '2026-01-01', to: '2028-12-31', costByHour: 0 },
+    ];
+    const result = await calculateEstimatedTotals(project(), phaseWithHours(hours), dedications, [], false);
+
+    expect(result.total_estimated_hours).toBe(10);
+    expect(result.total_estimated_hours_price).toBe(40);
+    expect(byYear(result)['2025']).toMatchObject({ total_estimated_hours: 4, total_estimated_hours_price: 40 });
+    expect(byYear(result)['2026']).toMatchObject({ total_estimated_hours: 6, total_estimated_hours_price: 0 });
   });
 
   it('keeps a short total amount in the per-day rows (issues/259)', async () => {
