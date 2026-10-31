@@ -13,6 +13,7 @@
 const _ = require('lodash');
 const moment = require('moment');
 const ical = require('node-ical');
+const { fetchOutboundText } = require('../../../services/outbound-url');
 const { RRule } = require('rrule');
 const { google } = require('googleapis');
 const fs = require('fs');
@@ -251,7 +252,7 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
         }
       } else if (user.ical && user.ical.startsWith('http')) {
         try {
-          const resp = await ical.async.fromURL(user.ical);
+          const resp = await ical.async.parseICS(await fetchOutboundText(user.ical));
           for (const k in resp) {
             if (resp[k].type !== 'VEVENT') continue;
             let hasDeclined = false;
@@ -280,7 +281,7 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
 
     if (me && !useGoogleCalendar && me.ical && me.ical.startsWith('http')) {
       try {
-        const resp = await ical.async.fromURL(me.ical);
+        const resp = await ical.async.parseICS(await fetchOutboundText(me.ical));
         for (const k in resp) {
           if (resp[k].type !== 'VEVENT') continue;
           let isAttendee = false;
