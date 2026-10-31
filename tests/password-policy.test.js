@@ -79,6 +79,19 @@ describe('passwordProblem', () => {
     expect(passwordProblem('blava-la-tardor', context)).toBeNull();
   });
 
+  // 2026-10-31: an admin setting «holaquetal» for hola@areliabio.com was told
+  // it contained «el teu correu»: a shared mailbox is not the person
+  it('a shared mailbox (hola@, info@) does not count; the domain name does', () => {
+    const shop = { email: 'hola@areliabio.com', username: 'Arelia Bio', names: ['Arelia Bio'] };
+    expect(passwordProblem('holaquetal', shop)).toBeNull();
+    expect(passwordProblem('info-i-mes-coses', { email: 'info@example.org' })).toBeNull();
+    expect(passwordProblem('areliabio-2026-x', shop)).toContain('«areliabio»');
+    expect(passwordProblem('arelia-i-el-mar', shop)).toContain('«arelia»');
+    // the provider is not the person's
+    expect(passwordProblem('gmail-tardor-blava', { email: 'maria.puig@gmail.com' })).toBeNull();
+    expect(passwordProblem('maria-tardor-blava', { email: 'maria.puig@gmail.com' })).toContain('«maria»');
+  });
+
   it.each(['cavall bateria grapa', 'Tardor-Blava-Mar', 'x7#kQ2!pLm9z', 'E2e-ci-12345'])('accepts %j', (password) => {
     expect(passwordProblem(password, { email: 'e2e@example.org', username: 'e2e' })).toBeNull();
   });

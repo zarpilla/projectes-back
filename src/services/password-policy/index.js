@@ -12,7 +12,8 @@
  *   SecLists, plus Catalan/Spanish words), also with digits or symbols added at
  *   the end: «barcelona2026!» counts as «barcelona».
  * - Not just a few different characters («aaaaaaaaaa», «1212121212»).
- * - Not containing the person's e-mail, username or name, nor the entity's.
+ * - Not containing the person's e-mail (not a shared mailbox like «hola@»; the
+ *   domain's name does count), username or name, nor the entity's.
  *
  * Checked on every way to set a password (users-permissions extension): the
  * reset link, changing one's own, and an admin creating or editing a user.
@@ -27,6 +28,26 @@ const MAX_BYTES = 72;
 const MIN_DISTINCT = 5;
 /** Shorter personal words («ana», «coop») would refuse too many passwords. */
 const MIN_PERSONAL_WORD = 4;
+
+/**
+ * Shared mailboxes say nothing about the person: «hola@areliabio.com» must not
+ * refuse «holaquetal» (2026-10-31). Their domain does count («areliabio»).
+ */
+const GENERIC_MAILBOXES = new Set([
+  'hola', 'hello', 'info', 'informacio', 'informacion', 'contacte', 'contacto', 'contact',
+  'admin', 'administracio', 'administracion', 'administration', 'oficina', 'office',
+  'correu', 'correo', 'mail', 'email', 'comandes', 'pedidos', 'orders', 'botiga', 'tienda',
+  'shop', 'vendes', 'ventas', 'sales', 'compres', 'compras', 'gestio', 'gestion',
+  'factures', 'facturas', 'facturacio', 'facturacion', 'comptabilitat', 'contabilidad',
+  'secretaria', 'recepcio', 'recepcion', 'equip', 'equipo', 'team', 'noreply', 'no-reply',
+]);
+
+/** Mail providers: «gmail» in an address is not the person's. */
+const MAIL_PROVIDERS = new Set([
+  'gmail', 'googlemail', 'hotmail', 'outlook', 'live', 'msn', 'yahoo', 'ymail', 'icloud',
+  'proton', 'protonmail', 'pm', 'gmx', 'aol', 'telefonica', 'movistar', 'orange',
+  'vodafone', 'terra', 'mail', 'email', 'correu', 'riseup', 'disroot', 'tutanota', 'yandex',
+]);
 
 let common;
 function commonPasswords() {
@@ -51,9 +72,17 @@ function personalWords({ email, username, names = [] } = {}) {
     if (word.length >= MIN_PERSONAL_WORD) words.add(word);
   };
   if (email) {
-    const local = lower(email).split('@')[0];
-    add(local);
-    local.split(/[^\p{L}\p{N}]+/u).forEach(add);
+    const [local, domain = ''] = lower(email).split('@');
+    const addPersonal = (w) => {
+      if (!GENERIC_MAILBOXES.has(w)) add(w);
+    };
+    addPersonal(local);
+    local.split(/[^\p{L}\p{N}]+/u).forEach(addPersonal);
+    // the name in the domain: «areliabio» of areliabio.com, not «gmail» nor «com»
+    const labels = domain.split('.').filter(Boolean);
+    labels.slice(0, -1).forEach((label) => {
+      if (!MAIL_PROVIDERS.has(label)) add(label);
+    });
   }
   if (username) {
     add(username);
@@ -92,7 +121,8 @@ function passwordProblem(password, context = {}) {
   const plain = lower(password);
   const found = personalWords(context).find((word) => plain.includes(word));
   if (found) {
-    return 'La clau no pot contenir el teu correu, el teu nom ni el de l\'entitat.';
+    // said for whoever types it: the person herself or an admin
+    return `La clau no pot contenir «${found}»: és del correu o del nom de la persona o de l'entitat.`;
   }
   return null;
 }
