@@ -72,6 +72,8 @@ YAML
     env_file: envs/$name.env
     environment:
       PORT: "$p"
+      # only Caddy/nginx reach it, whatever the env file says (issues/393)
+      HOST: "127.0.0.1"
     volumes:
       - $uploads:/opt/app/public/uploads$dumps
 YAML

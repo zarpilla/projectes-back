@@ -236,8 +236,9 @@ ENV
 services:
   esstrapis-front-$NAME:
     image: $FRONT_IMAGE:$FRONT_TAG
+    # only nginx reaches it: Docker publishes ports past UFW (issues/393)
     ports:
-      - "\${EXTERNAL_PORT:-8080}:80"
+      - "127.0.0.1:\${EXTERNAL_PORT:-8080}:80"
     environment:
       - NODE_ENV=production
       - VUE_APP_API_URL=\${VUE_APP_API_URL:-http://localhost:1337}
@@ -290,6 +291,12 @@ server {
         return 403;
     }
 
+    # The first Strapi admin is created from the command line (see the end of
+    # create-tenant.sh), never by whoever reaches the new site first (issues/393).
+    location = /admin/register-admin {
+        return 403;
+    }
+
     # Strapi (issues/342): the API, the uploads, its admin panel and the paths
     # the panel calls at the root. Keep in step with STRAPI_PATHS in the front's
     # tests/unit/frontAtRoot.spec.js: no route of the app may start with one.
@@ -334,7 +341,8 @@ fi
 
 say "Tenant $NAME is up"
 info "app        $URL/"
-info "admin      $URL/admin   (register the first Strapi admin there)"
+info "admin      $URL/admin   (registering from the web is blocked, issues/393: create the first Strapi admin with"
+info "           docker exec esstrapis-back-$NAME-blue npx strapi admin:create-user --email <email> --firstname <name> --password <password>)"
 if [ -n "$USER_EMAIL" ] && [ "$SEEDED" != 0 ]; then
   info "first user $USER_EMAIL"
   [ -z "$USER_PASSWORD" ] || info "password   $USER_PASSWORD   (shown only now; change it after the first login)"
