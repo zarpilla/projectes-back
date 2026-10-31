@@ -98,6 +98,19 @@ describe('filters on private fields (issues/384)', () => {
     await refused(['projects'], { handler: TABLE, query: { 'me.dir3_api_token_starts_with': 'x' } }, contentTypes);
   });
 
+  it("ignores generic names Strapi's internal types mark private (status, type…)", async () => {
+    const contentTypes = {
+      'admin::session': { attributes: { status: { type: 'string', private: true }, userId: { type: 'string', private: true } } },
+      'api::order.order': { attributes: { createdBy: { type: 'relation', private: true } } },
+    };
+    const queries = [{ _where: { status: 'pending' } }, { _where: { userId_eq: 1 } }, { type: 'income' }, { 'createdBy.id': 1 }];
+    for (const query of queries) {
+      const next = await call(['projects'], { handler: TABLE, query }, contentTypes);
+      expect(next).toHaveBeenCalled();
+    }
+    await refused(['projects'], { handler: TABLE, query: { 'createdBy.registrationToken_lt': 'g' } }, contentTypes);
+  });
+
   it('refuses salaries and project finances to users without full access only', async () => {
     const salary = { _where: { 'project.leader.monthly_salary_gt': '2000' } };
     await refused(['hours'], { handler: 'api::activity.activity.getForCalendar', query: salary });

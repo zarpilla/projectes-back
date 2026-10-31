@@ -27,8 +27,9 @@
 const OPERATOR_SUFFIX =
   /_(eq|ne|lt|lte|gt|gte|in|nin|null|contains|containss|ncontains|starts_with|ends_with|not_null)$/;
 
-// always private, whatever the schemas say
-const CREDENTIALS = ['password', 'resetPasswordToken', 'confirmationToken'];
+// always private, whatever the schemas say (`registrationToken`: the Strapi
+// admin users, reachable through every row's `createdBy`)
+const CREDENTIALS = ['password', 'resetPasswordToken', 'confirmationToken', 'registrationToken'];
 
 const normalize = (name) => String(name).toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -108,22 +109,29 @@ function forbiddenField(query, names) {
   return walk(query, 'filter');
 }
 
-/** The private attributes of every content type and component. */
+// Private only to keep them out of responses, and named like ordinary fields
+// the screens filter by: `home` (Inici pins), Strapi's own `createdBy`…, the
+// upload folders.
+const NOT_SECRET = new Set(['home', 'createdBy', 'updatedBy', 'locale', 'localizations', 'folder', 'folderPath']);
+
+// Strapi's internal types (admin sessions, releases…) mark generic names such
+// as `status` or `type` private: only this app's types and its users count.
+const ownModel = (uid) => uid.startsWith('api::') || uid === 'plugin::users-permissions.user';
+
+/** The private attributes of the app's content types and components. */
 function privateAttributes(app) {
   const names = [...CREDENTIALS];
-  const groups = [app && app.contentTypes, app && app.components];
-  for (const group of groups) {
-    for (const model of Object.values(group || {})) {
-      for (const [name, attribute] of Object.entries((model && model.attributes) || {})) {
-        if (attribute && attribute.private) names.push(name);
-      }
+  const models = [
+    ...Object.entries((app && app.contentTypes) || {}).filter(([uid]) => ownModel(uid)),
+    ...Object.entries((app && app.components) || {}),
+  ];
+  for (const [, model] of models) {
+    for (const [name, attribute] of Object.entries((model && model.attributes) || {})) {
+      if (attribute && attribute.private && !NOT_SECRET.has(name)) names.push(name);
     }
   }
   return names;
 }
-
-// the `home` attribute (Inici pins) is private only to keep it out of /users
-const NOT_SECRET = new Set(['home']);
 
 let cached = null;
 
@@ -131,7 +139,7 @@ let cached = null;
 function guardSets(app = global.strapi) {
   if (cached && cached.app === app) return cached;
   const { USER_PRIVATE, DEDICATION_SALARY_FIELDS, PROJECT_FINANCES } = require('./response-sanitizer');
-  const secret = privateAttributes(app).filter((name) => !NOT_SECRET.has(name));
+  const secret = privateAttributes(app);
   const everybody = nameSet(secret);
   const limited = nameSet([
     ...secret,
