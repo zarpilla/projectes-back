@@ -23,29 +23,29 @@
   },
   "dependencies": {
     "@peculiar/webcrypto": "^1.7.1",
-    "@strapi/database": "5.51.1",
-    "@strapi/plugin-cloud": "5.51.1",
-    "@strapi/plugin-users-permissions": "5.51.1",
-    "@strapi/provider-email-nodemailer": "^5.51.1",
-    "@strapi/strapi": "5.51.1",
+    "@strapi/database": "5.60.0",
+    "@strapi/plugin-cloud": "5.60.0",
+    "@strapi/plugin-users-permissions": "5.60.0",
+    "@strapi/provider-email-nodemailer": "5.60.0",
+    "@strapi/strapi": "5.60.0",
     "@xmldom/xmldom": "^0.9.12",
-    "axios": "^1.19.0",
+    "axios": "^1.20.0",
     "fontkit": "^2.0.4",
     "form-data": "^4.0.6",
     "googleapis": "^174.0.0",
     "lodash": "^4.18.1",
     "lodash.merge": "^4.6.2",
-    "moment": "^2.30.1",
-    "mysql2": "3.20.0",
-    "node-forge": "^1.4.0",
+    "moment": "^2.31.0",
+    "mysql2": "3.24.6",
+    "node-forge": "^1.4.2",
     "node-ical": "^0.26.1",
-    "nodemailer": "^9.0.4",
+    "nodemailer": "~10.1.7",
     "pdf-lib": "^1.17.1",
     "pdfkit": "^0.19.1",
     "qrcode": "^1.5.4",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
-    "react-router-dom": "^6.30.3",
+    "react-router-dom": "^6.30.6",
     "rrule": "^2.8.1",
     "styled-components": "^6.0.0",
     "transliteration": "^2.6.1",
@@ -63,11 +63,14 @@
     "supertest": "^7.2.2"
   },
   "engines": {
-    "node": ">=20.0.0 <=26.x.x",
+    "node": ">=22.19.0 <=26.x.x",
     "npm": ">=6.0.0"
   },
   "strapi": {
     "uuid": "24dfac90-7435-4f4d-bf9a-a30e3ef5898e",
     "installId": "4a7d4225bffe5555fcf1a095b8f67e5b10a80ce784b5657985795b52469c66a9"
+  },
+  "overrides": {
+    "nodemailer": "$nodemailer"
   }
 }
