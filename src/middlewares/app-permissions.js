@@ -707,6 +707,9 @@ async function scopeIncidenceRow(ctx, next, { strapi, userId }) {
  */
 function incidencePayload(payload, incidence, userId) {
   pick(payload, INCIDENCE_FIELDS);
+  // the replies go as the list the screen has (the controller keeps the stored
+  // ones and appends the new); anything else would replace them (issues/390)
+  if (payload.incidence_response !== undefined && !Array.isArray(payload.incidence_response)) throw forbidden();
   const { state } = payload;
   if (state === undefined || state === null || state === incidence.state) return payload;
   if (state === 'closed') {
@@ -1418,8 +1421,17 @@ function refuseRelationOperations(strapi, action, ctx) {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       if (RELATION_OPERATIONS.some((op) => op in value)) throw forbidden();
     }
+    // A to-many relation given as one row (`{"incidences": {"id": 1}}` or a bare
+    // id) is a `set` too: a member moved another member's incidence onto her
+    // order (issues/390). The screens send lists (the order form's inline
+    // incidences) or nothing.
+    if (TO_MANY.has(attribute.relation) && value !== null && value !== undefined && !Array.isArray(value)) {
+      throw forbidden();
+    }
   }
 }
+
+const TO_MANY = new Set(['oneToMany', 'manyToMany', 'manyWay', 'morphToMany', 'morphMany']);
 
 function stripMe(body) {
   const me =
