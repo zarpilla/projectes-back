@@ -493,8 +493,9 @@ async function memberOrderPayload(
 
 /** A member's own order: the order form, the Comandes list, Dipòsits. */
 async function memberOwnOrderUpdate(strapi, order, payload, userId, permissions = []) {
-  if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
-    throw forbidden();
+  // her order stays hers: clearing the owner would leave it nobody's (issues/377)
+  if (payload.owner === null) delete payload.owner;
+  if (payload.owner !== undefined && idOf(payload.owner) !== userId) throw forbidden();
   if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
   // once the office has the order, the form is read-only for her
   if (order.status !== 'pending') pick(payload, [...MEMBER_LATE_FIELDS]);

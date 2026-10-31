@@ -228,3 +228,18 @@ describe('nested row markers', () => {
     expect(clean({ leader: { documentId: 'doc' } })).toEqual({ leader: { documentId: 'doc' } });
   });
 });
+
+// issues/377 (security review 2026-10-31): `{ owner: { connect: [50] } }` was
+// cleaned against the user's attributes into `{}` and then null, so a member
+// cleared the owner of her order before the app permissions saw the write.
+describe('relation operations (issues/377)', () => {
+  const ATTRS = strapi.contentTypes['api::project.project'].attributes;
+  it.each([[{ connect: [50] }], [{ set: [{ id: 3 }] }], [{ disconnect: [4] }]])('keeps %j as sent', (op) => {
+    expect(cleanPayload({ leader: op }, ATTRS, strapi, true, 0, false)).toEqual({ leader: op });
+  });
+  it('still cleans plain relation objects', () => {
+    expect(cleanPayload({ leader: { id: 3, username: 'x', junk: 1 } }, ATTRS, strapi, true, 0, false)).toEqual({
+      leader: { id: 3, username: 'x' },
+    });
+  });
+});

@@ -1345,3 +1345,11 @@ describe('projects/basic for members (issues/383)', () => {
     expect(ctx.body[0]).toHaveProperty('description');
   });
 });
+
+describe('a member does not clear the owner of her order (issues/377)', () => {
+  it('drops owner: null', async () => {
+    setup({ permissions: { [ME]: ['orders'] }, orders: { 1: { id: 1, status: 'pending', ...ORDER(ME, MY_CONTACT) } }, contacts: { [MY_CONTACT]: { id: MY_CONTACT, users_permissions_user: { id: ME }, owner: null } } });
+    const ctx = await expectAllowed('api::order.order.update', { method: 'PUT', numericId: 1, body: { data: { owner: null, comments: 'x' } } });
+    expect(ctx.request.body.data).not.toHaveProperty('owner');
+  });
+});
