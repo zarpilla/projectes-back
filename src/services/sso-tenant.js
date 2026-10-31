@@ -40,8 +40,8 @@ async function ssoTenant(strapi, name, env = process.env) {
 
 /** Run-once at boot: keep the tenant the instance has today. */
 async function freezeSsoTenant() {
-  const tenant = await ssoTenant(strapi);
-  strapi.log.info(`[freezeSsoTenant] SSO tenant: ${tenant || '(none: no entity name yet)'}`);
+  const tenant = await ssoTenant(global.strapi);
+  global.strapi.log.info(`[freezeSsoTenant] SSO tenant: ${tenant || '(none: no entity name yet)'}`);
 }
 
 module.exports = { ssoTenant, freezeSsoTenant, STORE };

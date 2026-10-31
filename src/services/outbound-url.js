@@ -112,7 +112,7 @@ function outboundAxiosOptions(options = {}) {
  */
 function upstreamError(ctx, error, what, fallback) {
   const status = error && error.response && error.response.status;
-  const log = (typeof strapi !== 'undefined' && strapi.log) || console;
+  const log = (global.strapi && global.strapi.log) || console;
   log.error(`[outbound] ${what}: ${status ? `HTTP ${status}` : ''} ${(error && error.message) || error}`.trim());
   if (error instanceof OutboundUrlError) return ctx.badRequest(error.message);
   if (Number.isInteger(status) && status >= 400 && status <= 599) {

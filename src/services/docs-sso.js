@@ -18,7 +18,6 @@
  *   DOCS_URL        default https://docs.esstrapis.org
  */
 const crypto = require('crypto');
-const { tenantSlug } = require('./tickets-sso');
 
 const DEFAULT_URL = 'https://docs.esstrapis.org';
 const TTL_SECONDS = 120;
