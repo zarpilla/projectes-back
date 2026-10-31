@@ -56,6 +56,7 @@ const {
 } = require('../services/app-access-rules');
 const { rulesFor, sanitizeResponse, modelUidOfAction } = require('../services/response-sanitizer');
 const { findOrderRouteRate } = require('../api/order/services/route-price');
+const { routeRunsOn, loadRouteClosures, nextRouteDay } = require('../api/order/services/route-days');
 const { relationId } = require('../services/relation-input');
 const { appPermissionsOf: cachedAppPermissionsOf } = require('../services/app-permissions');
 const { forbiddenField, guardSets, filterPaths } = require('../services/query-guard');
@@ -524,6 +525,37 @@ async function memberOrderPayload(
 }
 
 /** A member's own order: the order form, the Comandes list, Dipòsits. */
+const ROUTE = 'api::route.route';
+const DAY_NAMES = ['diumenge', 'dilluns', 'dimarts', 'dimecres', 'dijous', 'divendres', 'dissabte'];
+const dayText = (ymd) => {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  return `${DAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d}/${m}/${y}`;
+};
+
+/**
+ * A member's order goes on a day its route runs and isn't closed, on an active
+ * route (issues/394): the server only checked "from tomorrow", while the
+ * integrations API (diligencia-test) checks this; the order form's date picker
+ * offers the same days. The office keeps its hand free for special cases.
+ */
+async function refuseOffRouteDay(strapi, routeRef, date) {
+  const routeId = relationId(routeRef);
+  const day = date ? String(date).split('T')[0] : null;
+  if (!routeId || !day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+  const where = /^\d+$/.test(String(routeId)) ? { id: Number(routeId) } : { documentId: String(routeId) };
+  const route = await strapi.db.query(ROUTE).findOne({ where });
+  if (!route) return;
+  if (route.active === false) throw new errors.ValidationError(`La ruta ${route.name} no està activa`);
+  const closures = await loadRouteClosures(day, day);
+  if (routeRunsOn(route, day, closures)) return;
+  const closed = closures.some((c) => !idOf(c.route) || idOf(c.route) === route.id);
+  const next = await nextRouteDay(route, { after: day });
+  throw new errors.ValidationError(
+    `${closed ? `La ruta ${route.name} està tancada el` : `La ruta ${route.name} no surt el`} ${dayText(day)}` +
+      (next ? `: el proper dia és el ${dayText(next)}` : ''),
+  );
+}
+
 async function memberOwnOrderUpdate(strapi, order, payload, userId, permissions = []) {
   // her order stays hers: clearing the owner would leave it nobody's (issues/377)
   if (payload.owner === null) delete payload.owner;
@@ -537,6 +569,19 @@ async function memberOwnOrderUpdate(strapi, order, payload, userId, permissions 
   // disables it) and its rate is the server's, not hers to send
   if (order.is_collection_order) omit(payload, ['delivery_type', 'route_rate']);
   await memberOrderPayload(strapi, payload, userId, { creating: false, order, permissions });
+  // a new day or route: one the route runs on (issues/394)
+  const dateSent = payload.estimated_delivery_date;
+  const routeSent = payload.route;
+  if (dateSent !== undefined || routeSent !== undefined) {
+    const stored = await strapi.db
+      .query(ORDER)
+      .findOne({ where: { id: order.id }, select: ['id', 'estimated_delivery_date'], populate: { route: { select: ['id'] } } });
+    const date = dateSent !== undefined ? dateSent : stored && stored.estimated_delivery_date;
+    const route = routeSent !== undefined ? routeSent : stored && stored.route;
+    const sameDate = !dateSent || (stored && String(dateSent).split('T')[0] === String(stored.estimated_delivery_date || '').split('T')[0]);
+    const sameRoute = routeSent === undefined || (stored && String(relationId(routeSent)) === String(idOf(stored.route)));
+    if (!(sameDate && sameRoute)) await refuseOffRouteDay(strapi, route, date);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -600,6 +645,7 @@ async function scopeOrderCreate(ctx, next, { strapi, userId, permissions }) {
   // a new order is the office's to process (issues/163)
   payload.status = 'pending';
   await memberOrderPayload(strapi, payload, userId, { creating: true, permissions });
+  await refuseOffRouteDay(strapi, payload.route, payload.estimated_delivery_date);
   return next();
 }
 
@@ -612,6 +658,7 @@ async function scopeOrderCsv(ctx, next, { strapi, userId, permissions }) {
     await keepDeliveryPointTypes(strapi, body.contact);
   }
   await memberOrderPayload(strapi, body, userId, { creating: true, csv: true, permissions });
+  await refuseOffRouteDay(strapi, body.route, body.estimated_delivery_date);
   // createCSV reads `owner.id`, and gives the same owner to a contact it creates
   body.owner = { id: userId };
   return next();
