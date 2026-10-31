@@ -2,6 +2,7 @@
 
 const { importSeedPermissions, importSeedRows } = require('./services/bootstrap-permissions');
 const { runStartupScript } = require('./services/startup-scripts');
+const { freezeSsoTenant } = require('./services/sso-tenant');
 const { registerRolePermissionsInvalidation, clearRolePermissionsCache } = require('./services/role-permissions-cache');
 const { registerLogosCacheInvalidation } = require('./services/logos-cache');
 const { registerUserDeleteGuard } = require('./services/user-delete-guard');
@@ -211,6 +212,8 @@ module.exports = {
       // 2026-10-31: a «Total» planned-hours line took the €/h of its first day for
       // its whole range (webcoop RE web: 454,94 € of 2026 hours at a 0 € period).
       ['refreshTotalHoursTotalsPerDayCost', refreshTotalHoursTotals, { runOnce: true }],
+      // issues/379: the tickets/docs SSO tenant stops following the editable entity name.
+      ['freezeSsoTenant', freezeSsoTenant, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

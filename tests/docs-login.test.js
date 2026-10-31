@@ -46,12 +46,17 @@ describe('me.docsLogin', () => {
   let ctrl;
   let permissions;
 
+  let kept;
+
   beforeEach(() => {
     jest.resetModules();
+    kept = null;
     permissions = [{ permission: 'projects' }, { permission: 'hours' }];
     global.strapi = {
       contentType: () => ({ kind: 'singleType' }),
       documents: () => ({ findFirst: async () => ({ name: 'Coop A, SCCL' }) }),
+      // Strapi's core store, where the SSO tenant is kept (issues/379)
+      store: () => ({ get: async () => kept, set: async ({ value }) => { kept = value; } }),
       db: { query: () => ({ findOne: async () => ({ id: 3, permissions }) }) },
     };
     // Blank, not deleted: requiring the controller loads @strapi/core, which runs

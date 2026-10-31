@@ -16,6 +16,7 @@ const { getMe, tokenFlags } = require('../../../services/me-settings');
 const { isAppAdmin } = require('../../../services/app-permissions');
 const { ticketsConfig, buildTicketsLoginUrl } = require('../../../services/tickets-sso');
 const { docsConfig, buildDocsLoginUrl } = require('../../../services/docs-sso');
+const { ssoTenant } = require('../../../services/sso-tenant');
 
 module.exports = createCoreController('api::me.me', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -110,7 +111,7 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
       return ctx.unauthorized();
     }
     const me = await getMe([]);
-    const config = ticketsConfig(process.env, me && me.name);
+    const config = ticketsConfig(process.env, me && me.name, await ssoTenant(strapi, (me && me.name) || ''));
     if (!config) {
       return ctx.badRequest('Tickets are not configured on this instance');
     }
@@ -133,7 +134,7 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
       return ctx.unauthorized();
     }
     const me = await getMe([]);
-    const config = docsConfig(process.env, me && me.name);
+    const config = docsConfig(process.env, me && me.name, await ssoTenant(strapi, (me && me.name) || ''));
     if (!config) {
       return ctx.badRequest('Documentation is not configured on this instance');
     }
