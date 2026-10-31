@@ -4,7 +4,8 @@ module.exports = ({ env }) => [
   // The client's IP from nginx's X-Real-IP, not the spoofable leftmost
   // X-Forwarded-For (issues/376). First, so the logger and rate limits see it.
   'global::client-ip',
-  'strapi::logger',
+  // strapi::logger's line without the values people type (issues/394)
+  'global::request-log',
   'strapi::errors',
   // 4xx http-errors from koa-static (bot scans) answered without an error log
   // (issues/052). Must come right after strapi::errors.
