@@ -13,6 +13,7 @@
  */
 const TTL_MS = 60 * 1000;
 const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 
 let cache = { at: 0, origins: null };
 const refused = new Set();
@@ -57,7 +58,11 @@ async function corsOrigin(ctx, strapi = global.strapi, env = process.env) {
   const origin = ctx.get('Origin');
   const allowed = await allowedOrigins(strapi, env);
   if (!allowed.size) return '*';
-  if (!origin || allowed.has(origin) || LOCAL.test(origin)) return [origin || '*'];
+  // a localhost front only for an API reached on localhost too (development,
+  // the e2e runs): a page on someone's own machine is not a front end of a
+  // production instance (issues/394)
+  const localApi = LOCAL_HOST.test(String(ctx.host || ctx.get('Host') || ''));
+  if (!origin || allowed.has(origin) || (localApi && LOCAL.test(origin))) return [origin || '*'];
   if (!refused.has(origin)) {
     refused.add(origin);
     strapi.log.warn(`[cors] origin not allowed: ${origin} (add it to CORS_ORIGINS if it is a front end)`);
