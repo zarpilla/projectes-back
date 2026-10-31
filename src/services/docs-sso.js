@@ -13,22 +13,21 @@
  * screen she was on, for contextual help.
  *
  * Config (per instance):
- *   tenant          same as the tickets site: TICKETS_TENANT, or the slug of `me.name`
+ *   tenant          same as the tickets site (services/sso-tenant.js)
  *   DOCS_SSO_KEY    the shared secret (environment only, never in the DB)
  *   DOCS_URL        default https://docs.esstrapis.org
  */
 const crypto = require('crypto');
-const { tenantSlug } = require('./tickets-sso');
 
 const DEFAULT_URL = 'https://docs.esstrapis.org';
 const TTL_SECONDS = 120;
 const AAD = Buffer.from('esstrapis-docs-sso/v1', 'utf8');
 const ROLE_RE = /^[a-z_]{2,32}$/;
 
-function docsConfig(env = process.env, meName = '') {
-  const tenant = (env.TICKETS_TENANT || '').trim() || tenantSlug(meName);
+// `tenant` comes from services/sso-tenant.js, never from the entity name (issues/379).
+function docsConfig(env = process.env, meName = '', tenant = '') {
   const secret = (env.DOCS_SSO_KEY || '').trim();
-  if (tenant.length < 2 || !secret) return null;
+  if (String(tenant || '').length < 2 || !secret) return null;
   return {
     tenant,
     tenantName: String(meName || '').trim() || tenant,

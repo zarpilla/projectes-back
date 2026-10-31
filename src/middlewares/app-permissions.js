@@ -493,8 +493,9 @@ async function memberOrderPayload(
 
 /** A member's own order: the order form, the Comandes list, Dipòsits. */
 async function memberOwnOrderUpdate(strapi, order, payload, userId, permissions = []) {
-  if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
-    throw forbidden();
+  // her order stays hers: clearing the owner would leave it nobody's (issues/377)
+  if (payload.owner === null) delete payload.owner;
+  if (payload.owner !== undefined && idOf(payload.owner) !== userId) throw forbidden();
   if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
   // once the office has the order, the form is read-only for her
   if (order.status !== 'pending') pick(payload, [...MEMBER_LATE_FIELDS]);
@@ -516,6 +517,30 @@ async function scopeOrderList(ctx, next, { strapi, userId }) {
   return next();
 }
 
+/**
+ * The lines a pickup point sends (issues/377): she ticks what was picked up,
+ * nothing else. Each line sent is matched with a stored one (by id, or by
+ * position when the line has no id) and only its `picked_up` is taken: the
+ * units, kilograms, name and NIF stay the stored ones, and no line is added or
+ * removed. An invoiced or cancelled order is the office's.
+ */
+async function pickupPointLines(strapi, order, payload) {
+  if (['invoiced', 'cancelled'].includes(order.status)) throw forbidden();
+  if (!('lines' in payload)) return;
+  const sent = payload.lines;
+  if (!Array.isArray(sent)) throw forbidden();
+  const row = await strapi.db.query(ORDER).findOne({ where: { id: order.id }, populate: { lines: true } });
+  const stored = (row && row.lines) || [];
+  if (sent.length !== stored.length) throw forbidden();
+  payload.lines = stored.map((line, index) => {
+    const match = sent.find((s) => s && s.id !== undefined && s.id === line.id) ||
+      (sent[index] && sent[index].id === undefined ? sent[index] : null);
+    if (!match) throw forbidden();
+    const { id, units, kilograms, name, nif } = line;
+    return { id, units, kilograms, name, nif, picked_up: Boolean(match.picked_up) };
+  });
+}
+
 async function scopeOrderRow(ctx, next, { strapi, userId }) {
   const where = addressedRow(ctx);
   if (!where) throw forbidden();
@@ -527,6 +552,7 @@ async function scopeOrderRow(ctx, next, { strapi, userId }) {
     const payload = payloadOf(ctx);
     if (access === 'pickup') {
       if (Object.keys(payload).some((key) => !PICKUP_POINT_FIELDS.has(key))) throw forbidden();
+      await pickupPointLines(strapi, order, payload);
     } else {
       await memberOwnOrderUpdate(strapi, order, payload, userId);
     }
@@ -924,14 +950,21 @@ async function scopeDriverContactUpdate(ctx, next, { strapi }) {
   if (!where) throw forbidden();
   const payload = payloadOf(ctx);
   delete payload.pickup_discount;
-  if ('owner' in payload) {
-    const contact = await strapi.db
-      .query(CONTACT)
-      .findOne({ where, select: ['id'], populate: { owner: { select: ['id', 'documentId'] } } });
-    const sent = relationId(payload.owner);
-    const owner = contact && contact.owner;
-    const same = owner ? [owner.id, owner.documentId].includes(sent) : sent === undefined;
-    if (contact && !same) throw forbidden();
+  // nor the user the point belongs to (issues/377): its orders and invoices
+  // would show up in that member's scope
+  const relations = ['owner', 'users_permissions_user'].filter((field) => field in payload);
+  if (relations.length) {
+    const contact = await strapi.db.query(CONTACT).findOne({
+      where,
+      select: ['id'],
+      populate: Object.fromEntries(relations.map((field) => [field, { select: ['id', 'documentId'] }])),
+    });
+    for (const field of relations) {
+      const sent = relationId(payload[field]);
+      const current = contact && contact[field];
+      const same = current ? [current.id, current.documentId].includes(sent) : sent === undefined;
+      if (contact && !same) throw forbidden();
+    }
   }
   return next();
 }
@@ -940,6 +973,24 @@ async function scopeDriverContactUpdate(ctx, next, { strapi }) {
 async function scopeDriverContactCreate(ctx, next) {
   delete payloadOf(ctx).pickup_discount;
   return next();
+}
+
+/**
+ * A member's «Factures» filter lists the projects by name (issues/383): she got
+ * every project's description, client and leader too. A member who also
+ * enters hours keeps the whole row (hours entry, Jornada diària).
+ */
+const PROJECT_BASIC_FIELDS = ['id', 'documentId', 'name'];
+
+async function scopeProjectBasic(ctx, next, { permissions }) {
+  await next();
+  if (permissions.includes('hours')) return;
+  const narrow = (rows) =>
+    Array.isArray(rows)
+      ? rows.map((row) => Object.fromEntries(PROJECT_BASIC_FIELDS.filter((f) => row && f in row).map((f) => [f, row[f]])))
+      : rows;
+  if (Array.isArray(ctx.body)) ctx.body = narrow(ctx.body);
+  else if (ctx.body && Array.isArray(ctx.body.data)) ctx.body.data = narrow(ctx.body.data);
 }
 
 // ---------------------------------------------------------------------------
@@ -1125,6 +1176,7 @@ const OWN_SCOPES = {
 };
 
 const MEMBER_SCOPES = {
+  'api::project.project.findWithBasicInfo': scopeProjectBasic,
   [`${ORDER}.find`]: scopeOrderList,
   [`${ORDER}.findOne`]: scopeOrderRow,
   [`${ORDER}.update`]: scopeOrderRow,
@@ -1215,6 +1267,30 @@ function refuseForbiddenFilters(ctx, names) {
   if (field) throw new errors.ValidationError(`No es pot filtrar ni ordenar per «${field}»`);
 }
 
+const RELATION_OPERATIONS = ['connect', 'disconnect', 'set'];
+
+/**
+ * The scopes check relations sent as an id or `{ id }`, the way the app sends
+ * them. Strapi 5 also takes `{ connect: [...] }`, `{ disconnect: [...] }` and
+ * `{ set: [...] }`, which slipped past them (issues/377): `{ owner: { connect:
+ * [50] } }` on her own order was let through. The front end never sends that
+ * form, so without full access it is refused on every relation of the model.
+ */
+function refuseRelationOperations(strapi, action, ctx) {
+  if (!['POST', 'PUT'].includes(ctx.method)) return;
+  const uid = modelUidOfAction(action);
+  const model = uid && strapi.contentTypes && strapi.contentTypes[uid];
+  if (!model || !model.attributes) return;
+  const payload = payloadOf(ctx);
+  for (const [field, value] of Object.entries(payload)) {
+    const attribute = model.attributes[field];
+    if (!attribute || attribute.type !== 'relation') continue;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      if (RELATION_OPERATIONS.some((op) => op in value)) throw forbidden();
+    }
+  }
+}
+
 function stripMe(body) {
   const me =
     body && typeof body === 'object' && body.data && typeof body.data === 'object' ? body.data : body;
@@ -1241,6 +1317,7 @@ module.exports = (config, { strapi }) =>
     // a member's rate is set by her scope (memberRouteRate)
     if (ORDER_WRITES.has(action) && !isOrdersMember(permissions)) await officeRouteRate(strapi, ctx, action);
     if (full) return next();
+    refuseRelationOperations(strapi, action, ctx);
 
     if (action === 'api::me.me.find') {
       await next();

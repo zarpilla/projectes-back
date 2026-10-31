@@ -1,6 +1,9 @@
 // v5 middleware stack. Ported from v3 config/middleware.js (gzip enabled, brotli off).
-// CORS is left at the v5 default (open in dev); tighten via env in production.
+// CORS: the instance's own front end only (src/services/cors-origins.js, issues/383).
 module.exports = ({ env }) => [
+  // The client's IP from nginx's X-Real-IP, not the spoofable leftmost
+  // X-Forwarded-For (issues/376). First, so the logger and rate limits see it.
+  'global::client-ip',
   'strapi::logger',
   'strapi::errors',
   // 4xx http-errors from koa-static (bot scans) answered without an error log
@@ -19,6 +22,8 @@ module.exports = ({ env }) => [
       // cookie) and browsers treat a wildcard Allow-Headers literally on
       // credentialed requests, failing the preflight for Authorization etc.
       headers: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
+      // only the instance's own front end, not any origin (issues/383)
+      origin: (ctx) => require('../src/services/cors-origins').corsOrigin(ctx),
     },
   },
   'strapi::poweredBy',

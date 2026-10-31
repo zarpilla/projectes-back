@@ -137,6 +137,8 @@ if ! $RESUME; then
     grep -vE "^\s*(#|\$)|^(URL|DATABASE_NAME|DATABASE_USERNAME|DATABASE_PASSWORD|APP_KEYS|API_TOKEN_SALT|ADMIN_JWT_SECRET|TRANSFER_TOKEN_SALT|JWT_SECRET|ENCRYPTION_KEY|SECRETS_KEY|TICKETS_TENANT|RESET_PASSWORD_URL|SEED_USER_[A-Z]*)=" "$TEMPLATE_ENV"
     echo "URL='$URL'"
     echo "DATABASE_NAME='$DB_NAME'"
+    # the tenant of the tickets/docs single sign-on, never from the editable entity name (issues/379)
+    echo "TICKETS_TENANT='$NAME'"
     echo "DATABASE_USERNAME='$DB_USER'"
     echo "DATABASE_PASSWORD='$(password 24)'"
     echo "APP_KEYS='$(secret),$(secret),$(secret)'"
@@ -267,7 +269,8 @@ proxy_headers='proxy_http_version 1.1;
         proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Forwarded-Server $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # $remote_addr, not $proxy_add_x_forwarded_for: the client could prepend any IP (issues/376)
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Host $http_host;
         proxy_set_header Upgrade $http_upgrade;

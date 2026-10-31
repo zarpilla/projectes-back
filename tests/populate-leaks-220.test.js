@@ -89,7 +89,9 @@ describe('populates into what the role cannot read (issues/220)', () => {
     '%s gets the project picker (findWithBasicInfo) without the documents',
     async (permission) => {
       const ctx = await call([permission], 'api::project.project.findWithBasicInfo', [project()]);
-      expect(ctx.body[0]).toEqual({ id: 2, name: 'Diligència', total_real_hours: 30 });
+      // a member (`orders` only) gets the names only (issues/383)
+      const expected = permission === 'orders' ? { id: 2, name: 'Diligència' } : { id: 2, name: 'Diligència', total_real_hours: 30 };
+      expect(ctx.body[0]).toEqual(expected);
     },
   );
 

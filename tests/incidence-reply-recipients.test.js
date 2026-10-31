@@ -144,3 +144,21 @@ describe('incidence reply e-mails (issues/154)', () => {
     expect(t.send.mock.calls[0][0].to).toEqual(['member@coop.cat']);
   });
 });
+
+// issues/383 (security review 2026-10-31): the description, the replies and
+// the names went into the office's mail as HTML, as the member wrote them.
+describe('incidence e-mail HTML (issues/383)', () => {
+  it("puts what the member wrote as text, not markup", async () => {
+    const t = load({
+      repliesBefore: [],
+      repliesAfter: [{ text: '<a href="https://evil.example">Paga aquí</a>', user: { id: 10, fullname: '<b>Jo</b>' } }],
+    });
+    await update(t, 1);
+    const { html } = t.send.mock.calls[0][0];
+    expect(html).not.toContain('<a href="https://evil.example">');
+    expect(html).toContain('&lt;a href=&quot;https://evil.example&quot;&gt;Paga aquí&lt;/a&gt;');
+    expect(html).toContain('&lt;b&gt;Jo&lt;/b&gt;');
+    // the mail's own markup stays
+    expect(html).toContain('<b>Descripció:</b> Caixa trencada');
+  });
+});

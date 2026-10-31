@@ -9,6 +9,7 @@ const { decryptSecret } = require('./secret-crypto');
 const fs = require('fs');
 const os = require('os');
 const axios = require('axios');
+const { checkBaseUrl, outboundAxiosOptions, upstreamError } = require('./outbound-url');
 const FormData = require('form-data');
 const { getMe } = require('./me-settings');
 
@@ -66,7 +67,8 @@ async function proxyUpload(strapi, ctx) {
       return ctx.badRequest('Invoice parser API is not configured');
     }
 
-    const baseUrl = meSettings.invoice_parser_api_url.replace(/\/+$/, '');
+    // an admin-configured URL: https and public addresses only (issues/378)
+    const baseUrl = checkBaseUrl(meSettings.invoice_parser_api_url);
     const form = new FormData();
     form.append('file', pdfBuffer, { filename: 'invoice.pdf', contentType: 'application/pdf' });
 
@@ -76,14 +78,11 @@ async function proxyUpload(strapi, ctx) {
       maxBodyLength: Infinity,
       responseType: 'json',
       timeout: 120000,
+      ...outboundAxiosOptions(),
     });
     return response.data;
   } catch (error) {
-    strapi.log.error('invoice-parser upload error: %s', error.message);
-    if (error.response) {
-      return ctx.send(error.response.data, error.response.status);
-    }
-    return ctx.internalServerError(error.message || 'Failed to process the invoice PDF.');
+    return upstreamError(ctx, error, 'invoice-parser upload', 'Failed to process the invoice PDF.');
   }
 }
 
