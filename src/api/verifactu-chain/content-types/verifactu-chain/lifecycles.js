@@ -272,7 +272,8 @@ const sendToAEAT = async (xml, endpoint, certificateRelativePath, certificatePas
     const certificatePath = path.join(strapi.dirs.static.public, certificateRelativePath);
 
     if (!certificatePath || !fs.existsSync(certificatePath)) {
-      throw new ApplicationError(`Certificate file not found: ${certificatePath}`);
+      // no server path in the message: it reaches the user (issues/383)
+      throw new ApplicationError('Certificate file not found');
     }
 
     const pfx = fs.readFileSync(certificatePath);
@@ -281,9 +282,8 @@ const sendToAEAT = async (xml, endpoint, certificateRelativePath, certificatePas
     const httpsAgent = new https.Agent({
       pfx: pfx,
       passphrase: certificatePassphrase || undefined,
-      rejectUnauthorized: false,
-      requestCert: true,
-      agent: false,
+      // AEAT's certificate is checked: a forged answer could mark a record
+      // accepted without AEAT having it (issues/381)
     });
 
     const config = {
