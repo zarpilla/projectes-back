@@ -1,4 +1,7 @@
 'use strict';
+
+// task names go into the digest mail as text, not HTML (issues/383)
+const { escapeHtml } = require('../../../services/email-body');
 /* global strapi */
 
 /**
@@ -89,7 +92,7 @@ const sendEmail = async (data, frontUrl, me) => {
     data.rows
       .filter((r) => r.type === 'expired' && !r.shouldStop)
       .forEach((r) => {
-        text += ` - ${r.name}: ${moment(r.date, 'YYYY-MM-DD').format('DD/MM/YYYY')}<br>`;
+        text += ` - ${escapeHtml(r.name)}: ${moment(r.date, 'YYYY-MM-DD').format('DD/MM/YYYY')}<br>`;
       });
     text += '<br><br>';
   }
@@ -101,7 +104,7 @@ const sendEmail = async (data, frontUrl, me) => {
     data.rows
       .filter((r) => r.type === 'expired' && r.shouldStop)
       .forEach((r) => {
-        text += ` - ${r.name}: ${moment(r.date, 'YYYY-MM-DD').format('DD/MM/YYYY')}<br>`;
+        text += ` - ${escapeHtml(r.name)}: ${moment(r.date, 'YYYY-MM-DD').format('DD/MM/YYYY')}<br>`;
       });
     text += '<br><br>';
   }
@@ -111,7 +114,7 @@ const sendEmail = async (data, frontUrl, me) => {
     data.rows
       .filter((r) => r.type === 'new')
       .forEach((r) => {
-        text += ` - ${r.name}<br>`;
+        text += ` - ${escapeHtml(r.name)}<br>`;
       });
     text += '<br><br>';
   }
