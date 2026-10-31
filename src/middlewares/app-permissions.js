@@ -938,6 +938,56 @@ async function scopeUpload(ctx, next, { strapi, userId }) {
 }
 
 // ---------------------------------------------------------------------------
+// Linking files (issues/387). Upload ids are sequential and /uploads is public:
+// `POST /orders-imports {"file": <any id>}` answered with that file's URL, so a
+// member could list every document of the entity. Users without full access
+// link only files that are not linked to anything yet (the ones they have just
+// uploaded) or already were on that record; the orders import gets its file
+// through the upload itself (ref/refId, scopeUpload).
+// ---------------------------------------------------------------------------
+
+const FILE_LINKS = 'files_related_mph';
+
+/** The ids among `ids` that are linked to some record. */
+async function linkedFileIds(strapi, ids) {
+  if (!ids.length) return new Set();
+  const rows = await strapi.db.connection(FILE_LINKS).whereIn('file_id', ids).select('file_id');
+  return new Set(rows.map((row) => Number(row.file_id)));
+}
+
+async function scopeOrdersImportFile(ctx) {
+  const payload = payloadOf(ctx);
+  delete payload.file;
+}
+
+async function scopePartnerDocuments(ctx, { strapi }) {
+  const body = ctx.request.body;
+  const payload = body && typeof body === 'object' ? (body.data && typeof body.data === 'object' ? body.data : body) : null;
+  if (!payload || payload.documents === undefined) return;
+  if (!Array.isArray(payload.documents)) throw forbidden();
+  const ids = payload.documents.map((d) => Number(idOf(d)));
+  if (ids.some((id) => !Number.isInteger(id))) throw forbidden();
+  let current = new Set();
+  const key = ctx.params && ctx.params.id;
+  if (key !== undefined) {
+    const where = /^\d+$/.test(String(key)) ? { id: Number(key) } : { documentId: key };
+    const partner = await strapi.db.query(CONTACT).findOne({ where, populate: { documents: { select: ['id'] } } });
+    current = new Set(((partner && partner.documents) || []).map((d) => d.id));
+  }
+  const added = ids.filter((id) => !current.has(id));
+  const linked = await linkedFileIds(strapi, added);
+  if (linked.size) throw forbidden();
+}
+
+// for every user without full access, whatever her other scopes
+const FILE_LINK_SCOPES = {
+  'api::orders-import.orders-import.create': scopeOrdersImportFile,
+  'api::orders-import.orders-import.update': scopeOrdersImportFile,
+  'api::energy.energy.createPartner': scopePartnerDocuments,
+  'api::energy.energy.updatePartner': scopePartnerDocuments,
+};
+
+// ---------------------------------------------------------------------------
 // Driver scopes (issues/163): `orders_delivery` without the office. She makes
 // the moves of any order; the orders themselves are the office's, or the
 // member's when she is one too.
@@ -1378,6 +1428,7 @@ module.exports = (config, { strapi }) =>
       stripMe(ctx.body);
       return;
     }
+    if (FILE_LINK_SCOPES[action]) await FILE_LINK_SCOPES[action](ctx, { strapi, userId: user.id });
     const member = isOrdersMember(permissions);
     const scope =
       OWN_SCOPES[action] ||
