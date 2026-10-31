@@ -1324,3 +1324,24 @@ describe('app permissions (issues/099)', () => {
     });
   });
 });
+
+// issues/383: a member (`orders` only) read every project's description,
+// clients and leader through /projects/basic; her «Factures» filter needs names.
+describe('projects/basic for members (issues/383)', () => {
+  const ROWS = [{ id: 1, documentId: 'a', name: 'Projecte', description: 'secret', clients: [{ id: 3 }], leader: { id: 9 } }];
+
+  it('gives a member only id and name', async () => {
+    setup({ permissions: { [ME]: ['orders'] } });
+    const ctx = makeCtx({ handler: 'api::project.project.findWithBasicInfo' });
+    await run(ctx, ROWS.map((r) => ({ ...r })));
+    expect(ctx.body).toEqual([{ id: 1, documentId: 'a', name: 'Projecte' }]);
+  });
+
+  it.each([[['orders', 'hours']], [['hours']], [['projects']]])('leaves the rows whole for %j', async (permissions) => {
+    setup({ permissions: { [ME]: permissions } });
+    const ctx = makeCtx({ handler: 'api::project.project.findWithBasicInfo' });
+    await run(ctx, ROWS.map((r) => ({ ...r })));
+    expect(ctx.body[0].name).toBe('Projecte');
+    expect(ctx.body[0]).toHaveProperty('description');
+  });
+});

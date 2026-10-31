@@ -974,6 +974,24 @@ async function scopeDriverContactCreate(ctx, next) {
   return next();
 }
 
+/**
+ * A member's «Factures» filter lists the projects by name (issues/383): she got
+ * every project's description, client and leader too. A member who also
+ * enters hours keeps the whole row (hours entry, Jornada diària).
+ */
+const PROJECT_BASIC_FIELDS = ['id', 'documentId', 'name'];
+
+async function scopeProjectBasic(ctx, next, { permissions }) {
+  await next();
+  if (permissions.includes('hours')) return;
+  const narrow = (rows) =>
+    Array.isArray(rows)
+      ? rows.map((row) => Object.fromEntries(PROJECT_BASIC_FIELDS.filter((f) => row && f in row).map((f) => [f, row[f]])))
+      : rows;
+  if (Array.isArray(ctx.body)) ctx.body = narrow(ctx.body);
+  else if (ctx.body && Array.isArray(ctx.body.data)) ctx.body.data = narrow(ctx.body.data);
+}
+
 // ---------------------------------------------------------------------------
 // Saved pivot views (issues/166): only the ones of her screens.
 // ---------------------------------------------------------------------------
@@ -1157,6 +1175,7 @@ const OWN_SCOPES = {
 };
 
 const MEMBER_SCOPES = {
+  'api::project.project.findWithBasicInfo': scopeProjectBasic,
   [`${ORDER}.find`]: scopeOrderList,
   [`${ORDER}.findOne`]: scopeOrderRow,
   [`${ORDER}.update`]: scopeOrderRow,
