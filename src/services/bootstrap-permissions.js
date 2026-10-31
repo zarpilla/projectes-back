@@ -132,6 +132,8 @@ async function importSeedPermissions() {
     'read-cache': ['stats', 'clear'],
     // «Còpia de seguretat»: last night's database dump (isAdmin on the routes)
     backup: ['latest', 'download'],
+    // «Desbloqueja» a received document whose «Modificable» is off (isAdmin on the route)
+    'document-unlock': ['unlock'],
     // Comunitat energètica (api/energy; who may call them: app-access-rules)
     energy: [
       'listPartners',

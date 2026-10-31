@@ -16,7 +16,8 @@
  *         drawn again, as when its form is saved;
  *       · received invoices and other expenses: «Venciment» (`paybefore`).
  * A paid line or document, one with a payment date, or a document whose
- * «Modificable» is off (`updatable` false) is refused, and then nothing is
+ * «Modificable» is off (`updatable` false; not for emitted invoices, which
+ * no longer have it) is refused, and then nothing is
  * changed.
  *
  * Documents are written straight to their table: a date for the forecast
@@ -94,7 +95,7 @@ async function updateMovementDates(changes) {
       }
     } else if (row.paid || row.paid_date) {
       throw new MovementDateError(`«${describe(row, c.id)}» ja està pagat o cobrat: no se'n pot canviar la data`);
-    } else if (row.updatable === false) {
+    } else if (row.updatable === false && c.kind !== 'emitted-invoices') {
       throw new MovementDateError(`«${describe(row, c.id)}» no és modificable: no se'n pot canviar la data`);
     }
     loaded.push({ c, k });

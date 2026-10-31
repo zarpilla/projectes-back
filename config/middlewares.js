@@ -37,6 +37,8 @@ module.exports = ({ env }) => [
   },
   'strapi::responses',
   'strapi::body',
+  // Clients can't send the one-shot «Modificable» bypass. Right after the body parser.
+  'global::strip-unlock-flag',
   'strapi::session',
   'strapi::favicon',
   // Must precede strapi::public: uploads are served straight off disk, and that

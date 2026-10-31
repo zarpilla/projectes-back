@@ -61,8 +61,10 @@ const getBankAccountName = (bankAccount, defaultBankAccount) => {
 
 // Helper to generate validation key
 // the kind of a document's movement whose date «Moviments bancaris» can
-// change: only while it isn't paid and its «Modificable» is on (issues/370)
-const dateEdit = (doc, kind) => (doc.paid || doc.paid_date || doc.updatable === false ? null : kind);
+// change: only while it isn't paid and its «Modificable» is on (issues/370).
+// Emitted invoices have no «Modificable» any more.
+const dateEdit = (doc, kind) =>
+  doc.paid || doc.paid_date || (doc.updatable === false && kind !== 'emitted-invoices') ? null : kind;
 
 const getValidationKey = (entityType, entityId, subType = null) => {
   if (subType) {

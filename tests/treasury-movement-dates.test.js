@@ -52,7 +52,10 @@ describe('updateMovementDates (issues/370)', () => {
         { id: 12, code: 'F-12', paid: false, paid_date: '2026-10-02' },
         { id: 13, code: 'F-13', paid: false, paid_date: null, updatable: false },
       ],
-      'api::received-invoice.received-invoice': [{ id: 30, code: 'R-30', paid: false }],
+      'api::received-invoice.received-invoice': [
+        { id: 30, code: 'R-30', paid: false },
+        { id: 31, code: 'R-31', paid: false, updatable: false },
+      ],
     };
     queryUpdates = [];
     tableUpdates = [];
@@ -107,7 +110,7 @@ describe('updateMovementDates (issues/370)', () => {
     ['a paid invoice', { kind: 'emitted-invoices', id: 11 }, /ja està pagat o cobrat/],
     ['an invoice with a payment date', { kind: 'emitted-invoices', id: 12 }, /ja està pagat o cobrat/],
     ['a line with a document', { kind: 'phase-income', id: 2 }, /document assignat/],
-    ['a document not «Modificable»', { kind: 'emitted-invoices', id: 13 }, /no és modificable/],
+    ['a document not «Modificable»', { kind: 'received-invoices', id: 31 }, /no és modificable/],
   ])('refuses %s and changes nothing', async (_, change, message) => {
     await expect(
       updateMovementDates([{ kind: 'phase-income', id: 1, date: '2026-12-15' }, { ...change, date: '2026-12-15' }]),
@@ -115,6 +118,13 @@ describe('updateMovementDates (issues/370)', () => {
     expect(queryUpdates).toEqual([]);
     expect(tableUpdates).toEqual([]);
     expect(logged).toEqual([]);
+  });
+
+  // 2026-10-31: «Modificable» no longer applies to emitted invoices (issuing
+  // one already locks its fiscal data), so an old row with it off moves too.
+  it('moves an emitted invoice whose old «Modificable» is off', async () => {
+    await updateMovementDates([{ kind: 'emitted-invoices', id: 13, date: '2026-12-15' }]);
+    expect(tableUpdates).toEqual([{ table: 'emitted_invoices', id: 13, estimated_payment: '2026-12-15', paybefore: '2026-12-15' }]);
   });
 
   it.each([
@@ -200,7 +210,7 @@ describe('treasury forecast: which movements can change date (issues/370)', () =
       Esperada: ['phase-expense', 7],
       'F-10': ['emitted-invoices', 10],
       'F-11': [null, 11],
-      'F-13': [null, 13], // «Modificable» off
+      'F-13': ['emitted-invoices', 13], // old «Modificable» off: ignored on emitted invoices
     });
   });
 });
