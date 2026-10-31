@@ -19,7 +19,7 @@
 
 const fs = require('fs');
 const axios = require('axios');
-const https = require('https');
+const { checkBaseUrl, publicHttpsAgent } = require('../../../services/outbound-url');
 const path = require('path');
 const { signFacturaeXml } = require('../utils/sign-facturae');
 const { generateFaceJWT } = require('../utils/face-jwt');
@@ -654,17 +654,17 @@ const buildUblInvoiceXml = ({ invoice, me, contact, dir3, bankAccount }) => {
 const createFaceHttpsAgent = (certificatePath, certificatePassword) => {
   try {
     if (!certificatePath || !fs.existsSync(certificatePath)) {
-      throw new Error(`Certificate file not found: ${certificatePath}`);
+      // no server path in the message: it reaches the user (issues/383)
+      throw new Error('Certificate file not found');
     }
 
     const pfx = fs.readFileSync(certificatePath);
 
-    return new https.Agent({
+    // FACe's certificate is checked (issues/381), and the endpoint, which an
+    // admin configures, must be a public address (issues/378)
+    return publicHttpsAgent({
       pfx: pfx,
       passphrase: certificatePassword || undefined,
-      rejectUnauthorized: false,
-      requestCert: true,
-      agent: false,
     });
   } catch (error) {
     strapi.log.error("[face-queue] Error creating HTTPS agent:", error);
@@ -694,7 +694,7 @@ const submitInvoiceToFace = async ({ xml, nif: _nif, dir3: _dir3, mode, me }) =>
       throw new Error("Test endpoint not configured. Please configure face_test_endpoint in settings or contact FACe support for test environment URL.");
     }
 
-    const submitUrl = `${endpoint}/v1/invoices`;
+    const submitUrl = `${checkBaseUrl(endpoint)}/v1/invoices`;
 
     // Get certificate configuration
     if (!me.face_certificate || !me.face_certificate.url) {
@@ -732,6 +732,7 @@ const submitInvoiceToFace = async ({ xml, nif: _nif, dir3: _dir3, mode, me }) =>
         "User-Agent": "FACe-Client/1.0",
       },
       httpsAgent: httpsAgent,
+      maxRedirects: 0,
       timeout: 30000, // 30 seconds timeout
     };
 
@@ -771,7 +772,7 @@ const checkInvoiceStatus = async ({ registrationNumber, mode, me }) => {
       throw new Error("Test endpoint not configured. Please configure face_test_endpoint in settings or contact FACe support for test environment URL.");
     }
 
-    const statusUrl = `${endpoint}/v1/invoices/${registrationNumber}`;
+    const statusUrl = `${checkBaseUrl(endpoint)}/v1/invoices/${encodeURIComponent(registrationNumber)}`;
 
     // Get certificate configuration
     if (!me.face_certificate || !me.face_certificate.url) {
@@ -793,6 +794,7 @@ const checkInvoiceStatus = async ({ registrationNumber, mode, me }) => {
         "User-Agent": "FACe-Client/1.0",
       },
       httpsAgent: httpsAgent,
+      maxRedirects: 0,
       timeout: 30000, // 30 seconds timeout
     };
 

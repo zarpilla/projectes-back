@@ -11,9 +11,9 @@
  * Tokens are single-use and short-lived (the tickets site accepts up to 10 min).
  *
  * Config (per instance):
- *   tenant           slug of the instance name (`me.name`, Configuració General),
- *                    e.g. "Fusteria La Serra, SCCL" -> "fusteria-la-serra-sccl"
- *   TICKETS_TENANT   optional override of that tenant name
+ *   TICKETS_TENANT   the tenant name; without it, the slug of the instance name
+ *                    (`me.name`) as it was first kept (services/sso-tenant.js,
+ *                    issues/379), e.g. "Fusteria La Serra, SCCL" -> "fusteria-la-serra-sccl"
  *   TICKETS_SSO_KEY  the shared secret (environment only, never in the DB)
  *   TICKETS_URL      default https://tiquets.esstrapis.org
  */
@@ -30,10 +30,10 @@ function tenantSlug(name) {
     .slice(0, 63).replace(/^-+|-+$/g, '');
 }
 
-function ticketsConfig(env = process.env, meName = '') {
-  const tenant = (env.TICKETS_TENANT || '').trim() || tenantSlug(meName);
+// `tenant` comes from services/sso-tenant.js, never from the entity name (issues/379).
+function ticketsConfig(env = process.env, meName = '', tenant = '') {
   const secret = (env.TICKETS_SSO_KEY || '').trim();
-  if (tenant.length < 2 || !secret) return null;
+  if (String(tenant || '').length < 2 || !secret) return null;
   return {
     tenant,
     tenantName: String(meName || '').trim() || tenant,

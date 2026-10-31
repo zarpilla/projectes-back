@@ -435,7 +435,7 @@ describe('app permissions (issues/099)', () => {
       orders: {
         1: { id: 1, status: 'pending', ...ORDER(ME, 8) },
         2: { id: 2, status: 'pending', ...ORDER(OTHER, 8) },
-        3: { id: 3, status: 'pending', ...ORDER(OTHER, MY_CONTACT) },
+        3: { id: 3, status: 'pending', ...ORDER(OTHER, MY_CONTACT), lines: [{ id: 31, units: 2, kilograms: 5, name: 'A', nif: 'X', picked_up: false }] },
         4: { id: 4, status: 'pending', ...ORDER(ME, 11) },
         5: { id: 5, status: 'processed', ...ORDER(ME, 8) },
         6: { id: 6, status: 'delivered', ...ORDER(ME, 8) },
@@ -997,6 +997,98 @@ describe('app permissions (issues/099)', () => {
     });
   });
 
+  // issues/377 (security review 2026-10-31): a pickup point rewrote other
+  // members' order lines (units, kilograms, name) on an invoiced order; a
+  // driver linked any point to any member; `{ owner: { connect: [50] } }` on
+  // her own order slipped past the owner check and cleared the owner.
+  describe('pickup points, drivers and relation operations (issues/377)', () => {
+    const DRIVER = 300;
+    const LINES = [
+      { id: 61, units: 2, kilograms: 5, name: 'Caixa A', nif: 'B1', picked_up: false },
+      { id: 62, units: 1, kilograms: 3, name: 'Caixa B', nif: 'B1', picked_up: false },
+    ];
+    const options = () => ({
+      permissions: { [ME]: ['orders'], [DRIVER]: ['orders_delivery', 'hours'] },
+      contacts: {
+        [MY_CONTACT]: { id: MY_CONTACT, users_permissions_user: { id: ME }, owner: null },
+        10: { id: 10, owner: { id: OTHER }, users_permissions_user: { id: OTHER, documentId: 'o-doc' } },
+        11: { id: 11, owner: { id: OTHER }, users_permissions_user: null },
+      },
+      orders: {
+        1: { id: 1, status: 'pending', ...ORDER(ME, 11) },
+        2: { id: 2, status: 'delivered', ...ORDER(OTHER, MY_CONTACT), lines: LINES },
+        3: { id: 3, status: 'invoiced', ...ORDER(OTHER, MY_CONTACT), lines: LINES },
+      },
+      contentTypes: {
+        'api::order.order': {
+          attributes: {
+            owner: { type: 'relation' },
+            contact: { type: 'relation' },
+            lines: { type: 'component' },
+            comments: { type: 'text' },
+          },
+        },
+        'api::contact.contact': { attributes: { users_permissions_user: { type: 'relation' }, owner: { type: 'relation' } } },
+      },
+    });
+    beforeEach(() => setup(options()));
+    const put = (numericId, data, userId = ME) => ({ method: 'PUT', numericId, userId, body: { data } });
+
+    it('a pickup point only ticks picked_up on the stored lines', async () => {
+      const ctx = await expectAllowed(
+        'api::order.order.update',
+        put(2, {
+          lines: [
+            { id: 61, units: 99, kilograms: 500, name: 'x', nif: 'y', picked_up: true },
+            { id: 62, picked_up: false },
+          ],
+          picked_up: false,
+        }),
+      );
+      expect(ctx.request.body.data.lines).toEqual([
+        { ...LINES[0], picked_up: true },
+        { ...LINES[1], picked_up: false },
+      ]);
+    });
+
+    it('a pickup point neither adds, removes nor swaps lines', async () => {
+      await expectRefused('api::order.order.update', put(2, { lines: [{ units: 99, name: 'x' }] }));
+      await expectRefused('api::order.order.update', put(2, { lines: [{ id: 61 }, { id: 99 }] }));
+      await expectRefused('api::order.order.update', put(2, { lines: 'x' }));
+    });
+
+    it('a pickup point does not touch an invoiced order', async () => {
+      await expectRefused('api::order.order.update', put(3, { lines: [{ id: 61, picked_up: true }, { id: 62 }] }));
+      await expectRefused('api::order.order.update', put(3, { picked_up: true }));
+    });
+
+    it('a driver does not relink a point to another member', async () => {
+      await expectRefused('api::contact.contact.update', put(11, { users_permissions_user: 32 }, DRIVER));
+      await expectRefused('api::contact.contact.update', put(10, { users_permissions_user: null }, DRIVER));
+      // the form sends it back unchanged
+      await expectAllowed('api::contact.contact.update', put(10, { users_permissions_user: { id: OTHER } }, DRIVER));
+      await expectAllowed('api::contact.contact.update', put(11, { users_permissions_user: null, address: 'x' }, DRIVER));
+    });
+
+    it.each([
+      [{ owner: { connect: [OTHER] } }],
+      [{ owner: { set: [ME] } }],
+      [{ contact: { connect: [10] } }],
+      [{ contact: { disconnect: [11] } }],
+    ])('refuses the relation operation form %j', async (data) => {
+      await expectRefused('api::order.order.update', put(1, data));
+    });
+
+    it('refuses it on contacts and for drivers too', async () => {
+      await expectRefused('api::contact.contact.update', put(11, { users_permissions_user: { connect: [ME] } }, DRIVER));
+      await expectRefused('api::order.order.create', { method: 'POST', body: { data: { contact: { set: [10] } } } });
+    });
+
+    it('still takes plain ids and objects', async () => {
+      await expectAllowed('api::order.order.update', put(1, { owner: ME, contact: { id: 11 }, comments: 'x' }));
+    });
+  });
+
   describe('populate and broad reads (issues/165)', () => {
     const USER = 'plugin::users-permissions.user';
     const contentTypes = {
@@ -1230,5 +1322,34 @@ describe('app permissions (issues/099)', () => {
       registerAppPermissions(fake);
       expect(core.routes[0].config.middlewares).toEqual(['global::app-permissions']);
     });
+  });
+});
+
+// issues/383: a member (`orders` only) read every project's description,
+// clients and leader through /projects/basic; her «Factures» filter needs names.
+describe('projects/basic for members (issues/383)', () => {
+  const ROWS = [{ id: 1, documentId: 'a', name: 'Projecte', description: 'secret', clients: [{ id: 3 }], leader: { id: 9 } }];
+
+  it('gives a member only id and name', async () => {
+    setup({ permissions: { [ME]: ['orders'] } });
+    const ctx = makeCtx({ handler: 'api::project.project.findWithBasicInfo' });
+    await run(ctx, ROWS.map((r) => ({ ...r })));
+    expect(ctx.body).toEqual([{ id: 1, documentId: 'a', name: 'Projecte' }]);
+  });
+
+  it.each([[['orders', 'hours']], [['hours']], [['projects']]])('leaves the rows whole for %j', async (permissions) => {
+    setup({ permissions: { [ME]: permissions } });
+    const ctx = makeCtx({ handler: 'api::project.project.findWithBasicInfo' });
+    await run(ctx, ROWS.map((r) => ({ ...r })));
+    expect(ctx.body[0].name).toBe('Projecte');
+    expect(ctx.body[0]).toHaveProperty('description');
+  });
+});
+
+describe('a member does not clear the owner of her order (issues/377)', () => {
+  it('drops owner: null', async () => {
+    setup({ permissions: { [ME]: ['orders'] }, orders: { 1: { id: 1, status: 'pending', ...ORDER(ME, MY_CONTACT) } }, contacts: { [MY_CONTACT]: { id: MY_CONTACT, users_permissions_user: { id: ME }, owner: null } } });
+    const ctx = await expectAllowed('api::order.order.update', { method: 'PUT', numericId: 1, body: { data: { owner: null, comments: 'x' } } });
+    expect(ctx.request.body.data).not.toHaveProperty('owner');
   });
 });

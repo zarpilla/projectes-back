@@ -267,6 +267,10 @@ function normalizeRelationRefs(value) {
   return preferNumericId(value);
 }
 
+const RELATION_OPERATIONS = ['connect', 'disconnect', 'set'];
+const isRelationOperation = (value) =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value) && RELATION_OPERATIONS.some((op) => op in value);
+
 function cleanPayload(value, attributes, strapi, isRoot, depth, keepMarkers) {
   if (depth > 10 || value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) {
@@ -286,6 +290,13 @@ function cleanPayload(value, attributes, strapi, isRoot, depth, keepMarkers) {
     }
     const def = attributes && attributes[key];
     if (!def) continue; // computed or unknown — v3 ignored these
+    // v5's relation operations stay as sent (issues/377): cleaned against the
+    // target's attributes, `{ connect: [50] }` became `{}` and then null, which
+    // cleared the relation and slipped past the app permissions' checks.
+    if (def.type === 'relation' && isRelationOperation(value[key])) {
+      clean[key] = value[key];
+      continue;
+    }
     const nested = attributesFor(def, strapi);
     const cleaned = nested
       ? cleanPayload(value[key], nested, strapi, false, depth + 1, keepMarkers)

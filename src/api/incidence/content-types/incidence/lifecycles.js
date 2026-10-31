@@ -11,6 +11,8 @@
  */
 const updater = require('../../utils/updater');
 const { getMe, getFrontUrl } = require('../../../../services/me-settings');
+// what members write goes into the office's mail as text, not HTML (issues/383)
+const { escapeHtml: esc } = require('../../../../services/email-body');
 
 const INCIDENCE = 'api::incidence.incidence';
 
@@ -166,9 +168,9 @@ async function sendIncidenceEmail(incidence, action, updaterId = null, replyCoun
   if (fullIncidence.incidence_response && fullIncidence.incidence_response.length > 0) {
     responsesHtml = '<br><b>Respostes:</b><br>';
     fullIncidence.incidence_response.forEach((response, index) => {
-      responsesHtml += `<br>${index + 1}. ${response.text || 'Sense text'}<br>`;
+      responsesHtml += `<br>${index + 1}. ${esc(response.text || 'Sense text')}<br>`;
       if (response.user && typeof response.user === 'object') {
-        responsesHtml += `Per: ${response.user.fullname || response.user.username}<br>`;
+        responsesHtml += `Per: ${esc(response.user.fullname || response.user.username)}<br>`;
       }
       if (response.response_date) {
         responsesHtml += `Data: ${new Date(response.response_date).toLocaleString('ca-ES')}<br>`;
@@ -180,17 +182,17 @@ async function sendIncidenceEmail(incidence, action, updaterId = null, replyCoun
     <b>Incidència ${action === 'created' ? 'Creada' : replyAdded ? 'amb una resposta nova' : 'Actualitzada'}</b><br><br>
     <b>ID Incidència:</b> <a href="${frontUrl}incidencies?id=${fullIncidence.id}" target="_blank">${fullIncidence.id}</a><br>
     <b>Comanda:</b> #${order.id}<br>
-    <b>Propietari Comanda:</b> ${orderOwner ? orderOwner.fullname || orderOwner.username : 'N/A'} ${orderOwner && orderOwner.email ? `(${orderOwner.email})` : ''}<br>
-    <b>Punt d'entrega:</b> ${deliveryPoint}<br>
-    <b>Estat:</b> ${stateLabels[fullIncidence.state] || fullIncidence.state}<br>
-    <b>Descripció:</b> ${fullIncidence.description || 'N/A'}<br>
-    ${fullIncidence.created_user ? `<b>Creat per:</b> ${fullIncidence.created_user.fullname || fullIncidence.created_user.username}<br>` : ''}
+    <b>Propietari Comanda:</b> ${orderOwner ? esc(orderOwner.fullname || orderOwner.username) : 'N/A'} ${orderOwner && orderOwner.email ? `(${esc(orderOwner.email)})` : ''}<br>
+    <b>Punt d'entrega:</b> ${esc(deliveryPoint)}<br>
+    <b>Estat:</b> ${esc(stateLabels[fullIncidence.state] || fullIncidence.state)}<br>
+    <b>Descripció:</b> ${esc(fullIncidence.description || 'N/A')}<br>
+    ${fullIncidence.created_user ? `<b>Creat per:</b> ${esc(fullIncidence.created_user.fullname || fullIncidence.created_user.username)}<br>` : ''}
     ${fullIncidence.closed_date ? `<b>Data Tancament:</b> ${new Date(fullIncidence.closed_date).toLocaleString('ca-ES')}<br>` : ''}
-    ${fullIncidence.closed_user ? `<b>Tancat per:</b> ${fullIncidence.closed_user.fullname || fullIncidence.closed_user.username}<br>` : ''}
+    ${fullIncidence.closed_user ? `<b>Tancat per:</b> ${esc(fullIncidence.closed_user.fullname || fullIncidence.closed_user.username)}<br>` : ''}
     ${responsesHtml}
     <br>--<br>
     Missatge automàtic. Gràcies per la vostra atenció.<br>
-    ${me.name || 'ESSTRAPIS'}<br>
+    ${esc(me.name || 'ESSTRAPIS')}<br>
     --<br>`;
 
   await strapi.plugin('email').service('email').send({ to: recipients, from, subject, html });

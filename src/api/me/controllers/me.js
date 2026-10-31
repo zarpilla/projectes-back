@@ -16,6 +16,8 @@ const { getMe, tokenFlags } = require('../../../services/me-settings');
 const { isAppAdmin } = require('../../../services/app-permissions');
 const { ticketsConfig, buildTicketsLoginUrl } = require('../../../services/tickets-sso');
 const { docsConfig, buildDocsLoginUrl } = require('../../../services/docs-sso');
+const { ssoTenant } = require('../../../services/sso-tenant');
+const { checkBaseUrl, outboundAxiosOptions, upstreamError } = require('../../../services/outbound-url');
 
 module.exports = createCoreController('api::me.me', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -52,17 +54,15 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
         return ctx.badRequest('DIR3 API is not configured');
       }
 
-      const response = await axios.get(
-        `${meSettings.dir3_api_url}/api/search/nif/${encodeURIComponent(nif)}`,
-        { headers: { 'X-API-Key': decryptSecret(meSettings.dir3_api_token) } },
-      );
+      // an admin-configured URL: https and public addresses only (issues/378)
+      const baseUrl = checkBaseUrl(meSettings.dir3_api_url);
+      const response = await axios.get(`${baseUrl}/api/search/nif/${encodeURIComponent(nif)}`, {
+        headers: { 'X-API-Key': decryptSecret(meSettings.dir3_api_token) },
+        ...outboundAxiosOptions(),
+      });
       return response.data;
     } catch (error) {
-      console.error('Error in DIR3 search by NIF:', error);
-      if (error.response) {
-        return ctx.send(error.response.data, error.response.status);
-      }
-      return ctx.internalServerError('Error connecting to DIR3 API');
+      return upstreamError(ctx, error, 'DIR3 search by NIF', 'Error connecting to DIR3 API');
     }
   },
 
@@ -82,21 +82,19 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
         return ctx.badRequest('DIR3 API is not configured');
       }
 
-      let url = `${meSettings.dir3_api_url}/api/search/name/${encodeURIComponent(name)}`;
+      const baseUrl = checkBaseUrl(meSettings.dir3_api_url);
+      let url = `${baseUrl}/api/search/name/${encodeURIComponent(name)}`;
       if (limit) {
-        url += `?limit=${limit}`;
+        url += `?limit=${encodeURIComponent(String(limit))}`;
       }
 
       const response = await axios.get(url, {
         headers: { 'X-API-Key': decryptSecret(meSettings.dir3_api_token) },
+        ...outboundAxiosOptions(),
       });
       return response.data;
     } catch (error) {
-      console.error('Error in DIR3 search by name:', error);
-      if (error.response) {
-        return ctx.send(error.response.data, error.response.status);
-      }
-      return ctx.internalServerError('Error connecting to DIR3 API');
+      return upstreamError(ctx, error, 'DIR3 search by name', 'Error connecting to DIR3 API');
     }
   },
 
@@ -110,7 +108,7 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
       return ctx.unauthorized();
     }
     const me = await getMe([]);
-    const config = ticketsConfig(process.env, me && me.name);
+    const config = ticketsConfig(process.env, me && me.name, await ssoTenant(strapi, (me && me.name) || ''));
     if (!config) {
       return ctx.badRequest('Tickets are not configured on this instance');
     }
@@ -133,7 +131,7 @@ module.exports = createCoreController('api::me.me', ({ strapi }) => ({
       return ctx.unauthorized();
     }
     const me = await getMe([]);
-    const config = docsConfig(process.env, me && me.name);
+    const config = docsConfig(process.env, me && me.name, await ssoTenant(strapi, (me && me.name) || ''));
     if (!config) {
       return ctx.badRequest('Documentation is not configured on this instance');
     }

@@ -45,11 +45,16 @@ describe('me.ticketsLogin', () => {
   const savedEnv = { ...process.env };
   let ctrl;
 
+  let kept;
+
   beforeEach(() => {
     jest.resetModules();
+    kept = null;
     global.strapi = {
       contentType: () => ({ kind: 'singleType' }),
       documents: () => ({ findFirst: async () => ({ name: 'Coop A, SCCL' }) }),
+      // Strapi's core store, where the SSO tenant is kept (issues/379)
+      store: () => ({ get: async () => kept, set: async ({ value }) => { kept = value; } }),
     };
     delete process.env.TICKETS_TENANT;
     delete process.env.TICKETS_URL;
@@ -138,14 +143,35 @@ describe('me.ticketsLogin', () => {
     expect(tenantSlug(null)).toBe('');
   });
 
-  test('ticketsConfig needs a tenant (override or instance name) and the secret', () => {
+  test('ticketsConfig needs a tenant and the secret', () => {
     const { ticketsConfig } = require(SERVICE);
-    expect(ticketsConfig({ TICKETS_TENANT: 'xy' })).toBeNull();
+    expect(ticketsConfig({ TICKETS_TENANT: 'xy' }, '', 'xy')).toBeNull();
     expect(ticketsConfig({ TICKETS_SSO_KEY: 'k' })).toBeNull();
-    expect(ticketsConfig({ TICKETS_SSO_KEY: 'k' }, 'Coop A')).toEqual({
+    // the entity name alone is no tenant any more (issues/379)
+    expect(ticketsConfig({ TICKETS_SSO_KEY: 'k' }, 'Coop A')).toBeNull();
+    expect(ticketsConfig({ TICKETS_SSO_KEY: 'k' }, 'Coop A', 'coop-a')).toEqual({
       tenant: 'coop-a', tenantName: 'Coop A', secret: 'k', baseUrl: 'https://tiquets.esstrapis.org',
     });
-    expect(ticketsConfig({ TICKETS_TENANT: ' xy ', TICKETS_SSO_KEY: 'k', TICKETS_URL: 'https://t.example/' }, ''))
+    expect(ticketsConfig({ TICKETS_SSO_KEY: 'k', TICKETS_URL: 'https://t.example/' }, '', 'xy'))
       .toEqual({ tenant: 'xy', tenantName: 'xy', secret: 'k', baseUrl: 'https://t.example' });
+  });
+
+  // issues/379 (security review 2026-10-31): the tenant was the slug of the
+  // entity name, which its admin edits; renamed after another cooperative, her
+  // token logged her in to that cooperative's tickets.
+  test('keeps the tenant of the first name: renaming the entity does not move it', async () => {
+    const user = { username: 'a', email: 'a@coop-a.cat' };
+    expect(decrypt(tokenOf((await ctrl.ticketsLogin(fakeCtx(user))).url), SECRET).tenant).toBe('coop-a-sccl');
+    expect(kept).toBe('coop-a-sccl');
+    global.strapi.documents = () => ({ findFirst: async () => ({ name: 'Coop B, SCCL' }) });
+    const payload = decrypt(tokenOf((await ctrl.ticketsLogin(fakeCtx(user))).url), SECRET);
+    expect(payload).toMatchObject({ tenant: 'coop-a-sccl', tenantName: 'Coop B, SCCL' });
+  });
+
+  test('freezeSsoTenant keeps the tenant the instance has at deploy', async () => {
+    global.strapi.log = { info: jest.fn() };
+    global.strapi.db = { query: () => ({ findOne: async () => ({ name: 'Fusteria La Serra, SCCL' }) }) };
+    await require('../src/services/sso-tenant').freezeSsoTenant();
+    expect(kept).toBe('fusteria-la-serra-sccl');
   });
 });
