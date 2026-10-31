@@ -202,6 +202,9 @@ module.exports = {
       ['migratePartnerAmounts', migratePartnerAmounts, { runOnce: true }],
       // issues/346: «Ruta de tarda» on the «TARDA» routes; the late marks of open orders judged again.
       ['recheckLateFlags', recheckLateFlags, { runOnce: true }],
+      // 2026-10-31: a «Total» planned-hours line took the €/h of its first day for
+      // its whole range (webcoop RE web: 454,94 € of 2026 hours at a 0 € period).
+      ['refreshTotalHoursTotalsPerDayCost', refreshTotalHoursTotals, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
