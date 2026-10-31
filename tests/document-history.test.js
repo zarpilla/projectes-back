@@ -255,7 +255,7 @@ describe('sending an invoice by email (issues/161)', () => {
   const CONTROLLER = path.join(__dirname, '..', 'src', 'api', 'emitted-invoice', 'controllers', 'emitted-invoice.js');
 
   it('marks the invoice as sent today and records who sent it to which address', async () => {
-    const sent = { id: 7, code: 'F-0007', sent: false, sent_date: null, pdf: '/f.pdf', contact: { contact_email: 'client@example.org', name: 'Client' } };
+    const sent = { id: 7, code: 'F-0007', sent: false, sent_date: null, pdf: '/uploads/documents/f.pdf', contact: { contact_email: 'client@example.org', name: 'Client' } };
     const { logs } = mockStrapi({ query: { [EMITTED]: { findOne: jest.fn(async () => sent) } } });
     const send = jest.fn(async () => ({}));
     global.strapi.plugin = () => ({ service: () => ({ send }) });
@@ -265,7 +265,7 @@ describe('sending an invoice by email (issues/161)', () => {
     const realRead = fs.readFileSync;
     jest
       .spyOn(fs, 'readFileSync')
-      .mockImplementation((file, ...rest) => (file === './public/f.pdf' ? Buffer.from('%PDF') : realRead(file, ...rest)));
+      .mockImplementation((file, ...rest) => (String(file).endsWith('/uploads/documents/f.pdf') ? Buffer.from('%PDF') : realRead(file, ...rest)));
     const ctrl = require(CONTROLLER)({ strapi: global.strapi });
 
     const result = await ctrl.sendInvoiceByEmail({ params: { id: 7 }, send: jest.fn() });
