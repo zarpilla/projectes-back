@@ -609,6 +609,7 @@ async function scopeOrderCsv(ctx, next, { strapi, userId, permissions }) {
   // a new point (a contact without id): the office's fields of a contact stay out too
   if (body.contact && typeof body.contact === 'object' && body.contact.id === undefined) {
     memberNewContact(body.contact, userId);
+    await keepDeliveryPointTypes(strapi, body.contact);
   }
   await memberOrderPayload(strapi, body, userId, { creating: true, csv: true, permissions });
   // createCSV reads `owner.id`, and gives the same owner to a contact it creates
@@ -778,11 +779,39 @@ function memberNewContact(contact, userId) {
   return contact;
 }
 
-async function scopeContactCreate(ctx, next, { userId }) {
+const CONTACT_TYPE = 'api::contact-type.contact-type';
+const typeName = (name) =>
+  String(name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+const DELIVERY_POINT_TYPES = new Set(['puntdentrega', 'puntsdentrega']);
+
+/**
+ * A member's new point is tagged only as a delivery point: «Sòcia» put it in
+ * the energy community's partners list (issues/394), «Clienta» among the
+ * entity's clients. Other types are dropped.
+ */
+async function keepDeliveryPointTypes(strapi, contact) {
+  if (!contact || contact.contact_types === undefined) return;
+  const ids = [].concat(contact.contact_types || []).map((t) => Number(idOf(t))).filter(Number.isInteger);
+  if (!ids.length) {
+    delete contact.contact_types;
+    return;
+  }
+  const types = await strapi.db.query(CONTACT_TYPE).findMany({ where: { id: { $in: ids } }, select: ['id', 'name'] });
+  const kept = types.filter((t) => DELIVERY_POINT_TYPES.has(typeName(t.name))).map((t) => t.id);
+  if (kept.length) contact.contact_types = kept;
+  else delete contact.contact_types;
+}
+
+async function scopeContactCreate(ctx, next, { strapi, userId }) {
   const payload = payloadOf(ctx);
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
     throw forbidden();
   memberNewContact(payload, userId);
+  await keepDeliveryPointTypes(strapi, payload);
   payload.owner = userId;
   return next();
 }

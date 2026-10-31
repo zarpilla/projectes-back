@@ -41,6 +41,10 @@ function makeStrapi({
       return (table && table[where.id]) || null;
     }),
     findMany: jest.fn(async ({ where }) => {
+      // a member's new point keeps only the delivery-point type (issues/394)
+      if (uid === 'api::contact-type.contact-type') {
+        return [{ id: 4, name: "Punt d'entrega" }].filter((t) => where.id.$in.includes(t.id));
+      }
       if (uid === 'api::contact.contact' && where.users_permissions_user) {
         return Object.values(contacts).filter(
           (c) => c.users_permissions_user && c.users_permissions_user.id === where.users_permissions_user.id,
