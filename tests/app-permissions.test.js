@@ -1245,7 +1245,8 @@ describe('app permissions (issues/099)', () => {
       permissions: { [ME]: ['hours'] },
       rows: {
         [PIVOT]: {
-          4: { id: 4, identifier: 'dedication-est-pivot' },
+          // hers: the views others saved are read-only for her (issues/394)
+          4: { id: 4, identifier: 'dedication-est-pivot', owner_user: ME },
           5: { id: 5, identifier: 'tresoreria-pivot' },
         },
       },

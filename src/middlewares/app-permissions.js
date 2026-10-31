@@ -1167,13 +1167,16 @@ async function scopePivotViewList(ctx, next, { permissions }) {
   return next();
 }
 
-async function scopePivotViewRow(ctx, next, { strapi, permissions }) {
+async function scopePivotViewRow(ctx, next, { strapi, permissions, userId }) {
   const where = addressedRow(ctx);
   if (!where) throw forbidden();
   const identifiers = pivotIdentifiersFor(permissions);
-  const view = await strapi.db.query(PIVOT_VIEW).findOne({ where, select: ['id', 'identifier'] });
+  const view = await strapi.db.query(PIVOT_VIEW).findOne({ where, select: ['id', 'identifier', 'owner_user'] });
   if (!view) return next();
   if (!identifiers.includes(view.identifier)) throw forbidden();
+  // the views others saved are read-only for her (issues/394): workers and the
+  // office overwrote or deleted the ones the admins use
+  if (ctx.method !== 'GET' && view.owner_user !== userId) throw forbidden();
   const payload = payloadOf(ctx);
   if (ctx.method === 'PUT' && payload.identifier !== undefined && !identifiers.includes(payload.identifier)) {
     throw forbidden();
@@ -1449,6 +1452,14 @@ const SERVER_ONLY_FIELDS = {
   'api::quote.quote': ['pdf'],
 };
 
+/** Who saved a pivot view is the server's to say (issues/394). */
+function stampPivotViewOwner(ctx, action, user) {
+  if (!action || !action.startsWith(`${PIVOT_VIEW}.`) || !['POST', 'PUT'].includes(ctx.method)) return;
+  const payload = payloadOf(ctx);
+  delete payload.owner_user;
+  if (action === `${PIVOT_VIEW}.create` && user) payload.owner_user = user.id;
+}
+
 function dropServerOnlyFields(ctx, action) {
   const uid = action && action.slice(0, action.lastIndexOf('.'));
   const fields = SERVER_ONLY_FIELDS[uid];
@@ -1600,6 +1611,7 @@ module.exports = (config, { strapi }) =>
     const sets = guardSets(strapi);
     cleanServerFlags(ctx, user);
     dropServerOnlyFields(ctx, action);
+    stampPivotViewOwner(ctx, action, user);
     if (!user || !action) {
       refuseForbiddenFilters(ctx, sets.everybody);
       return next();
