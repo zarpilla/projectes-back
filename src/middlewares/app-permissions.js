@@ -1499,6 +1499,36 @@ const SERVER_ONLY_FIELDS = {
   'api::quote.quote': ['pdf'],
 };
 
+// ---------------------------------------------------------------------------
+// Mail volume (issues/394): each «Contacta» message and each new incidence
+// sends a mail to the office. Users without full access get a cap per hour.
+// ---------------------------------------------------------------------------
+const MAIL_LIMITS = { contact: 10, incidence: 30 };
+const HOUR = 60 * 60 * 1000;
+const sentMails = new Map();
+
+function countMails(kind, userId, n, now = Date.now()) {
+  if (!n) return;
+  const key = `${kind}:${userId}`;
+  const recent = (sentMails.get(key) || []).filter((t) => now - t < HOUR);
+  if (recent.length + n > MAIL_LIMITS[kind]) {
+    sentMails.set(key, recent);
+    throw new errors.RateLimitError("Massa missatges en poca estona: torna-ho a provar d'aquí a una estona");
+  }
+  for (let i = 0; i < n; i++) recent.push(now);
+  sentMails.set(key, recent);
+}
+
+function limitMails(ctx, action, userId) {
+  if (action === 'api::form-submission.form-submission.create') countMails('contact', userId, 1);
+  if (action === `${ORDER}.create` || action === `${ORDER}.update`) {
+    const incidences = payloadOf(ctx).incidences;
+    if (Array.isArray(incidences)) {
+      countMails('incidence', userId, incidences.filter((i) => i && typeof i === 'object' && i.id === undefined).length);
+    }
+  }
+}
+
 /** Who saved a pivot view is the server's to say (issues/394). */
 function stampPivotViewOwner(ctx, action, user) {
   if (!action || !action.startsWith(`${PIVOT_VIEW}.`) || !['POST', 'PUT'].includes(ctx.method)) return;
@@ -1673,6 +1703,7 @@ module.exports = (config, { strapi }) =>
     // a member's rate is set by her scope (memberRouteRate)
     if (ORDER_WRITES.has(action) && !isOrdersMember(permissions)) await officeRouteRate(strapi, ctx, action);
     if (full) return next();
+    limitMails(ctx, action, user.id);
     refuseRelationOperations(strapi, action, ctx);
     if (isOrdersMember(permissions)) refuseHiddenUserFilters(strapi, modelUidOfAction(action), ctx);
     narrowSearch(ctx, modelUidOfAction(action), isOrdersMember(permissions));
@@ -1707,3 +1738,4 @@ module.exports.MEMBER_SCOPES = MEMBER_SCOPES;
 module.exports.OWN_SCOPES = OWN_SCOPES;
 module.exports.DRIVER_SCOPES = DRIVER_SCOPES;
 module.exports.GENERAL_SCOPES = GENERAL_SCOPES;
+module.exports._sentMails = sentMails;
