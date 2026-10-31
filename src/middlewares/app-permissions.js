@@ -836,6 +836,50 @@ async function scopeOrdersImport(ctx, next, { userId }) {
 }
 
 // ---------------------------------------------------------------------------
+// Uploads (issues/373). The upload action also replaces a file
+// (`POST /upload?id=<file>` with a file) or renames it (without one), whoever
+// owns it: a member overwrote the entity's logo. Users without full access only
+// add new files: unattached (the energy partners' documents, linked on save)
+// or for their own orders import (the CSV of «Importa CSV»). No SVG for them:
+// it is served from the app's own domain and can carry scripts; the logos are
+// uploaded by full-access users.
+// ---------------------------------------------------------------------------
+
+const ORDERS_IMPORT = 'api::orders-import.orders-import';
+const UPLOAD_TARGETS = { [ORDERS_IMPORT]: { field: 'file', owner: 'users_permissions_user' } };
+
+function uploadedFiles(ctx) {
+  const files = ctx.request && ctx.request.files && ctx.request.files.files;
+  if (!files) return [];
+  return Array.isArray(files) ? files : [files];
+}
+
+function isSvg(file) {
+  const type = String(file.mimetype || file.type || '').toLowerCase();
+  const name = String(file.originalFilename || file.name || '').toLowerCase();
+  return type.includes('svg') || name.endsWith('.svg') || name.endsWith('.svgz');
+}
+
+async function scopeUpload(ctx, next, { strapi, userId }) {
+  if (ctx.query && ctx.query.id !== undefined) throw forbidden();
+  const body = (ctx.request && ctx.request.body) || {};
+  const { ref, refId, field } = body;
+  if (ref !== undefined || refId !== undefined || field !== undefined) {
+    const target = typeof ref === 'string' ? UPLOAD_TARGETS[ref] : null;
+    if (!target || field !== target.field || !/^\d+$/.test(String(refId))) throw forbidden();
+    const row = await strapi.db.query(ref).findOne({
+      where: { id: Number(refId) },
+      populate: { [target.owner]: { select: ['id'] } },
+    });
+    if (!row || idOf(row[target.owner]) !== userId) throw forbidden();
+  }
+  if (uploadedFiles(ctx).some(isSvg)) {
+    throw new errors.ValidationError('No es poden pujar imatges SVG');
+  }
+  return next();
+}
+
+// ---------------------------------------------------------------------------
 // Driver scopes (issues/163): `orders_delivery` without the office. She makes
 // the moves of any order; the orders themselves are the office's, or the
 // member's when she is one too.
@@ -1125,6 +1169,7 @@ const GENERAL_SCOPES = {
   [`${PIVOT_VIEW}.create`]: scopePivotViewCreate,
   [`${CONTACT}.basic`]: scopeContactBasic,
   [`${INCIDENCE}.update`]: scopeIncidenceUpdate,
+  'plugin::upload.content-api.upload': scopeUpload,
 };
 
 // the user's own data: nothing to clean. `users/me` is not one of them: it
