@@ -280,6 +280,12 @@ server {
     location ~* \.(p12|pfx|pem|key|crt|cer|jks|kdb)\$ {
         return 403;
     }
+    # …and in /uploads the other key formats and the Google service-account .json
+    # (issues/374; the front's own manifest.json stays). Keep in step with
+    # src/middlewares/block-key-material.js.
+    location ~* ^/uploads/.*\.(p8|p7b|p7s|asc|gpg|der|json)\$ {
+        return 403;
+    }
 
     # Strapi (issues/342): the API, the uploads, its admin panel and the paths
     # the panel calls at the root. Keep in step with STRAPI_PATHS in the front's
