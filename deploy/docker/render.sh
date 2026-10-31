@@ -90,6 +90,9 @@ YAML
 	servers {
 		# nginx in front: keep its X-Forwarded-For/Proto (Strapi needs https for secure cookies).
 		trusted_proxies static 127.0.0.1/32 ::1/128
+		# the client IP of the access log: nginx overwrites X-Real-IP, while the
+		# leftmost X-Forwarded-For can be the client's own choice (issues/376)
+		client_ip_headers X-Real-IP X-Forwarded-For
 	}
 }
 

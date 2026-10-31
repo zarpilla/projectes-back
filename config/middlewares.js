@@ -1,6 +1,9 @@
 // v5 middleware stack. Ported from v3 config/middleware.js (gzip enabled, brotli off).
 // CORS is left at the v5 default (open in dev); tighten via env in production.
 module.exports = ({ env }) => [
+  // The client's IP from nginx's X-Real-IP, not the spoofable leftmost
+  // X-Forwarded-For (issues/376). First, so the logger and rate limits see it.
+  'global::client-ip',
   'strapi::logger',
   'strapi::errors',
   // 4xx http-errors from koa-static (bot scans) answered without an error log
