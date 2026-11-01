@@ -122,13 +122,18 @@ describe('_q for users without full access (issues/391)', () => {
 });
 
 describe('/phase-incomes/assigned for users without full access (issues/391)', () => {
-  it('keeps only _limit', async () => {
+  it('keeps only _limit, and a member only her own invoices (issues/408)', async () => {
     const { ctx, next } = await get(setup(['orders']), 'api::phase-income.phase-income.findAssigned', {
       _limit: '-1',
       _where: { amount_gt: 1000, 'invoice.contact.name_contains': 'x' },
     });
     expect(next).toHaveBeenCalled();
-    expect(ctx.query).toEqual({ _limit: '-1' });
+    // the amount and name filters are dropped (issues/391); the member's
+    // marker reads only the invoices addressed to her contacts (issues/408)
+    expect(ctx.query).toEqual({
+      _limit: '-1',
+      _where: { _and: [{ 'invoice.contact.id_in': [7] }] },
+    });
   });
 });
 

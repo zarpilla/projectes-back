@@ -8,22 +8,50 @@
  * their own form.
  */
 
-const { contactSummary, mergeProjects } = require('../src/api/contact/services/contact-summary');
+const { contactSummary, mergeProjects, projectHours } = require('../src/api/contact/services/contact-summary');
 
-function stubStrapi({ contact, clients = [], intercoops = [], docs = {}, docProjects = [] }) {
+// the chain of the grouped activities query; `whereIn` records the projects asked for
+function hoursQuery(rows, asked) {
+  const chain = { join: () => chain, groupBy: () => chain, select: async () => rows };
+  chain.whereIn = (column, ids) => {
+    asked.push(...ids);
+    return chain;
+  };
+  return chain;
+}
+
+function stubStrapi({ contact, clients = [], intercoops = [], docs = {}, docProjects = [], children = [], hourRows = [] }) {
   const calls = [];
+  const asked = [];
   const query = (uid) => ({
     findOne: jest.fn(async () => contact),
     findMany: jest.fn(async (opts) => {
       calls.push({ uid, opts });
       if (uid === 'api::project.project') {
+        if (opts.where.mother) return children;
         if (opts.where.id) return docProjects.filter((p) => opts.where.id.$in.includes(p.id));
         return opts.where.clients ? clients : intercoops;
       }
       return docs[uid] || [];
     }),
   });
-  return { strapi: { db: { query } }, calls };
+  const connection = () => hoursQuery(hourRows, asked);
+  connection.raw = (sql) => sql;
+  const metadata = {
+    get: () => ({
+      tableName: 'activities',
+      attributes: {
+        project: {
+          joinTable: {
+            name: 'activities_project_lnk',
+            joinColumn: { name: 'activity_id' },
+            inverseJoinColumn: { name: 'project_id' },
+          },
+        },
+      },
+    }),
+  };
+  return { strapi: { db: { query, metadata, connection } }, calls, asked };
 }
 
 describe('mergeProjects', () => {
@@ -60,6 +88,7 @@ describe('contactSummary', () => {
     expect(summary.contact.delivery_point).toBe(true);
     expect(summary.projects).toEqual([]);
     expect(summary.documents).toEqual([]);
+    expect(summary.hours).toEqual([]);
     expect(calls).toEqual([]);
   });
 
@@ -111,6 +140,16 @@ describe('contactSummary', () => {
     expect(populates['api::emitted-invoice.emitted-invoice']).toEqual(['projects']);
   });
 
+  it('answers the hours of its projects', async () => {
+    const { strapi } = stubStrapi({
+      contact: { id: 5, name: 'Coop', owner: null },
+      clients: [{ id: 1, name: 'Web' }],
+      hourRows: [{ project_id: 1, y: 2026, m: 3, hours: '7.50' }],
+    });
+    const summary = await contactSummary(strapi, 5);
+    expect(summary.hours).toEqual([{ project: 1, projects: [1], date: '2026-03-01', hours: 7.5 }]);
+  });
+
   it('selects only fields the content types have', () => {
     const { DOCUMENTS } = require('../src/api/contact/services/contact-summary');
     for (const { uid, select, relation } of Object.values(DOCUMENTS)) {
@@ -118,5 +157,46 @@ describe('contactSummary', () => {
       const attrs = require(`../src/api/${name}/content-types/${name}/schema.json`).attributes;
       for (const f of [...select, relation]) if (f !== 'id') expect([uid, f, !!attrs[f]]).toEqual([uid, f, true]);
     }
+  });
+});
+
+describe('projectHours', () => {
+  it('asks nothing without projects', async () => {
+    const { strapi, calls } = stubStrapi({});
+    expect(await projectHours(strapi, [])).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it('gives a mother the hours of its live children instead of its own (issues/172)', async () => {
+    const { strapi, asked } = stubStrapi({
+      children: [
+        { id: 2, mother: { id: 1 } },
+        { id: 3, mother: { id: 1 } },
+        { id: 4, mother: { id: 1 }, trashed: true },
+      ],
+      hourRows: [
+        { project_id: 2, y: 2026, m: 1, hours: '2.00' }, // also listed itself
+        { project_id: 3, y: 2026, m: 1, hours: '3.00' }, // only reached through its mother
+        { project_id: 5, y: 2025, m: 12, hours: '1.00' }, // no children
+      ],
+    });
+    const rows = await projectHours(strapi, [{ id: 1 }, { id: 2 }, { id: 5 }]);
+    expect(asked.sort()).toEqual([2, 3, 5]);
+    expect(rows).toEqual([
+      { project: 2, projects: [2, 1], date: '2026-01-01', hours: 2 },
+      { project: 3, projects: [1], date: '2026-01-01', hours: 3 },
+      { project: 5, projects: [5], date: '2025-12-01', hours: 1 },
+    ]);
+  });
+
+  it('keeps the own hours of a project whose children are all trashed', async () => {
+    const { strapi, asked } = stubStrapi({ children: [{ id: 4, mother: { id: 1 }, trashed: true }] });
+    await projectHours(strapi, [{ id: 1 }]);
+    expect(asked).toEqual([1]);
+  });
+
+  it('keeps undated activities apart, with no date', async () => {
+    const { strapi } = stubStrapi({ hourRows: [{ project_id: 1, y: null, m: null, hours: 4 }] });
+    expect(await projectHours(strapi, [{ id: 1 }])).toEqual([{ project: 1, projects: [1], date: null, hours: 4 }]);
   });
 });

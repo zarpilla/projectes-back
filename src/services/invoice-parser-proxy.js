@@ -13,6 +13,7 @@ const { checkBaseUrl, outboundAxiosOptions, upstreamError } = require('./outboun
 const FormData = require('form-data');
 const { getMe } = require('./me-settings');
 
+// koa-body 6 / formidable 2 file: filepath, originalFilename, mimetype (issues/406)
 async function readUploadedPdfBuffer(ctx) {
   const files = ctx.request && ctx.request.files;
   if (files) {

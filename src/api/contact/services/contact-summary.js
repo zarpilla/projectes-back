@@ -5,11 +5,13 @@
  * it takes part in and its documents, so the office sees what it has done with
  * a client or a provider without going through every list (decided
  * 2026-10-30: projects as client or intercooperation, quotes, invoices,
- * incomes and expenses; no grants, no planned figures).
+ * incomes and expenses; no grants, no planned figures), and the hours worked
+ * on those projects.
  *
  * Only the rows the tab shows, with their own fields: the figures per period
  * are summed in the front (domain/contactSummary.js), where the year selector
- * is. A delivery point (a contact with an owner) gets no summary: its tab is
+ * is. Hours come per month because the fiscal year may not start in January.
+ * A delivery point (a contact with an owner) gets no summary: its tab is
  * the orders one, in its own form.
  */
 
@@ -82,6 +84,53 @@ function mergeProjects(asClient, asIntercoop, withDocuments = []) {
   );
 }
 
+/**
+ * The hours worked on the listed projects, per project and month:
+ * [{ project, projects: [ids], date: 'YYYY-MM-01' | null, hours }]. `project`
+ * is where they were worked, `projects` the listed ones they count on. Like the
+ * project lists, a mother with live children has their hours and not its own
+ * (issues/172), so a row can count on a child and its mother; the front adds
+ * each row once. Undated activities only count in «Històric».
+ */
+async function projectHours(strapi, projects) {
+  const listed = new Set(projects.map((p) => p.id));
+  if (!listed.size) return [];
+  const children = await strapi.db.query('api::project.project').findMany({
+    select: ['id', 'trashed'],
+    where: { mother: { id: { $in: [...listed] } } },
+    populate: { mother: { select: ['id'] } },
+  });
+  const motherOf = new Map(children.filter((c) => !c.trashed).map((c) => [c.id, c.mother.id]));
+  const mothers = new Set(motherOf.values());
+  const worked = new Set([...[...listed].filter((pid) => !mothers.has(pid)), ...motherOf.keys()]);
+
+  const meta = strapi.db.metadata.get('api::activity.activity');
+  const { joinTable } = meta.attributes.project;
+  const projectColumn = joinTable.inverseJoinColumn.name;
+  const knex = strapi.db.connection;
+  const rows = await knex(`${meta.tableName} as a`)
+    .join(`${joinTable.name} as l`, `l.${joinTable.joinColumn.name}`, 'a.id')
+    .whereIn(`l.${projectColumn}`, [...worked])
+    .groupBy(`l.${projectColumn}`, knex.raw('YEAR(a.date)'), knex.raw('MONTH(a.date)'))
+    .select(
+      `l.${projectColumn} as project_id`,
+      knex.raw('YEAR(a.date) as y'),
+      knex.raw('MONTH(a.date) as m'),
+      knex.raw('SUM(a.hours) as hours'),
+    );
+
+  return rows.map((r) => {
+    const projectId = Number(r.project_id);
+    const ids = [projectId, motherOf.get(projectId)].filter((pid) => listed.has(pid));
+    return {
+      project: projectId,
+      projects: ids,
+      date: r.y == null ? null : `${r.y}-${String(r.m).padStart(2, '0')}-01`,
+      hours: Number(r.hours) || 0,
+    };
+  });
+}
+
 async function contactSummary(strapi, id) {
   const contactId = Number(id);
   if (!Number.isInteger(contactId) || contactId <= 0) return null;
@@ -92,7 +141,7 @@ async function contactSummary(strapi, id) {
   });
   if (!contact) return null;
   const header = { id: contact.id, name: contact.name, trade_name: contact.trade_name, nif: contact.nif };
-  if (contact.owner) return { contact: { ...header, delivery_point: true }, projects: [], documents: [] };
+  if (contact.owner) return { contact: { ...header, delivery_point: true }, projects: [], documents: [], hours: [] };
 
   const projects = strapi.db.query('api::project.project');
   const [asClient, asIntercoop, ...docLists] = await Promise.all([
@@ -122,7 +171,8 @@ async function contactSummary(strapi, id) {
     ? await projects.findMany({ select: PROJECT_FIELDS, where: { id: { $in: otherIds } }, populate: PROJECT_POPULATE })
     : [];
 
-  return { contact: header, projects: mergeProjects(asClient, asIntercoop, withDocuments), documents };
+  const rows = mergeProjects(asClient, asIntercoop, withDocuments);
+  return { contact: header, projects: rows, documents, hours: await projectHours(strapi, rows) };
 }
 
-module.exports = { contactSummary, mergeProjects, DOCUMENTS };
+module.exports = { contactSummary, mergeProjects, projectHours, DOCUMENTS };
