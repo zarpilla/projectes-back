@@ -204,7 +204,10 @@ else
   info "answering after ${waited}s"
   echo blue > "state/$NAME"
   ./render.sh
-  docker compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile 2>&1 | grep -vE '^\s*$|obsolete|"level":"(info|warn)"' || true
+  # the admin API moved to a socket (issues/404); a proxy still on the old
+  # 127.0.0.1:2019 is reloaded there once, and listens on the socket after
+  { docker compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null \
+    || docker compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile --address 127.0.0.1:2019; } 2>&1 | grep -vE '^\s*$|obsolete|"level":"(info|warn)"' || true
   flock -u 9
   info "proxy serving it on 127.0.0.1:$BACK_PORT"
 fi
@@ -279,6 +282,12 @@ proxy_headers='proxy_http_version 1.1;
 cat > "$SITE_DRAFT" <<NGINX
 server {
     server_name $DOMAIN;
+
+    # no nginx version in answers; uploads up to the API's limit (100 MB,
+    # config/plugins.js); HTTPS only once certbot adds TLS (issues/404)
+    server_tokens off;
+    client_max_body_size 100m;
+    add_header Strict-Transport-Security "max-age=31536000" always;
 
     # Never serve credential files (FACe / Verifactu certificates, keys) from /uploads
     location ~* \.(p12|pfx|pem|key|crt|cer|jks|kdb)\$ {
