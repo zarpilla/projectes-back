@@ -25,6 +25,7 @@ const FIELD_TRANSLATIONS = {
   code: 'Codi',
   name: 'Nom',
   short_name: 'Nom curt',
+  municipality_code: 'Codi de municipi (mapa de rutes)',
   shortName: 'Nom curt',
   full_name: 'Nom complet',
   fullName: 'Nom complet',
