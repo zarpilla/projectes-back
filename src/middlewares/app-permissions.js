@@ -1568,10 +1568,20 @@ const DRIVER_SCOPES = {
  * «Factures» asks which documents are assigned to a budget line with
  * `_limit=-1` only. Any other filter (an amount, the invoice's contact) made it
  * a yes/no oracle on the entity's budget lines (issues/391): they are dropped.
+ * A member gets the marker for her own invoices only, like her «Factures»
+ * list (issues/408): the whole entity's document ids are not hers to count.
  */
-function scopeAssignedIncomes(ctx, next) {
+async function scopeAssignedIncomes(ctx, next, { strapi, userId, permissions }) {
   const { _limit } = ctx.query || {};
   ctx.query = _limit !== undefined ? { _limit } : {};
+  if (isOrdersMember(permissions)) {
+    const contactIds = idList(await memberContactIds(strapi, userId));
+    narrowQuery(
+      ctx,
+      { 'invoice.contact.id_in': contactIds },
+      { invoice: { contact: { id: { $in: contactIds } } } },
+    );
+  }
   return next();
 }
 

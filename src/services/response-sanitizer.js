@@ -28,7 +28,8 @@ const USER = 'plugin::users-permissions.user';
 const INVOICE_READERS = ['projects', 'admin', 'orders_admin', 'orders'];
 const PROJECT = 'api::project.project';
 
-// the salary and the identity of a person
+// the salary and the identity of a person; `home` is her own saved Inici
+// configuration, of no screen that reads another user
 const USER_PRIVATE = [
   'ical',
   'identity_number',
@@ -37,6 +38,7 @@ const USER_PRIVATE = [
   'monthly_salary',
   'monthly_tax',
   'daily_dedications',
+  'home',
 ];
 
 // a member of the energy community: what only `admin_energy` reads
@@ -133,6 +135,33 @@ const CONTACT_NAME_FIELDS = ['id', 'documentId', 'name', 'trade_name'];
 // The partners' money on a contact: the office (Sòcies) and full access only (issues/399)
 const PARTNER_MONEY = ['partner_amount', 'partner_amount_date', 'capital_contributions', 'followup_date'];
 
+// The office's own fields of someone else's contact: no member screen reads
+// them. Every sòcia sees every delivery point and orders to it (the order
+// form's `for-orders` list), and the shared points' address and contact fields
+// are hers to edit (SHARED_CONTACT_FIELDS) — but `contact_email`, the website,
+// the account link and the office's integration flags stay with the staff
+// (issues/407). Her own card keeps them (ContactsUserForm).
+const OFFICE_CONTACT_FIELDS = [
+  'contact_email',
+  'website',
+  'users_permissions_user',
+  'externalId',
+  'externalId2',
+  'face_dir3_oc',
+  'face_dir3_og',
+  'face_dir3_ut',
+  'face',
+  'is_client',
+  'is_provider',
+];
+
+/** Whether the contact row belongs to this user herself. */
+function contactOwn(row, selfId) {
+  if (selfId === null || selfId === undefined || !row || typeof row !== 'object') return false;
+  const idOf = (v) => (v && typeof v === 'object' ? v.id : v);
+  return idOf(row.owner) === selfId || idOf(row.users_permissions_user) === selfId;
+}
+
 const contactNames = (value) => {
   const name = (c) => (c && typeof c === 'object' ? Object.fromEntries(CONTACT_NAME_FIELDS.filter((f) => f in c).map((f) => [f, c[f]])) : c);
   return Array.isArray(value) ? value.map(name) : name(value);
@@ -218,7 +247,17 @@ function rulesFor({ member = false, selfId = null, permissions = [], ownOrders =
   // the energy community's data on its members (their documents: ID cards,
   // payment receipts), only for `admin_energy` (and full access, never sanitized)
   if (!permissions.includes('admin_energy')) contactDrop.push(...ENERGY_CONTACT_FIELDS);
-  if (contactDrop.length) rules['api::contact.contact'] = { drop: contactDrop };
+  if (contactDrop.length) {
+    // a member: her own card keeps everything she edits, someone else's point
+    // (visible to every sòcia to order to) leaves out the office's fields
+    // (issues/407)
+    rules['api::contact.contact'] = member
+      ? {
+          pick: (row) =>
+            contactOwn(row, selfId) ? { drop: contactDrop } : { drop: [...contactDrop, ...OFFICE_CONTACT_FIELDS] },
+        }
+      : { drop: contactDrop };
+  }
   return rules;
 }
 

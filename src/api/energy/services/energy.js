@@ -326,11 +326,22 @@ async function cleanSupply(data, existing = null) {
   return out;
 }
 
+// A supply or a coefficient belongs to a «Sòcia»: like loadPartner, the module
+// answers nothing about — and changes nothing of — any other contact's rows
+// (issues/408).
+async function assertPartnerSupply(supply) {
+  const contactId = idOf(supply && supply.contact);
+  if (!contactId || !(await isPartner(contactId))) {
+    throw new errors.NotFoundError('Aquest CUPS no és de cap sòcia');
+  }
+}
+
 async function loadSupply(id) {
   const supply = await strapi.db
     .query(SUPPLY)
     .findOne({ where: { id: Number(id) }, populate: { contact: { select: ['id'] } } });
   if (!supply) throw new errors.NotFoundError('Aquest CUPS no existeix');
+  await assertPartnerSupply(supply);
   return supply;
 }
 
@@ -540,6 +551,7 @@ async function loadCoefficient(id) {
     populate: { supply: { populate: { contact: { select: ['id'] } } }, installation: { select: ['id'] } },
   });
   if (!row) throw new errors.NotFoundError('Aquest coeficient no existeix');
+  await assertPartnerSupply(row.supply);
   return row;
 }
 
