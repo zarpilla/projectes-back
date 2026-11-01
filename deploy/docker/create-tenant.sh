@@ -134,7 +134,7 @@ if ! $RESUME; then
   {
     echo "$MARKER on $(date -Is) (shared settings copied from $TEMPLATE_ENV)"
     echo "$MARKER"
-    grep -vE "^\s*(#|\$)|^(URL|DATABASE_NAME|DATABASE_USERNAME|DATABASE_PASSWORD|APP_KEYS|API_TOKEN_SALT|ADMIN_JWT_SECRET|TRANSFER_TOKEN_SALT|JWT_SECRET|ENCRYPTION_KEY|SECRETS_KEY|TICKETS_TENANT|RESET_PASSWORD_URL|SEED_USER_[A-Z]*)=" "$TEMPLATE_ENV"
+    grep -vE "^\s*(#|\$)|^(URL|DATABASE_NAME|DATABASE_USERNAME|DATABASE_PASSWORD|APP_KEYS|API_TOKEN_SALT|ADMIN_JWT_SECRET|TRANSFER_TOKEN_SALT|JWT_SECRET|ENCRYPTION_KEY|SECRETS_KEY|TICKETS_TENANT|TICKETS_SSO_KEY|DOCS_SSO_KEY|RESET_PASSWORD_URL|SEED_USER_[A-Z]*)=" "$TEMPLATE_ENV"
     echo "URL='$URL'"
     echo "DATABASE_NAME='$DB_NAME'"
     # the tenant of the tickets/docs single sign-on, never from the editable entity name (issues/379)
@@ -151,6 +151,8 @@ if ! $RESUME; then
   } > "$ENV_FILE.new"
   mv "$ENV_FILE.new" "$ENV_FILE"
   umask 022
+  # its own tickets/docs SSO keys, never the sites' master keys (issues/404)
+  ./tenant-sso-keys.sh "$NAME" || info "WARNING: no SSO keys: Tiquets and Documentació won't open. Fix it, then: ./tenant-sso-keys.sh $NAME"
 else
   say "1. $ENV_FILE already written"
   USER_EMAIL=$(env_get "$ENV_FILE" SEED_USER_EMAIL)
