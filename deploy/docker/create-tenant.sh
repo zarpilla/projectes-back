@@ -134,7 +134,7 @@ if ! $RESUME; then
   {
     echo "$MARKER on $(date -Is) (shared settings copied from $TEMPLATE_ENV)"
     echo "$MARKER"
-    grep -vE "^\s*(#|\$)|^(URL|DATABASE_NAME|DATABASE_USERNAME|DATABASE_PASSWORD|APP_KEYS|API_TOKEN_SALT|ADMIN_JWT_SECRET|TRANSFER_TOKEN_SALT|JWT_SECRET|ENCRYPTION_KEY|SECRETS_KEY|TICKETS_TENANT|RESET_PASSWORD_URL|SEED_USER_[A-Z]*)=" "$TEMPLATE_ENV"
+    grep -vE "^\s*(#|\$)|^(URL|DATABASE_NAME|DATABASE_USERNAME|DATABASE_PASSWORD|APP_KEYS|API_TOKEN_SALT|ADMIN_JWT_SECRET|TRANSFER_TOKEN_SALT|JWT_SECRET|ENCRYPTION_KEY|SECRETS_KEY|TICKETS_TENANT|TICKETS_SSO_KEY|DOCS_SSO_KEY|RESET_PASSWORD_URL|SEED_USER_[A-Z]*)=" "$TEMPLATE_ENV"
     echo "URL='$URL'"
     echo "DATABASE_NAME='$DB_NAME'"
     # the tenant of the tickets/docs single sign-on, never from the editable entity name (issues/379)
@@ -151,6 +151,8 @@ if ! $RESUME; then
   } > "$ENV_FILE.new"
   mv "$ENV_FILE.new" "$ENV_FILE"
   umask 022
+  # its own tickets/docs SSO keys, never the sites' master keys (issues/404)
+  ./tenant-sso-keys.sh "$NAME" || info "WARNING: no SSO keys: Tiquets and Documentació won't open. Fix it, then: ./tenant-sso-keys.sh $NAME"
 else
   say "1. $ENV_FILE already written"
   USER_EMAIL=$(env_get "$ENV_FILE" SEED_USER_EMAIL)
@@ -204,7 +206,10 @@ else
   info "answering after ${waited}s"
   echo blue > "state/$NAME"
   ./render.sh
-  docker compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile 2>&1 | grep -vE '^\s*$|obsolete|"level":"(info|warn)"' || true
+  # the admin API moved to a socket (issues/404); a proxy still on the old
+  # 127.0.0.1:2019 is reloaded there once, and listens on the socket after
+  { docker compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null \
+    || docker compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile --address 127.0.0.1:2019; } 2>&1 | grep -vE '^\s*$|obsolete|"level":"(info|warn)"' || true
   flock -u 9
   info "proxy serving it on 127.0.0.1:$BACK_PORT"
 fi
@@ -236,8 +241,9 @@ ENV
 services:
   esstrapis-front-$NAME:
     image: $FRONT_IMAGE:$FRONT_TAG
+    # only nginx reaches it: Docker publishes ports past UFW (issues/393)
     ports:
-      - "\${EXTERNAL_PORT:-8080}:80"
+      - "127.0.0.1:\${EXTERNAL_PORT:-8080}:80"
     environment:
       - NODE_ENV=production
       - VUE_APP_API_URL=\${VUE_APP_API_URL:-http://localhost:1337}
@@ -279,6 +285,12 @@ cat > "$SITE_DRAFT" <<NGINX
 server {
     server_name $DOMAIN;
 
+    # no nginx version in answers; uploads up to the API's limit (100 MB,
+    # config/plugins.js); HTTPS only once certbot adds TLS (issues/404)
+    server_tokens off;
+    client_max_body_size 100m;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
     # Never serve credential files (FACe / Verifactu certificates, keys) from /uploads
     location ~* \.(p12|pfx|pem|key|crt|cer|jks|kdb)\$ {
         return 403;
@@ -287,6 +299,12 @@ server {
     # (issues/374; the front's own manifest.json stays). Keep in step with
     # src/middlewares/block-key-material.js.
     location ~* ^/uploads/.*\.(p8|p7b|p7s|asc|gpg|der|json)\$ {
+        return 403;
+    }
+
+    # The first Strapi admin is created from the command line (see the end of
+    # create-tenant.sh), never by whoever reaches the new site first (issues/393).
+    location = /admin/register-admin {
         return 403;
     }
 
@@ -334,7 +352,8 @@ fi
 
 say "Tenant $NAME is up"
 info "app        $URL/"
-info "admin      $URL/admin   (register the first Strapi admin there)"
+info "admin      $URL/admin   (registering from the web is blocked, issues/393: create the first Strapi admin with"
+info "           docker exec esstrapis-back-$NAME-blue npx strapi admin:create-user --email <email> --firstname <name> --password <password>)"
 if [ -n "$USER_EMAIL" ] && [ "$SEEDED" != 0 ]; then
   info "first user $USER_EMAIL"
   [ -z "$USER_PASSWORD" ] || info "password   $USER_PASSWORD   (shown only now; change it after the first login)"

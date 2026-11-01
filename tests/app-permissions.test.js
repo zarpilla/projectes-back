@@ -41,6 +41,10 @@ function makeStrapi({
       return (table && table[where.id]) || null;
     }),
     findMany: jest.fn(async ({ where }) => {
+      // a member's new point keeps only the delivery-point type (issues/394)
+      if (uid === 'api::contact-type.contact-type') {
+        return [{ id: 4, name: "Punt d'entrega" }].filter((t) => where.id.$in.includes(t.id));
+      }
       if (uid === 'api::contact.contact' && where.users_permissions_user) {
         return Object.values(contacts).filter(
           (c) => c.users_permissions_user && c.users_permissions_user.id === where.users_permissions_user.id,
@@ -977,7 +981,8 @@ describe('app permissions (issues/099)', () => {
       );
       expect(ctx.request.body.data).toEqual({ address: 'C/ Nou', notes_delivery: 'x', pickup_point: true, owner: ME });
       await expectAllowed('api::contact.contact.update', put(10, { owner: { id: ME } }, DRIVER));
-      await expectAllowed('api::contact.contact.update', put(11, { owner: null }, DRIVER));
+      // contact 11 has no owner: not a delivery point, so not hers to change (issues/392)
+      await expectRefused('api::contact.contact.update', put(11, { owner: null }, DRIVER));
       await expectRefused('api::contact.contact.update', put(10, { owner: DRIVER }, DRIVER));
       await expectRefused('api::contact.contact.update', put(11, { owner: DRIVER }, DRIVER));
     });
@@ -1240,7 +1245,8 @@ describe('app permissions (issues/099)', () => {
       permissions: { [ME]: ['hours'] },
       rows: {
         [PIVOT]: {
-          4: { id: 4, identifier: 'dedication-est-pivot' },
+          // hers: the views others saved are read-only for her (issues/394)
+          4: { id: 4, identifier: 'dedication-est-pivot', owner_user: ME },
           5: { id: 5, identifier: 'tresoreria-pivot' },
         },
       },

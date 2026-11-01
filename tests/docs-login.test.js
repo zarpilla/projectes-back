@@ -27,7 +27,9 @@ function decrypt(token, secret, { info = 'esstrapis-docs-sso', version = 'v1', a
   return JSON.parse(Buffer.concat([decipher.update(raw.subarray(12, raw.length - 16)), decipher.final()]).toString('utf8'));
 }
 
-const tokenOf = (url) => new URL(url).searchParams.get('token');
+// `<tenant>.<token>` (issues/404): the site picks the instance's own key by the tenant
+const prefixOf = (url) => new URL(url).searchParams.get('token').split('.')[0];
+const tokenOf = (url) => new URL(url).searchParams.get('token').split('.').slice(1).join('.');
 
 function fakeCtx(user, query = {}) {
   const headers = {};

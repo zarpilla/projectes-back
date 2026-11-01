@@ -130,3 +130,34 @@ describe('email plugin config', () => {
     expect(email.config.providerOptions).toMatchObject({ host: 'smtp.sendgrid.net', auth: { user: 'apikey', pass: 'k' } });
   });
 });
+
+/**
+ * issues/394 (security review round 2, 2026-10-31): every tenant sends through
+ * one SMTP account and an entity's admin writes the invoices' sender, so any
+ * address could go out as From. The From is the server's own address; the one
+ * asked for becomes the display name and the Reply-To.
+ */
+describe('senderOf (issues/394)', () => {
+  const { senderOf } = require('../src/services/email-body');
+  const env = { EMAIL_FROM: 'ESSTRAPIS <no-reply@esstrapis.org>' };
+
+  it('sends from the server, answering to the entity', () => {
+    expect(senderOf({ from: 'factures@lacoop.cat', to: 'c@x.y' }, env)).toEqual({
+      from: '"factures@lacoop.cat" <no-reply@esstrapis.org>',
+      replyTo: 'factures@lacoop.cat',
+      to: 'c@x.y',
+    });
+    expect(senderOf({ from: 'La Coop <hola@lacoop.cat>', replyTo: 'admin@lacoop.cat' }, env)).toEqual({
+      from: '"La Coop" <no-reply@esstrapis.org>',
+      replyTo: 'admin@lacoop.cat',
+    });
+  });
+
+  it('leaves the server’s own address, and everything when no server address is set', () => {
+    const own = { from: 'no-reply@esstrapis.org' };
+    expect(senderOf(own, env)).toBe(own);
+    const any = { from: 'ceo@esstrapis.org' };
+    expect(senderOf(any, {})).toBe(any);
+    expect(senderOf(any, { SMTP_USER: 'smtp@esstrapis.org' }).from).toBe('"ceo@esstrapis.org" <smtp@esstrapis.org>');
+  });
+});

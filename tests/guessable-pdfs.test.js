@@ -125,3 +125,17 @@ describe('renameGuessablePdfs (issues/374)', () => {
     expect(await renameGuessablePdfs()).toEqual({ removed: 0, renamed: 0, rows: 0 });
   });
 });
+
+describe('block-key-material and dot segments (issues/394)', () => {
+  const middleware = require('../src/middlewares/block-key-material')({}, { strapi: { log: { warn: jest.fn() } } });
+  it.each(['/x/%2e%2e/uploads/cert_abc.p12', '/x/../uploads/key.json', '/a/b/%2E%2E/%2E%2E/uploads/k.pem'])('refuses %s', async (p) => {
+    const next = jest.fn();
+    await middleware({ path: p, ip: '1.2.3.4', notFound: jest.fn() }, next);
+    expect(next).not.toHaveBeenCalled();
+  });
+  it('serves a document reached the normal way', async () => {
+    const next = jest.fn();
+    await middleware({ path: '/uploads/documents/Factura-x.pdf', ip: '1.2.3.4', notFound: jest.fn() }, next);
+    expect(next).toHaveBeenCalled();
+  });
+});

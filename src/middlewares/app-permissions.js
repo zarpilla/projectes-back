@@ -56,9 +56,10 @@ const {
 } = require('../services/app-access-rules');
 const { rulesFor, sanitizeResponse, modelUidOfAction } = require('../services/response-sanitizer');
 const { findOrderRouteRate } = require('../api/order/services/route-price');
+const { routeRunsOn, loadRouteClosures, nextRouteDay } = require('../api/order/services/route-days');
 const { relationId } = require('../services/relation-input');
 const { appPermissionsOf: cachedAppPermissionsOf } = require('../services/app-permissions');
-const { forbiddenField, guardSets } = require('../services/query-guard');
+const { forbiddenField, guardSets, filterPaths } = require('../services/query-guard');
 
 const ORDER = 'api::order.order';
 const CONTACT = 'api::contact.contact';
@@ -208,6 +209,10 @@ const ME_PRIVATE_FIELDS = [
   'bank_account_vat',
   'google_credentials',
   'face_certificate',
+  // the entity's calendar URL (a read token) and its Social Security employer
+  // code: the admin form only (issues/401)
+  'ical',
+  'ccc',
 ];
 
 const forbidden = () => new errors.ForbiddenError('No tens permís per fer aquesta acció');
@@ -251,6 +256,38 @@ function narrowQuery(ctx, clause, v5Clause) {
   query._where = { _and: [clause, ...(query._where !== undefined ? [query._where] : [])] };
   if (query.filters !== undefined) query.filters = { $and: [v5Clause, query.filters] };
   ctx.query = query;
+  // Assigning ctx.query re-serialises it and qs parses it back with a limit on
+  // the number of parameters: past it, the last ones (the scope) were cut off
+  // silently (issues/386). Refuse rather than answer unscoped.
+  const kept = ctx.query && ctx.query._where && ctx.query._where._and;
+  if (!Array.isArray(kept) || !sameClause(kept[0], clause)) throw forbidden();
+  if (query.filters !== undefined) {
+    const keptFilters = ctx.query.filters && ctx.query.filters.$and;
+    if (!Array.isArray(keptFilters) || !sameClause(keptFilters[0], v5Clause)) throw forbidden();
+  }
+}
+
+/** Whether `kept` (read back from the query string) is `clause`: qs turns every value into a string. */
+function sameClause(kept, clause) {
+  const plain = (value) => {
+    if (Array.isArray(value)) return value.map(plain);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.keys(value).sort().map((key) => [key, plain(value[key])]));
+    }
+    return value === null || value === undefined ? value : String(value);
+  };
+  return JSON.stringify(plain(kept)) === JSON.stringify(plain(clause));
+}
+
+// Users without full access: a request with more parameters than any screen
+// sends is refused (issues/386: ~1,000 junk parameters pushed the scope out).
+const MAX_QUERY_PARAMS = 300;
+
+function refuseTooManyParams(ctx) {
+  const raw = ctx.querystring || '';
+  if (raw && raw.split('&').length > MAX_QUERY_PARAMS) {
+    throw new errors.ValidationError('Massa paràmetres a la consulta');
+  }
 }
 
 function ordersClause(userId, contactIds) {
@@ -350,6 +387,32 @@ async function memberRouteRate(strapi, payload, userId, { order, csv }) {
 
 const ORDER_WRITES = new Set([`${ORDER}.create`, `${ORDER}.update`, `${ORDER}.createCSV`]);
 const ORDER_CREATES = new Set([`${ORDER}.create`, `${ORDER}.createCSV`]);
+
+// The most boxes an order or one of its lines may have (issues/397): the labels
+// PDF makes a page per box in one synchronous loop, and `units: 2000000000`
+// on her own order let a member hang the tenant. Real orders: 34 boxes at most,
+// lines 99.
+const MAX_BOXES = 1000;
+
+/**
+ * A new order brings no incidences (issues/403): `incidences: [<id>]` on create
+ * took another member's incidence to her new order (update only touches the
+ * order's own, issues/390). The order form adds incidences once the order exists.
+ */
+function dropCreateIncidences(ctx, action) {
+  if (ORDER_CREATES.has(action)) delete payloadOf(ctx).incidences;
+}
+
+/** Refuses an order write with more than MAX_BOXES boxes, on the order or on a line. */
+function refuseTooManyBoxes(ctx, action) {
+  if (!ORDER_WRITES.has(action)) return;
+  const payload = payloadOf(ctx);
+  const tooMany = (value) => value !== undefined && value !== null && value !== '' && !(Number(value) <= MAX_BOXES);
+  const lines = Array.isArray(payload.lines) ? payload.lines : [];
+  if (tooMany(payload.units) || lines.some((line) => line && tooMany(line.units))) {
+    throw new errors.ValidationError(`Una comanda no pot tenir més de ${MAX_BOXES} caixes`);
+  }
+}
 
 /**
  * Every order is created pending, whoever creates it (the user's decision,
@@ -484,7 +547,9 @@ async function memberOrderPayload(
   }
   // a collection order's price is the aggregate of its orders (route-price.js)
   const collection = Boolean(order && order.is_collection_order);
-  if (creating || (!collection && PRICE_INPUTS.some((field) => field in payload))) {
+  // once the office has the order its price is the office's (issues/403)
+  const pending = !order || order.status === 'pending';
+  if (creating || (!collection && pending && PRICE_INPUTS.some((field) => field in payload))) {
     payload.price = null;
     await memberRouteRate(strapi, payload, userId, { order, csv });
   }
@@ -492,19 +557,66 @@ async function memberOrderPayload(
 }
 
 /** A member's own order: the order form, the Comandes list, Dipòsits. */
+const ROUTE = 'api::route.route';
+const DAY_NAMES = ['diumenge', 'dilluns', 'dimarts', 'dimecres', 'dijous', 'divendres', 'dissabte'];
+const dayText = (ymd) => {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  return `${DAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d}/${m}/${y}`;
+};
+
+/**
+ * A member's order goes on a day its route runs and isn't closed, on an active
+ * route (issues/394): the server only checked "from tomorrow", while the
+ * integrations API (diligencia-test) checks this; the order form's date picker
+ * offers the same days. The office keeps its hand free for special cases.
+ */
+async function refuseOffRouteDay(strapi, routeRef, date) {
+  const routeId = relationId(routeRef);
+  const day = date ? String(date).split('T')[0] : null;
+  if (!routeId || !day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+  const where = /^\d+$/.test(String(routeId)) ? { id: Number(routeId) } : { documentId: String(routeId) };
+  const route = await strapi.db.query(ROUTE).findOne({ where });
+  if (!route) return;
+  if (route.active === false) throw new errors.ValidationError(`La ruta ${route.name} no està activa`);
+  const closures = await loadRouteClosures(day, day);
+  if (routeRunsOn(route, day, closures)) return;
+  const closed = closures.some((c) => !idOf(c.route) || idOf(c.route) === route.id);
+  const next = await nextRouteDay(route, { after: day });
+  throw new errors.ValidationError(
+    `${closed ? `La ruta ${route.name} està tancada el` : `La ruta ${route.name} no surt el`} ${dayText(day)}` +
+      (next ? `: el proper dia és el ${dayText(next)}` : ''),
+  );
+}
+
 async function memberOwnOrderUpdate(strapi, order, payload, userId, permissions = []) {
   // her order stays hers: clearing the owner would leave it nobody's (issues/377)
   if (payload.owner === null) delete payload.owner;
   if (payload.owner !== undefined && idOf(payload.owner) !== userId) throw forbidden();
   if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
   // once the office has the order, the form is read-only for her
-  if (order.status !== 'pending') pick(payload, [...MEMBER_LATE_FIELDS]);
+  if (order.status !== 'pending') {
+    pick(payload, [...MEMBER_LATE_FIELDS]);
+    await ownLateLines(strapi, order, payload);
+  }
   // the collection order of her farm-pickup orders, while pending, like her
   // other orders (the user's rule, 2026-10-19, as on master, issues/217): she
   // changes its route or cancels it; its delivery type stays (the form
   // disables it) and its rate is the server's, not hers to send
   if (order.is_collection_order) omit(payload, ['delivery_type', 'route_rate']);
   await memberOrderPayload(strapi, payload, userId, { creating: false, order, permissions });
+  // a new day or route: one the route runs on (issues/394)
+  const dateSent = payload.estimated_delivery_date;
+  const routeSent = payload.route;
+  if (dateSent !== undefined || routeSent !== undefined) {
+    const stored = await strapi.db
+      .query(ORDER)
+      .findOne({ where: { id: order.id }, select: ['id', 'estimated_delivery_date'], populate: { route: { select: ['id'] } } });
+    const date = dateSent !== undefined ? dateSent : stored && stored.estimated_delivery_date;
+    const route = routeSent !== undefined ? routeSent : stored && stored.route;
+    const sameDate = !dateSent || (stored && String(dateSent).split('T')[0] === String(stored.estimated_delivery_date || '').split('T')[0]);
+    const sameRoute = routeSent === undefined || (stored && String(relationId(routeSent)) === String(idOf(stored.route)));
+    if (!(sameDate && sameRoute)) await refuseOffRouteDay(strapi, route, date);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -515,6 +627,23 @@ async function scopeOrderList(ctx, next, { strapi, userId }) {
   const { v3, v5 } = ordersClause(userId, await memberContactIds(strapi, userId));
   narrowQuery(ctx, v3, v5);
   return next();
+}
+
+/**
+ * The figures of the Comandes list (totals, count, status tabs) over her own
+ * orders only: the screen always asks for `owner = her`, and the orders she
+ * reaches as pickup point gave their price through `orders/totals?_where[id]=…`
+ * (issues/396).
+ */
+async function scopeOwnOrderFigures(ctx, next, { userId }) {
+  narrowQuery(ctx, { 'owner.id': userId }, { owner: { id: userId } });
+  return next();
+}
+
+/** The ids of the orders a member owns: an order of hers keeps its money when its owner isn't in the answer (issues/396). */
+async function ownOrderIds(strapi, userId) {
+  const rows = await strapi.db.query(ORDER).findMany({ where: { owner: { id: userId } }, select: ['id'] });
+  return new Set(rows.map((r) => r.id));
 }
 
 /**
@@ -538,6 +667,31 @@ async function pickupPointLines(strapi, order, payload) {
     if (!match) throw forbidden();
     const { id, units, kilograms, name, nif } = line;
     return { id, units, kilograms, name, nif, picked_up: Boolean(match.picked_up) };
+  });
+}
+
+/**
+ * Her own order once the office has it (issues/403): of the lines she sends
+ * only `picked_up` counts, as for a pickup point; the boxes, names and NIFs
+ * stay the stored ones and none is added or removed. Unlike the pickup path it
+ * never refuses (the form posts the whole order): an invoiced or cancelled
+ * order just keeps its lines.
+ */
+async function ownLateLines(strapi, order, payload) {
+  if (!('lines' in payload)) return;
+  const sent = Array.isArray(payload.lines) ? payload.lines : [];
+  if (['invoiced', 'cancelled'].includes(order.status)) {
+    delete payload.lines;
+    return;
+  }
+  const row = await strapi.db.query(ORDER).findOne({ where: { id: order.id }, populate: { lines: true } });
+  const stored = (row && row.lines) || [];
+  payload.lines = stored.map((line, index) => {
+    const match =
+      sent.find((s) => s && s.id !== undefined && s.id === line.id) ||
+      (sent[index] && sent[index].id === undefined ? sent[index] : null);
+    const { id, units, kilograms, name, nif } = line;
+    return { id, units, kilograms, name, nif, picked_up: match ? Boolean(match.picked_up) : Boolean(line.picked_up) };
   });
 }
 
@@ -568,6 +722,7 @@ async function scopeOrderCreate(ctx, next, { strapi, userId, permissions }) {
   // a new order is the office's to process (issues/163)
   payload.status = 'pending';
   await memberOrderPayload(strapi, payload, userId, { creating: true, permissions });
+  await refuseOffRouteDay(strapi, payload.route, payload.estimated_delivery_date);
   return next();
 }
 
@@ -577,15 +732,22 @@ async function scopeOrderCsv(ctx, next, { strapi, userId, permissions }) {
   // a new point (a contact without id): the office's fields of a contact stay out too
   if (body.contact && typeof body.contact === 'object' && body.contact.id === undefined) {
     memberNewContact(body.contact, userId);
+    await keepDeliveryPointTypes(strapi, body.contact);
   }
   await memberOrderPayload(strapi, body, userId, { creating: true, csv: true, permissions });
+  await refuseOffRouteDay(strapi, body.route, body.estimated_delivery_date);
   // createCSV reads `owner.id`, and gives the same owner to a contact it creates
   body.owner = { id: userId };
   return next();
 }
 
 async function scopeOrderPdf(ctx, next, { strapi, userId }) {
-  const ids = ((ctx.request.body && ctx.request.body.orders) || []).map(Number);
+  const sent = (ctx.request.body && ctx.request.body.orders) || [];
+  if (!Array.isArray(sent)) throw forbidden();
+  const ids = sent.map(Number);
+  // the ids checked are the ids printed: `"8972abc"` is NaN here but MySQL reads 8972 (issues/401)
+  if (ids.some((id) => !Number.isInteger(id) || id <= 0)) throw new errors.ValidationError('Comandes no vàlides');
+  ctx.request.body.orders = ids;
   if (ids.length) {
     const contactIds = await memberContactIds(strapi, userId);
     const orders = await strapi.db.query(ORDER).findMany({
@@ -675,6 +837,9 @@ async function scopeIncidenceRow(ctx, next, { strapi, userId }) {
  */
 function incidencePayload(payload, incidence, userId) {
   pick(payload, INCIDENCE_FIELDS);
+  // the replies go as the list the screen has (the controller keeps the stored
+  // ones and appends the new); anything else would replace them (issues/390)
+  if (payload.incidence_response !== undefined && !Array.isArray(payload.incidence_response)) throw forbidden();
   const { state } = payload;
   if (state === undefined || state === null || state === incidence.state) return payload;
   if (state === 'closed') {
@@ -743,11 +908,39 @@ function memberNewContact(contact, userId) {
   return contact;
 }
 
-async function scopeContactCreate(ctx, next, { userId }) {
+const CONTACT_TYPE = 'api::contact-type.contact-type';
+const typeName = (name) =>
+  String(name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+const DELIVERY_POINT_TYPES = new Set(['puntdentrega', 'puntsdentrega']);
+
+/**
+ * A member's new point is tagged only as a delivery point: «Sòcia» put it in
+ * the energy community's partners list (issues/394), «Clienta» among the
+ * entity's clients. Other types are dropped.
+ */
+async function keepDeliveryPointTypes(strapi, contact) {
+  if (!contact || contact.contact_types === undefined) return;
+  const ids = [].concat(contact.contact_types || []).map((t) => Number(idOf(t))).filter(Number.isInteger);
+  if (!ids.length) {
+    delete contact.contact_types;
+    return;
+  }
+  const types = await strapi.db.query(CONTACT_TYPE).findMany({ where: { id: { $in: ids } }, select: ['id', 'name'] });
+  const kept = types.filter((t) => DELIVERY_POINT_TYPES.has(typeName(t.name))).map((t) => t.id);
+  if (kept.length) contact.contact_types = kept;
+  else delete contact.contact_types;
+}
+
+async function scopeContactCreate(ctx, next, { strapi, userId }) {
   const payload = payloadOf(ctx);
   if (payload.owner !== undefined && payload.owner !== null && idOf(payload.owner) !== userId)
     throw forbidden();
   memberNewContact(payload, userId);
+  await keepDeliveryPointTypes(strapi, payload);
   payload.owner = userId;
   return next();
 }
@@ -906,6 +1099,106 @@ async function scopeUpload(ctx, next, { strapi, userId }) {
 }
 
 // ---------------------------------------------------------------------------
+// Linking files (issues/387). Upload ids are sequential and /uploads is public:
+// `POST /orders-imports {"file": <any id>}` answered with that file's URL, so a
+// member could list every document of the entity. Users without full access
+// link only files that are not linked to anything yet (the ones they have just
+// uploaded) or already were on that record; the orders import gets its file
+// through the upload itself (ref/refId, scopeUpload).
+// ---------------------------------------------------------------------------
+
+const FILE_LINKS = 'files_related_mph';
+
+/** The ids among `ids` that are linked to some record. */
+async function linkedFileIds(strapi, ids) {
+  if (!ids.length) return new Set();
+  const rows = await strapi.db.connection(FILE_LINKS).whereIn('file_id', ids).select('file_id');
+  return new Set(rows.map((row) => Number(row.file_id)));
+}
+
+async function scopeOrdersImportFile(ctx) {
+  const payload = payloadOf(ctx);
+  delete payload.file;
+}
+
+async function scopePartnerDocuments(ctx, { strapi }) {
+  const body = ctx.request.body;
+  const payload = body && typeof body === 'object' ? (body.data && typeof body.data === 'object' ? body.data : body) : null;
+  if (!payload || payload.documents === undefined) return;
+  if (!Array.isArray(payload.documents)) throw forbidden();
+  const ids = payload.documents.map((d) => Number(idOf(d)));
+  if (ids.some((id) => !Number.isInteger(id))) throw forbidden();
+  let current = new Set();
+  const key = ctx.params && ctx.params.id;
+  if (key !== undefined) {
+    const where = /^\d+$/.test(String(key)) ? { id: Number(key) } : { documentId: key };
+    const partner = await strapi.db.query(CONTACT).findOne({ where, populate: { documents: { select: ['id'] } } });
+    current = new Set(((partner && partner.documents) || []).map((d) => d.id));
+  }
+  const added = ids.filter((id) => !current.has(id));
+  const linked = await linkedFileIds(strapi, added);
+  if (linked.size) throw forbidden();
+}
+
+// ---------------------------------------------------------------------------
+// Logistics staff without full access and contacts (issues/392). Drivers and
+// the office change delivery points (contacts with an owner, the 2026-10-19
+// decision), not the entity's clients or the energy community's members: a
+// driver changed a client's e-mail, where its invoices are sent.
+// ---------------------------------------------------------------------------
+
+async function isDeliveryPointRef(strapi, ref) {
+  if (ref === undefined || ref === null || ref === '') return false;
+  const where = /^\d+$/.test(String(ref)) ? { id: Number(ref) } : { documentId: String(ref) };
+  const contact = await strapi.db.query(CONTACT).findOne({ where, select: ['id'], populate: { owner: { select: ['id'] } } });
+  if (!contact) return true; // the controller answers its 404
+  if (contact.owner) return true;
+  // Points migrated from v3 keep an owner link to a user that no longer exists
+  // (79 on La Diligència): the link, not the user, makes it a delivery point.
+  const joinTable = ownerJoinTable(strapi);
+  if (!joinTable) return false;
+  const link = await strapi.db.connection(joinTable.name).where(joinTable.joinColumn.name, contact.id).first();
+  return Boolean(link);
+}
+
+function ownerJoinTable(strapi) {
+  try {
+    const attribute = strapi.db.metadata.get(CONTACT).attributes.owner;
+    return attribute && attribute.joinTable ? attribute.joinTable : null;
+  } catch {
+    return null;
+  }
+}
+
+async function scopeStaffContacts(ctx, { strapi }) {
+  if (ctx.state.route && String(ctx.state.route.handler).endsWith('unify')) {
+    const { sourceContactId, targetContactId } = ctx.request.body || {};
+    for (const ref of [sourceContactId, targetContactId]) {
+      if (ref !== undefined && !(await isDeliveryPointRef(strapi, ref))) throw forbidden();
+    }
+    return;
+  }
+  const where = addressedRow(ctx);
+  if (!where) return;
+  const ref = where.id !== undefined ? where.id : where.documentId;
+  if (!(await isDeliveryPointRef(strapi, ref))) throw forbidden();
+}
+
+const STAFF_CONTACT_SCOPES = {
+  [`${CONTACT}.update`]: scopeStaffContacts,
+  [`${CONTACT}.delete`]: scopeStaffContacts,
+  [`${CONTACT}.unify`]: scopeStaffContacts,
+};
+
+// for every user without full access, whatever her other scopes
+const FILE_LINK_SCOPES = {
+  'api::orders-import.orders-import.create': scopeOrdersImportFile,
+  'api::orders-import.orders-import.update': scopeOrdersImportFile,
+  'api::energy.energy.createPartner': scopePartnerDocuments,
+  'api::energy.energy.updatePartner': scopePartnerDocuments,
+};
+
+// ---------------------------------------------------------------------------
 // Driver scopes (issues/163): `orders_delivery` without the office. She makes
 // the moves of any order; the orders themselves are the office's, or the
 // member's when she is one too.
@@ -950,6 +1243,8 @@ async function scopeDriverContactUpdate(ctx, next, { strapi }) {
   if (!where) throw forbidden();
   const payload = payloadOf(ctx);
   delete payload.pickup_discount;
+  // the partners' money: she doesn't read it, so a form she saves can't clear it (issues/399)
+  omit(payload, DRIVER_HIDDEN_CONTACT_FIELDS);
   // nor the user the point belongs to (issues/377): its orders and invoices
   // would show up in that member's scope
   const relations = ['owner', 'users_permissions_user'].filter((field) => field in payload);
@@ -971,9 +1266,18 @@ async function scopeDriverContactUpdate(ctx, next, { strapi }) {
 
 /** A new point a driver makes starts without pickup discount (issues/191). */
 async function scopeDriverContactCreate(ctx, next) {
-  delete payloadOf(ctx).pickup_discount;
+  const payload = payloadOf(ctx);
+  delete payload.pickup_discount;
+  omit(payload, DRIVER_HIDDEN_CONTACT_FIELDS);
+  // the member a pickup point belongs to is the office's to set, as on update
+  // (issues/377): the user's decision, 2026-11-01 (issues/403). The form sends 0 for none.
+  const member = relationId(payload.users_permissions_user);
+  if (member !== undefined && member !== null && member !== 0 && member !== '0' && member !== '') throw forbidden();
   return next();
 }
+
+// What a driver doesn't read of a contact (response-sanitizer PARTNER_MONEY), nor write
+const DRIVER_HIDDEN_CONTACT_FIELDS = ['partner_amount', 'partner_amount_date', 'capital_contributions', 'followup_date'];
 
 /**
  * A member's «Factures» filter lists the projects by name (issues/383): she got
@@ -1003,13 +1307,16 @@ async function scopePivotViewList(ctx, next, { permissions }) {
   return next();
 }
 
-async function scopePivotViewRow(ctx, next, { strapi, permissions }) {
+async function scopePivotViewRow(ctx, next, { strapi, permissions, userId }) {
   const where = addressedRow(ctx);
   if (!where) throw forbidden();
   const identifiers = pivotIdentifiersFor(permissions);
-  const view = await strapi.db.query(PIVOT_VIEW).findOne({ where, select: ['id', 'identifier'] });
+  const view = await strapi.db.query(PIVOT_VIEW).findOne({ where, select: ['id', 'identifier', 'owner_user'] });
   if (!view) return next();
   if (!identifiers.includes(view.identifier)) throw forbidden();
+  // the views others saved are read-only for her (issues/394): workers and the
+  // office overwrote or deleted the ones the admins use
+  if (ctx.method !== 'GET' && view.owner_user !== userId) throw forbidden();
   const payload = payloadOf(ctx);
   if (ctx.method === 'PUT' && payload.identifier !== undefined && !identifiers.includes(payload.identifier)) {
     throw forbidden();
@@ -1058,14 +1365,37 @@ async function scopeOwnList(ctx, next, { userId }) {
 /** The payload may only name her as the person (or leave it out). */
 function checkOwnPayload(ctx, userId) {
   const payload = payloadOf(ctx);
-  if (
-    payload.users_permissions_user !== undefined &&
-    payload.users_permissions_user !== null &&
-    idOf(payload.users_permissions_user) !== userId
-  ) {
-    throw forbidden();
-  }
+  const user = payload.users_permissions_user;
+  // null on her own row made it everybody's: a personal holiday became a
+  // holiday for every worker (issues/389)
+  if (user === null && ctx.method !== 'POST') throw forbidden();
+  if (user !== undefined && user !== null && idOf(user) !== userId) throw forbidden();
   return payload;
+}
+
+// What the server computes on her hours, never what she sends (issues/389): a
+// worker stored cost_by_hour 999 and it went into the projects' real cost.
+const ACTIVITY_SERVER_FIELDS = ['cost_by_hour', 'invoice_hours_price', 'invoiced'];
+
+/**
+ * The relations she sets on her own rows point to rows she may use: a
+ * workday log linked to someone else's activity showed that activity (hours,
+ * project, person) when she read her logs (issues/389).
+ */
+async function checkOwnRelations(ctx, uid, strapi, userId) {
+  const payload = payloadOf(ctx);
+  if (uid === ACTIVITY) for (const field of ACTIVITY_SERVER_FIELDS) delete payload[field];
+  if (uid === WORKDAY_LOG && payload.activity !== undefined && payload.activity !== null) {
+    if (typeof payload.activity === 'object' && !('id' in payload.activity) && !('documentId' in payload.activity)) {
+      throw forbidden();
+    }
+    const ref = idOf(payload.activity);
+    const where = /^\d+$/.test(String(ref)) ? { id: Number(ref) } : { documentId: ref };
+    const activity = await strapi.db
+      .query(ACTIVITY)
+      .findOne({ where, populate: { users_permissions_user: { select: ['id'] } } });
+    if (!activity || idOf(activity.users_permissions_user) !== userId) throw forbidden();
+  }
 }
 
 /**
@@ -1095,10 +1425,12 @@ async function scopeFestiveRow(ctx, next, { strapi, userId }) {
   return next();
 }
 
-const scopeOwnCreate = (ctx, next, { userId }) => {
-  checkOwnPayload(ctx, userId).users_permissions_user = userId;
-  return next();
-};
+const scopeOwnCreateOf = (uid) =>
+  async function scopeOwnCreate(ctx, next, { strapi, userId }) {
+    checkOwnPayload(ctx, userId).users_permissions_user = userId;
+    await checkOwnRelations(ctx, uid, strapi, userId);
+    return next();
+  };
 
 const scopeOwnRow = (uid) =>
   async function scopeOwn(ctx, next, { strapi, userId }) {
@@ -1109,7 +1441,10 @@ const scopeOwnRow = (uid) =>
       .findOne({ where, populate: { users_permissions_user: { select: ['id'] } } });
     if (!row) return next();
     if (idOf(row.users_permissions_user) !== userId) throw forbidden();
-    if (ctx.method === 'PUT') checkOwnPayload(ctx, userId);
+    if (ctx.method === 'PUT') {
+      checkOwnPayload(ctx, userId);
+      await checkOwnRelations(ctx, uid, strapi, userId);
+    }
     return next();
   };
 
@@ -1133,12 +1468,27 @@ async function scopeActivityImportCalendar(ctx, next, { userId }) {
  * hours screens show only hers (issues/099). The user's decision (2026-10-19,
  * issues/188): there too, only her own activities.
  */
+/**
+ * The multidelivery check of a member's own order or import (issues/401): the
+ * owner is her. `ownerId` of someone else told that member's multidelivery flag
+ * and volume tier.
+ */
+async function scopeMemberMultidelivery(ctx, next, { userId }) {
+  const body = ctx.request.body;
+  if (body && typeof body === 'object') body.ownerId = userId;
+  return next();
+}
+
 async function scopeOwnActivitiesOfProjects(ctx, next, { userId }) {
   await next();
   const projects = Array.isArray(ctx.body) ? ctx.body : [];
   for (const project of projects) {
     if (project && Array.isArray(project.activities)) {
       project.activities = project.activities.filter((a) => idOf(a && a.users_permissions_user) === userId);
+    }
+    // her planned hours too, not everyone's (issues/401)
+    if (project && Array.isArray(project.planned_hours)) {
+      project.planned_hours = project.planned_hours.filter((h) => h && idOf(h.user) === userId);
     }
   }
 }
@@ -1148,19 +1498,19 @@ const OWN_SCOPES = {
   [`${ACTIVITY}.find`]: scopeOwnList,
   [`${ACTIVITY}.getForCalendar`]: scopeOwnList,
   [`${ACTIVITY}.findOne`]: scopeOwnRow(ACTIVITY),
-  [`${ACTIVITY}.create`]: scopeOwnCreate,
+  [`${ACTIVITY}.create`]: scopeOwnCreateOf(ACTIVITY),
   [`${ACTIVITY}.update`]: scopeOwnRow(ACTIVITY),
   [`${ACTIVITY}.delete`]: scopeOwnRow(ACTIVITY),
   [`${ACTIVITY}.move`]: scopeActivityMove,
   [`${ACTIVITY}.importCalendar`]: scopeActivityImportCalendar,
   [`${TIME_COUNTER}.find`]: scopeOwnList,
   [`${TIME_COUNTER}.findOne`]: scopeOwnRow(TIME_COUNTER),
-  [`${TIME_COUNTER}.create`]: scopeOwnCreate,
+  [`${TIME_COUNTER}.create`]: scopeOwnCreateOf(TIME_COUNTER),
   [`${TIME_COUNTER}.update`]: scopeOwnRow(TIME_COUNTER),
   [`${TIME_COUNTER}.delete`]: scopeOwnRow(TIME_COUNTER),
   [`${WORKDAY_LOG}.find`]: scopeOwnList,
   [`${WORKDAY_LOG}.findOne`]: scopeOwnRow(WORKDAY_LOG),
-  [`${WORKDAY_LOG}.create`]: scopeOwnCreate,
+  [`${WORKDAY_LOG}.create`]: scopeOwnCreateOf(WORKDAY_LOG),
   [`${WORKDAY_LOG}.update`]: scopeOwnRow(WORKDAY_LOG),
   [`${WORKDAY_LOG}.delete`]: scopeOwnRow(WORKDAY_LOG),
   // without the salary fields: the response sanitizer drops them
@@ -1170,7 +1520,7 @@ const OWN_SCOPES = {
   // already keeps their changes to admins (issues/140)
   [`${FESTIVE}.find`]: scopeFestiveList,
   [`${FESTIVE}.findOne`]: scopeFestiveRow,
-  [`${FESTIVE}.create`]: scopeOwnCreate,
+  [`${FESTIVE}.create`]: scopeOwnCreateOf(FESTIVE),
   [`${FESTIVE}.update`]: scopeOwnRow(FESTIVE),
   [`${FESTIVE}.delete`]: scopeOwnRow(FESTIVE),
 };
@@ -1183,12 +1533,14 @@ const MEMBER_SCOPES = {
   [`${ORDER}.create`]: scopeOrderCreate,
   [`${ORDER}.createCSV`]: scopeOrderCsv,
   [`${ORDER}.pdfmultiple`]: scopeOrderPdf,
+  [`${ORDER}.checkMultidelivery`]: scopeMemberMultidelivery,
   [`${ORDER}.table`]: scopeOrderTable,
   // the figures over the member's own orders, like the list (issues/177)
-  [`${ORDER}.totals`]: scopeOrderList,
+  // (only those she owns, not the ones she reaches as pickup point, issues/396)
+  [`${ORDER}.totals`]: scopeOwnOrderFigures,
   // the list's total and status tabs over her own orders, like find (issues/319)
-  [`${ORDER}.tableCount`]: scopeOrderList,
-  [`${ORDER}.tableStatusCounts`]: scopeOrderList,
+  [`${ORDER}.tableCount`]: scopeOwnOrderFigures,
+  [`${ORDER}.tableStatusCounts`]: scopeOwnOrderFigures,
   [`${INCIDENCE}.find`]: scopeIncidenceList,
   [`${INCIDENCE}.findOne`]: scopeIncidenceRow,
   [`${INCIDENCE}.update`]: scopeIncidenceRow,
@@ -1212,8 +1564,30 @@ const DRIVER_SCOPES = {
   'api::orders-import.orders-import.create': asMember(scopeOrdersImport),
 };
 
+/**
+ * «Factures» asks which documents are assigned to a budget line with
+ * `_limit=-1` only. Any other filter (an amount, the invoice's contact) made it
+ * a yes/no oracle on the entity's budget lines (issues/391): they are dropped.
+ */
+function scopeAssignedIncomes(ctx, next) {
+  const { _limit } = ctx.query || {};
+  ctx.query = _limit !== undefined ? { _limit } : {};
+  return next();
+}
+
 // for every user without full access
+/**
+ * A member's «Factures» for someone with `orders` who isn't counted as a member
+ * (a driver who is a member too, issues/401): her own invoices, as for members.
+ * The office reads them all.
+ */
+const ownInvoicesUnlessOffice = (scope) => (ctx, next, opts) =>
+  opts.permissions.includes('orders_admin') ? next() : scope(ctx, next, opts);
+
 const GENERAL_SCOPES = {
+  'api::emitted-invoice.emitted-invoice.findBasic': ownInvoicesUnlessOffice(scopeEmittedInvoiceList),
+  'api::received-income.received-income.findBasic': ownInvoicesUnlessOffice(scopeInvoiceList),
+  'api::phase-income.phase-income.findAssigned': scopeAssignedIncomes,
   [`${PIVOT_VIEW}.find`]: scopePivotViewList,
   [`${PIVOT_VIEW}.findOne`]: scopePivotViewRow,
   [`${PIVOT_VIEW}.update`]: scopePivotViewRow,
@@ -1235,11 +1609,77 @@ const OWN_DATA_ACTIONS = new Set([
   'plugin::users-permissions.user.defaultPickup',
   'plugin::users-permissions.user.updateDefaultPickup',
   'plugin::users-permissions.user.defaultPickups',
+  // figures over her own orders, or about herself (scoped above), not order
+  // rows: read as orders, their `price` / discounts were dropped (issues/396)
+  `${ORDER}.totals`,
+  `${ORDER}.tableCount`,
+  `${ORDER}.tableStatusCounts`,
+  `${ORDER}.checkMultidelivery`,
+  `${ORDER}.collectionPointRoutes`,
+  `${ORDER}.pdfmultiple`,
 ]);
 
 // Flags the server sets on the data it writes itself; never from a request
 // (issues/375): `_internal: true` skipped the price of a member's CSV order.
 const SERVER_ONLY_KEYS = ['_internal', '_previousOrderData', '_incidencesToProcess'];
+
+// Fields of a type that only the server writes, whoever sends the request:
+// the path of the drawn PDF, which the invoice e-mail reads from disk
+// (issues/385). The front sends back the value it got; it is dropped.
+const SERVER_ONLY_FIELDS = {
+  'api::emitted-invoice.emitted-invoice': ['pdf'],
+  'api::quote.quote': ['pdf'],
+};
+
+// ---------------------------------------------------------------------------
+// Mail volume (issues/394): each «Contacta» message and each new incidence
+// sends a mail to the office. Users without full access get a cap per hour.
+// ---------------------------------------------------------------------------
+const MAIL_LIMITS = { contact: 10, incidence: 30 };
+const HOUR = 60 * 60 * 1000;
+const sentMails = new Map();
+
+function countMails(kind, userId, n, now = Date.now()) {
+  if (!n) return;
+  const key = `${kind}:${userId}`;
+  const recent = (sentMails.get(key) || []).filter((t) => now - t < HOUR);
+  if (recent.length + n > MAIL_LIMITS[kind]) {
+    sentMails.set(key, recent);
+    throw new errors.RateLimitError("Massa missatges en poca estona: torna-ho a provar d'aquí a una estona");
+  }
+  for (let i = 0; i < n; i++) recent.push(now);
+  sentMails.set(key, recent);
+}
+
+function limitMails(ctx, action, userId) {
+  if (action === 'api::form-submission.form-submission.create') countMails('contact', userId, 1);
+  if (action === `${ORDER}.create` || action === `${ORDER}.update`) {
+    const incidences = payloadOf(ctx).incidences;
+    if (Array.isArray(incidences)) {
+      countMails('incidence', userId, incidences.filter((i) => i && typeof i === 'object' && i.id === undefined).length);
+    }
+  }
+}
+
+/** Who saved a pivot view is the server's to say (issues/394). */
+function stampPivotViewOwner(ctx, action, user) {
+  if (!action || !action.startsWith(`${PIVOT_VIEW}.`) || !['POST', 'PUT'].includes(ctx.method)) return;
+  const payload = payloadOf(ctx);
+  delete payload.owner_user;
+  if (action === `${PIVOT_VIEW}.create` && user) payload.owner_user = user.id;
+}
+
+function dropServerOnlyFields(ctx, action) {
+  const uid = action && action.slice(0, action.lastIndexOf('.'));
+  const fields = SERVER_ONLY_FIELDS[uid];
+  if (!fields || !['POST', 'PUT', 'PATCH'].includes(ctx.method)) return;
+  const body = ctx.request && ctx.request.body;
+  for (const target of [body, body && body.data]) {
+    if (target && typeof target === 'object' && !Array.isArray(target)) {
+      for (const field of fields) delete target[field];
+    }
+  }
+}
 
 /**
  * Drops the server-only flags from the request body at any depth (a CSV order
@@ -1271,6 +1711,68 @@ function refuseForbiddenFilters(ctx, names) {
   if (field) throw new errors.ValidationError(`No es pot filtrar ni ordenar per «${field}»`);
 }
 
+// ---------------------------------------------------------------------------
+// Filters that answer questions about hidden data (issues/391).
+// ---------------------------------------------------------------------------
+
+// What a member may filter or sort users by: what she sees of them.
+const MEMBER_USER_FIELDS = new Set(['id', 'documentId', 'username', 'fullname', 'display_name']);
+
+/**
+ * A member sees only the names of the other users, but could filter them by
+ * e-mail (character by character), permissions or discounts, directly or
+ * through a relation (`contacts?_where[owner.email_contains]=…`). Every filter
+ * and sort path is followed along the schema from the route's model; on a user
+ * only the fields she sees are allowed.
+ */
+function refuseHiddenUserFilters(strapi, rootUid, ctx) {
+  if (!rootUid) return;
+  for (const path of filterPaths(ctx.query || {})) {
+    let model = strapi.contentTypes && strapi.contentTypes[rootUid];
+    let uid = rootUid;
+    for (const segment of path) {
+      if (uid === USER && !MEMBER_USER_FIELDS.has(segment)) {
+        throw new errors.ValidationError(`No es pot filtrar ni ordenar per «${segment}»`);
+      }
+      const attribute = model && model.attributes && model.attributes[segment];
+      if (!attribute) break;
+      if (attribute.type === 'relation' && attribute.target) {
+        uid = attribute.target;
+        model = strapi.contentTypes[uid];
+      } else if (attribute.type === 'component') {
+        uid = attribute.component;
+        model = strapi.components && strapi.components[uid];
+      } else break;
+    }
+  }
+}
+
+// The fields `_q` searches for users without full access: what they see.
+// db.query's own `_q` searched every text and number column, a project's
+// internal notes and amounts included (issues/391).
+// Members get only the projects' names (projects/basic, issues/383); workers
+// and the logistics staff also their description and purpose.
+const SEARCH_FIELDS = {
+  'api::project.project': ['name', 'description', 'purpose', 'grantable_reference'],
+  'api::contact.contact': ['name', 'trade_name', 'nif', 'city', 'contact_person', 'email', 'contact_email', 'phone'],
+};
+const MEMBER_SEARCH_FIELDS = { ...SEARCH_FIELDS, 'api::project.project': ['name'] };
+
+function narrowSearch(ctx, rootUid, member) {
+  const q = ctx.query && ctx.query._q;
+  const fields = (member ? MEMBER_SEARCH_FIELDS : SEARCH_FIELDS)[rootUid];
+  if (q === undefined || !fields) return;
+  const { _q, ...rest } = ctx.query;
+  ctx.query = rest;
+  const term = String(q).trim();
+  if (!term) return;
+  narrowQuery(
+    ctx,
+    { _or: fields.map((field) => ({ [`${field}_contains`]: term })) },
+    { $or: fields.map((field) => ({ [field]: { $containsi: term } })) },
+  );
+}
+
 const RELATION_OPERATIONS = ['connect', 'disconnect', 'set'];
 
 /**
@@ -1292,8 +1794,17 @@ function refuseRelationOperations(strapi, action, ctx) {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       if (RELATION_OPERATIONS.some((op) => op in value)) throw forbidden();
     }
+    // A to-many relation given as one row (`{"incidences": {"id": 1}}` or a bare
+    // id) is a `set` too: a member moved another member's incidence onto her
+    // order (issues/390). The screens send lists (the order form's inline
+    // incidences) or nothing.
+    if (TO_MANY.has(attribute.relation) && value !== null && value !== undefined && !Array.isArray(value)) {
+      throw forbidden();
+    }
   }
 }
+
+const TO_MANY = new Set(['oneToMany', 'manyToMany', 'manyWay', 'morphToMany', 'morphMany']);
 
 function stripMe(body) {
   const me =
@@ -1308,6 +1819,8 @@ module.exports = (config, { strapi }) =>
     const action = actionOf(ctx.state && ctx.state.route);
     const sets = guardSets(strapi);
     cleanServerFlags(ctx, user);
+    dropServerOnlyFields(ctx, action);
+    stampPivotViewOwner(ctx, action, user);
     if (!user || !action) {
       refuseForbiddenFilters(ctx, sets.everybody);
       return next();
@@ -1316,19 +1829,27 @@ module.exports = (config, { strapi }) =>
     const permissions = await appPermissionsOf(strapi, user.id);
     if (!isAllowed(action, permissions)) throw forbidden();
     const full = permissions.some((p) => FULL_ACCESS.includes(p));
+    if (!full) refuseTooManyParams(ctx);
     refuseForbiddenFilters(ctx, full ? sets.everybody : sets.limited);
     if (ORDER_CREATES.has(action)) createdPending(ctx, action);
     // a member's rate is set by her scope (memberRouteRate)
     if (ORDER_WRITES.has(action) && !isOrdersMember(permissions)) await officeRouteRate(strapi, ctx, action);
     if (full) return next();
+    limitMails(ctx, action, user.id);
+    refuseTooManyBoxes(ctx, action);
+    dropCreateIncidences(ctx, action);
     refuseRelationOperations(strapi, action, ctx);
+    if (isOrdersMember(permissions)) refuseHiddenUserFilters(strapi, modelUidOfAction(action), ctx);
+    narrowSearch(ctx, modelUidOfAction(action), isOrdersMember(permissions));
 
     if (action === 'api::me.me.find') {
       await next();
       stripMe(ctx.body);
       return;
     }
+    if (FILE_LINK_SCOPES[action]) await FILE_LINK_SCOPES[action](ctx, { strapi, userId: user.id });
     const member = isOrdersMember(permissions);
+    if (!member && STAFF_CONTACT_SCOPES[action]) await STAFF_CONTACT_SCOPES[action](ctx, { strapi });
     const scope =
       OWN_SCOPES[action] ||
       (member && MEMBER_SCOPES[action]) ||
@@ -1337,18 +1858,23 @@ module.exports = (config, { strapi }) =>
     if (scope) await scope(ctx, next, { strapi, userId: user.id, permissions });
     else await next();
     if (!OWN_DATA_ACTIONS.has(action)) {
+      const body = ctx.body;
+      const sanitizable = body && typeof body === 'object' && !Buffer.isBuffer(body) && typeof body.pipe !== 'function';
+      const ownOrders = member && sanitizable ? await ownOrderIds(strapi, user.id) : null;
       sanitizeResponse(
         strapi,
         modelUidOfAction(action),
         ctx.body,
-        rulesFor({ member, selfId: user.id, permissions }),
+        rulesFor({ member, selfId: user.id, permissions, ownOrders }),
       );
     }
   };
 
 module.exports.actionOf = actionOf;
+module.exports.MAX_BOXES = MAX_BOXES;
 module.exports.MEMBER_SCOPES = MEMBER_SCOPES;
 module.exports.OWN_SCOPES = OWN_SCOPES;
+module.exports.stripMe = stripMe;
 module.exports.DRIVER_SCOPES = DRIVER_SCOPES;
 module.exports.GENERAL_SCOPES = GENERAL_SCOPES;
 // the member's rules, for the integrations API (api/integration), which writes
@@ -1362,3 +1888,4 @@ module.exports.memberRules = {
   MEMBER_CONTACT_FIELDS,
   SHARED_CONTACT_FIELDS,
 };
+module.exports._sentMails = sentMails;

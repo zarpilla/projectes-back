@@ -6,6 +6,7 @@
  */
 const { encryptSecretFields } = require('../../../../services/secret-crypto');
 const { setTimeZone } = require('../../../../services/time-zone');
+const { dropTokensOfMovedUrls } = require('../../../../services/integration-tokens');
 
 const UID = 'api::me.me';
 
@@ -14,6 +15,7 @@ module.exports = {
     encryptSecretFields(event.params.data, UID);
   },
   async beforeUpdate(event) {
+    await dropTokensOfMovedUrls(event.params);
     encryptSecretFields(event.params.data, UID);
   },
   // «Zona horària» applies from the next request on (issues/346)

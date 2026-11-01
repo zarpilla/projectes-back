@@ -36,7 +36,10 @@ const UPLOADS = /^\/uploads\//i;
  */
 function pathsOf(raw) {
   try {
-    return [raw, decodeURIComponent(raw)];
+    const decoded = decodeURIComponent(raw);
+    // …and as the static server resolves it: `/x/%2e%2e/uploads/<key>.p12`
+    // doesn't start with /uploads but is served from there (issues/394)
+    return [raw, decoded, require('path').posix.normalize(decoded)];
   } catch {
     return null;
   }

@@ -14,7 +14,9 @@
  * is enforced here, on the way out, for everything under /api.
  */
 
-const SECRET_KEYS = ['password', 'resetPasswordToken', 'confirmationToken'];
+// (`reset_password_requested_at`: private, but custom endpoints that populate a
+// user let it through, e.g. projects/basic?populate=* → the leader's, issues/401)
+const SECRET_KEYS = ['password', 'resetPasswordToken', 'confirmationToken', 'reset_password_requested_at'];
 const MAX_DEPTH = 40;
 
 function stripUserSecrets(value, depth = 0) {

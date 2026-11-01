@@ -106,16 +106,48 @@ const normalizeEmailBody = (options) => {
   return { ...options, html: htmlBody, text: textBody };
 };
 
+// "Name <address>" or a bare address → { name, email }, or null.
+function parseAddress(value) {
+  const text = String(value || '').trim();
+  const named = text.match(/^(.*)<([^<>\s]+@[^<>\s]+)>$/);
+  if (named) return { name: named[1].trim().replace(/^"(.*)"$/, '$1'), email: named[2] };
+  return /^[^<>\s]+@[^<>\s]+$/.test(text) ? { name: '', email: text } : null;
+}
+
+/** The server's own sender: EMAIL_FROM, or the SMTP account's address. */
+const serverSender = (env = process.env) => parseAddress(env.EMAIL_FROM) || parseAddress(env.SMTP_USER);
+
 /**
- * Routes every send of the email plugin's provider through normalizeEmailBody.
- * Runs from the app bootstrap, after the email plugin has created its provider.
+ * Every tenant sends through the same SMTP account, and an entity's admin
+ * writes the sender of its invoices (`me.invoice_email`): any address could go
+ * out as From, @esstrapis.org included (issues/394). The From is always the
+ * server's own address; the one asked for becomes the display name and the
+ * Reply-To, so answers still reach the entity. Without a server address
+ * configured nothing changes.
+ */
+function senderOf(options, env = process.env) {
+  const own = serverSender(env);
+  const asked = parseAddress(options && options.from);
+  if (!own || !asked || asked.email.toLowerCase() === own.email.toLowerCase()) return options;
+  const display = (asked.name || asked.email).replace(/["\\]/g, '');
+  return {
+    ...options,
+    from: `"${display}" <${own.email}>`,
+    replyTo: options.replyTo || asked.email,
+  };
+}
+
+/**
+ * Routes every send of the email plugin's provider through normalizeEmailBody
+ * and senderOf. Runs from the app bootstrap, after the email plugin has created
+ * its provider.
  */
 const wrapEmailProvider = (strapiInstance) => {
   const provider = strapiInstance.plugin('email')?.provider;
   if (!provider || provider.normalizesBody) return;
   const send = provider.send.bind(provider);
-  provider.send = (options) => send(normalizeEmailBody(options));
+  provider.send = (options) => send(senderOf(normalizeEmailBody(options)));
   provider.normalizesBody = true;
 };
 
-module.exports = { buildEmailBody, htmlToText, normalizeEmailBody, wrapEmailProvider, escapeHtml };
+module.exports = { buildEmailBody, htmlToText, normalizeEmailBody, wrapEmailProvider, escapeHtml, senderOf, parseAddress };

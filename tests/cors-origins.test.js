@@ -12,7 +12,11 @@ function strapiWith(frontUrls) {
     db: { query: (uid) => ({ findMany: async () => (frontUrls[uid] || []).map((front_url) => ({ front_url })) }) },
   };
 }
-const ctxFrom = (origin) => ({ get: (h) => (h === 'Origin' ? origin : '') });
+const ctxFrom = (origin, host = LOCAL_ORIGIN.test(origin) ? 'localhost:1337' : 'gestio.ladiligencia.coop') => ({
+  host,
+  get: (h) => (h === 'Origin' ? origin : h === 'Host' ? host : ''),
+});
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)/;
 
 describe('CORS origins (issues/383)', () => {
   let cors;
@@ -52,5 +56,16 @@ describe('CORS origins (issues/383)', () => {
 
   it('stays open on an instance with no URL at all yet', async () => {
     expect(await cors.corsOrigin(ctxFrom('https://evil.example'), strapiWith({}), {})).toBe('*');
+  });
+});
+
+// issues/394: a localhost page is not a front end of a production instance
+describe('localhost origins (issues/394)', () => {
+  it('are refused when the API is reached on its public host', async () => {
+    jest.resetModules();
+    const c = require('../src/services/cors-origins');
+    const s = { db: { query: () => ({ findMany: async () => [{ front_url: 'https://gestio.ladiligencia.coop/' }] }) }, log: { warn: jest.fn() } };
+    const list = await c.corsOrigin(ctxFrom('http://localhost:8080', 'gestio.ladiligencia.coop'), s, {});
+    expect(list).not.toContain('http://localhost:8080');
   });
 });

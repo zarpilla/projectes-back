@@ -124,14 +124,47 @@ const NESTED_PROJECT_DATA = [
   'grantable_contacts',
 ];
 
+// The contacts of a nested project: users without full access get their names
+// only. `tasks?populate[project][populate][clients]` gave a worker the clients'
+// NIF, e-mail, phone, address, notes and partner amount (issues/399).
+const NESTED_PROJECT_CONTACTS = ['clients', 'intercooperations', 'grantable_leader'];
+const CONTACT_NAME_FIELDS = ['id', 'documentId', 'name', 'trade_name'];
+
+// The partners' money on a contact: the office (Sòcies) and full access only (issues/399)
+const PARTNER_MONEY = ['partner_amount', 'partner_amount_date', 'capital_contributions', 'followup_date'];
+
+const contactNames = (value) => {
+  const name = (c) => (c && typeof c === 'object' ? Object.fromEntries(CONTACT_NAME_FIELDS.filter((f) => f in c).map((f) => [f, c[f]])) : c);
+  return Array.isArray(value) ? value.map(name) : name(value);
+};
+
+/** A project nested in another answer, for users without full access. */
+function nestedProject(row, member) {
+  for (const field of NESTED_PROJECT_CONTACTS) if (field in row) row[field] = contactNames(row[field]);
+  // members get project names only (issues/383)
+  return { drop: [...PROJECT_FINANCES, ...NESTED_PROJECT_DATA, 'strategies', ...(member ? ['description', 'purpose'] : [])] };
+}
+
+// What a member doesn't get of another member's order (issues/388)
+const OTHER_ORDER_MONEY = [
+  'emitted_invoice',
+  'emitted_invoice_datetime',
+  'price',
+  'finalPrice',
+  'multidelivery_discount',
+  'contact_pickup_discount',
+  'volume_discount',
+  'late_surcharge',
+];
+
 // The amounts of a budget line and of its planned hours (the hours stay)
 const LINE_AMOUNTS = ['amount', 'total_amount', 'bank_account', 'invoice', 'income', 'vat_pct'];
 
 /**
  * The rules for a user without full access: `member` for `orders` only,
- * `selfId` the user's own id.
+ * `selfId` the user's own id, `ownOrders` (members) the ids of her orders.
  */
-function rulesFor({ member = false, selfId = null, permissions = [] } = {}) {
+function rulesFor({ member = false, selfId = null, permissions = [], ownOrders = null } = {}) {
   const others = member ? { keep: ['id', 'documentId', 'username', 'fullname', 'display_name'] } : { drop: USER_PRIVATE };
   const rules = {
     [USER]: { pick: (row) => (selfId !== null && row.id === selfId ? { drop: SALARY } : others) },
@@ -141,7 +174,7 @@ function rulesFor({ member = false, selfId = null, permissions = [] } = {}) {
     // (`/task-comments` is theirs), `populate[task_comments]` gave them to a worker (issues/220)
     'api::task.task': { drop: ['task_comments'] },
     [PROJECT]: {
-      pick: (row, nested) => ({ drop: nested ? [...PROJECT_FINANCES, ...NESTED_PROJECT_DATA] : PROJECT_FINANCES }),
+      pick: (row, nested) => (nested ? nestedProject(row, member) : { drop: PROJECT_FINANCES }),
     },
     'api::phase-income.phase-income': { drop: LINE_AMOUNTS, nestedOnly: true },
     'api::phase-expense.phase-expense': { drop: LINE_AMOUNTS, nestedOnly: true },
@@ -157,18 +190,30 @@ function rulesFor({ member = false, selfId = null, permissions = [] } = {}) {
   // whole invoice (issues/188)
   if (!permissions.some((p) => INVOICE_READERS.includes(p))) {
     rules['api::order.order'] = { drop: ['emitted_invoice'] };
+  } else if (member) {
+    // A member reaches other members' orders delivered to her point (pickup
+    // access): their invoice, price and discounts are not hers (issues/388).
+    // An order whose owner isn't in the answer (`populate` without `owner`) is
+    // hers only if it is among `ownOrders`, the ids she owns (issues/396).
+    rules['api::order.order'] = {
+      pick: (row) => {
+        const owner = row.owner && typeof row.owner === 'object' ? row.owner.id : row.owner;
+        if (owner !== undefined && owner !== null) return owner === selfId ? { drop: [] } : { drop: OTHER_ORDER_MONEY };
+        return ownOrders && ownOrders.has(row.id) ? { drop: [] } : { drop: OTHER_ORDER_MONEY };
+      },
+    };
+    // the office's notes on an invoice (issues/388), and on her received incomes (issues/401)
+    rules['api::emitted-invoice.emitted-invoice'] = { drop: ['comments_internal'] };
+    rules['api::received-income.received-income'] = { drop: ['comments_internal'] };
   }
   const contactDrop = [];
   if (member) {
     // the office's data on a contact
-    contactDrop.push(
-      'partner_amount',
-      'partner_amount_date',
-      'capital_contributions',
-      'followup_date',
-      'projects',
-      'projectes',
-    );
+    contactDrop.push(...PARTNER_MONEY, 'projects', 'projectes');
+  } else if (!permissions.includes('orders_admin')) {
+    // drivers and workers read the contacts they deliver to or work for, not
+    // the partners' money (issues/399)
+    contactDrop.push(...PARTNER_MONEY);
   }
   // the energy community's data on its members (their documents: ID cards,
   // payment receipts), only for `admin_energy` (and full access, never sanitized)
@@ -238,6 +283,11 @@ function sanitizeResponse(strapi, uid, body, rules) {
   if (!uid || !body || typeof body !== 'object') return;
   // a PDF or a file
   if (Buffer.isBuffer(body) || typeof body.pipe === 'function') return;
+  // `{ invoices: [...] }` (emitted-invoices/pending-provider): the rows, not the wrapper (issues/401)
+  if (!Array.isArray(body) && !('data' in body) && Array.isArray(body.invoices)) {
+    walk(strapi, uid, body.invoices, rules, false);
+    return;
+  }
   const data = !Array.isArray(body) && 'data' in body ? body.data : body;
   walk(strapi, uid, data, rules, false);
 }

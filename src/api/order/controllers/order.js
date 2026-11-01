@@ -272,6 +272,12 @@ async function adaptFinalPriceWhere(where) {
   where.id_in = rows.length ? rows.map((r) => r.id) : [0];
 }
 
+// Pages and labels of the labels PDF: one per box, in a synchronous loop. Capped
+// so a huge count can't hang the server (issues/397; writes refuse more than
+// 1,000 boxes for users without full access, real orders have a few dozen).
+const MAX_LABEL_BOXES = 1000;
+const boxesOf = (units) => Math.min(Math.max(0, Math.floor(Number(units)) || 0), MAX_LABEL_BOXES);
+
 module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   /**
    * find override — ports the v3 afterFind hook (removed in v5): computes the
@@ -659,7 +665,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
         legal.push({ value: 'RECOLLIDA:', color: 'primary', weight: 'bold' });
         for (const line of order.lines) {
           if (line.units > 0) {
-            for (let i = 0; i < line.units; i++) {
+            for (let i = 0; i < boxesOf(line.units); i++) {
               parts.push({
                 value: `CAIXA ${i + 1}/${line.units} - ${line.name} - ${line.nif}`,
                 color: 'secondary',
@@ -702,7 +708,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
           },
         },
         data: {
-          pages: order.units,
+          pages: boxesOf(order.units),
           invoice: {
             name: 'COMANDA',
             header: [...invoiceHeader],

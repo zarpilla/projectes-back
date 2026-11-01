@@ -13,6 +13,7 @@
 const _ = require('lodash');
 const moment = require('moment');
 const ical = require('node-ical');
+const { fetchOutboundText } = require('../../../services/outbound-url');
 const { RRule } = require('rrule');
 const { google } = require('googleapis');
 const fs = require('fs');
@@ -22,6 +23,8 @@ const { adaptQuery } = require('../../../services/query-adapter');
 const { scheduleRefresh } = require('../../project/services/totalsRefreshScheduler');
 const { getMe } = require('../../../services/me-settings');
 const { withBadQueryAs400 } = require('../../../services/query-errors');
+
+const MAX_IMPORT_DAYS = 2 * 366;
 
 module.exports = createCoreController('api::activity.activity', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -123,6 +126,11 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
     }
     if (to && !moment(to, 'YYYY-MM-DD', true).isValid()) {
       return ctx.badRequest('Invalid to date format. Use YYYY-MM-DD');
+    }
+    // the hours screen asks for the days it shows (a year at most); recurring
+    // events are expanded over the whole range (issues/401)
+    if (toDate.diff(fromDate, 'days') > MAX_IMPORT_DAYS) {
+      return ctx.badRequest('El període a importar no pot passar de dos anys');
     }
 
     const googleCredentials = me && me.google_credentials ? me.google_credentials : null;
@@ -251,7 +259,7 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
         }
       } else if (user.ical && user.ical.startsWith('http')) {
         try {
-          const resp = await ical.async.fromURL(user.ical);
+          const resp = await ical.async.parseICS(await fetchOutboundText(user.ical));
           for (const k in resp) {
             if (resp[k].type !== 'VEVENT') continue;
             let hasDeclined = false;
@@ -280,7 +288,7 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
 
     if (me && !useGoogleCalendar && me.ical && me.ical.startsWith('http')) {
       try {
-        const resp = await ical.async.fromURL(me.ical);
+        const resp = await ical.async.parseICS(await fetchOutboundText(me.ical));
         for (const k in resp) {
           if (resp[k].type !== 'VEVENT') continue;
           let isAttendee = false;

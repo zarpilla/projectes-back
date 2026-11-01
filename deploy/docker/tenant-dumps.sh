@@ -37,6 +37,18 @@ db_of() {
   sed -n 's/^DATABASE_NAME=//p' "$BACK_DIR/envs/$1.env" 2>/dev/null | tail -1 | tr -d "\"' \r"
 }
 
+# The copy the entity's admins download («Còpia de seguretat») carries no
+# password hashes nor reset/confirmation tokens (issues/394): an admin got
+# everyone's bcrypt hashes. On the users table's INSERT lines, bcrypt hashes
+# and 128/40-hex tokens become NULL. The whole dump stays in .full/ for borg.
+without_user_secrets() {
+  sed -E "/^INSERT INTO \`users-permissions_user\` / {
+    s/'\\\$2[aby]\\\$[0-9]{2}\\\$[./A-Za-z0-9]{53}'/NULL/g
+    s/'[0-9a-f]{128}'/NULL/g
+    s/'[0-9a-f]{40}'/NULL/g
+  }"
+}
+
 dump_one() {
   local tenant=$1 db dir tmp ignore
   db=$(db_of "$tenant")
@@ -45,6 +57,10 @@ dump_one() {
   dir="$OUT/$tenant"
   mkdir -p "$dir" && chown "$OWNER" "$dir" && chmod 700 "$dir"
   tmp="$dir/.latest.sql.gz.tmp"
+  # the whole dump, for borg only: root's, never mounted into the app (issues/394)
+  full_dir="$OUT/.full/$tenant"
+  mkdir -p "$full_dir" && chmod 700 "$OUT/.full" "$full_dir"
+  full_tmp="$full_dir/.latest.sql.gz.tmp"
 
   ignore=$(mysql -N -B -e "
     SELECT CONCAT('--ignore-table=', table_schema, '.', table_name)
@@ -58,13 +74,16 @@ dump_one() {
   local start=$SECONDS
   # shellcheck disable=SC2086  # one --ignore-table=… word per line
   if nice -n 19 ionice -c3 mysqldump --single-transaction --quick --routines --triggers \
-      --no-tablespaces $ignore "$db" | nice -n 19 gzip -6 > "$tmp" \
+      --no-tablespaces $ignore "$db" | nice -n 19 gzip -6 > "$full_tmp" \
+     && [ -s "$full_tmp" ] && gzip -t "$full_tmp" \
+     && zcat "$full_tmp" | without_user_secrets | nice -n 19 gzip -6 > "$tmp" \
      && [ -s "$tmp" ] && gzip -t "$tmp"; then
+    chmod 600 "$full_tmp" && mv -f "$full_tmp" "$full_dir/latest.sql.gz"
     chown "$OWNER" "$tmp" && chmod 600 "$tmp"
     mv -f "$tmp" "$dir/latest.sql.gz"
     log "$tenant ($db) $(du -h "$dir/latest.sql.gz" | cut -f1) in $((SECONDS - start)) s"
   else
-    rm -f "$tmp"
+    rm -f "$tmp" "$full_tmp"
     log "ERROR $tenant ($db): dump failed, previous copy kept"
     return 1
   fi

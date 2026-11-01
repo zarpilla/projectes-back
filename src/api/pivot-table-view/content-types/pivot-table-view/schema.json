@@ -19,6 +19,10 @@
     },
     "config": {
       "type": "text"
+    },
+    "owner_user": {
+      "type": "integer",
+      "private": false
     }
   }
 }

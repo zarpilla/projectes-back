@@ -76,7 +76,8 @@ describe('GET /orders/totals (issues/177)', () => {
     for (const p of ['orders', 'orders_admin', 'orders_delivery', 'projects']) expect(isAllowed(action, [p])).toBe(true);
     expect(isAllowed(action, ['hours'])).toBe(false);
     const { MEMBER_SCOPES } = require('../src/middlewares/app-permissions');
-    expect(MEMBER_SCOPES[action]).toBe(MEMBER_SCOPES[`${ORDER}.find`]);
+    // the orders she owns (issues/396: not those she reaches as pickup point)
+    expect(MEMBER_SCOPES[action].name).toBe('scopeOwnOrderFigures');
   });
 
   it('is granted to the authenticated role', () => {

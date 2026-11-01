@@ -132,3 +132,38 @@ describe('TLS to AEAT and FACe (issues/381)', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * issues/394 (security review round 2, 2026-10-31): the URL parser writes
+ * `https://[::ffff:127.0.0.1]` as `[::ffff:7f00:1]`, which the regex check
+ * missed; NAT64, 6to4, IPv4-compatible and site-local forms too.
+ */
+describe('IPv6 forms that carry a private IPv4 (issues/394)', () => {
+  const { isPrivateAddress, checkBaseUrl } = require('../src/services/outbound-url');
+  it.each([
+    ['::ffff:7f00:1', true],
+    ['::ffff:a9fe:a9fe', true],
+    ['::7f00:1', true],
+    ['64:ff9b::7f00:1', true],
+    ['2002:7f00:1::', true],
+    ['fec0::1', true],
+    ['2001::1', true],
+    ['64:ff9b::808:808', false],
+    ['2002:808:808::1', false],
+    ['2a00:1450:4003:80b::200e', false],
+  ])('%s private: %s', (ip, expected) => {
+    expect(isPrivateAddress(ip)).toBe(expected);
+  });
+
+  it('refuses a URL written with the hex mapped form', () => {
+    expect(() => checkBaseUrl('https://[::ffff:127.0.0.1]/x')).toThrow(/not a public address/);
+  });
+});
+
+describe('calendar URLs (issues/394)', () => {
+  it('go through the same checks', async () => {
+    const { fetchOutboundText } = require('../src/services/outbound-url');
+    await expect(fetchOutboundText('http://127.0.0.1:2019/config/')).rejects.toThrow(/https/);
+    await expect(fetchOutboundText('https://[::ffff:7f00:1]/cal.ics')).rejects.toThrow(/not a public address/);
+  });
+});

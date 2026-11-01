@@ -110,7 +110,9 @@ describe('GET /orders/table/count (issues/319)', () => {
   it('keeps a member to her own orders, like find', () => {
     jest.resetModules();
     const { MEMBER_SCOPES } = require('../src/middlewares/app-permissions');
-    expect(MEMBER_SCOPES[`${ORDER}.tableCount`]).toBe(MEMBER_SCOPES[`${ORDER}.find`]);
-    expect(MEMBER_SCOPES[`${ORDER}.tableStatusCounts`]).toBe(MEMBER_SCOPES[`${ORDER}.find`]);
+    // her own orders only, not those she reaches as pickup point (issues/396)
+    expect(MEMBER_SCOPES[`${ORDER}.tableCount`]).toBe(MEMBER_SCOPES[`${ORDER}.totals`]);
+    expect(MEMBER_SCOPES[`${ORDER}.tableStatusCounts`]).toBe(MEMBER_SCOPES[`${ORDER}.totals`]);
+    expect(MEMBER_SCOPES[`${ORDER}.totals`].name).toBe('scopeOwnOrderFigures');
   });
 });

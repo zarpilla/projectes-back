@@ -76,7 +76,7 @@ cd /var/www/esstrapis-back
 ```
 
 `create-tenant.sh`:
-1. writes `envs/<name>.env`: the shared settings (SMTP, API keys, `TICKETS_SSO_KEY`, `DOCS_SSO_KEY`) copied from `envs/_shared.env` (see below), plus new secrets and a new database password;
+1. writes `envs/<name>.env`: the shared settings (SMTP, API keys) copied from `envs/_shared.env` (see below), new secrets, a new database password, and the tenant's own `TICKETS_SSO_KEY` and `DOCS_SSO_KEY` from `tenant-sso-keys.sh` (see "SSO keys");
 2. creates the empty database `<name>_v5` and the MySQL user `<name>` (it asks for the MySQL admin password);
 3. adds the tenant to `tenants.conf` on the next free port, starts `<name>-blue`, waits for it and points the proxy at it;
 4. creates the front in `/var/www/projectes-<name>/docker`, starts it and adds it to the front's `sites.conf`;
@@ -84,9 +84,9 @@ cd /var/www/esstrapis-back
 
 Each step is skipped when already done, so a run that failed halfway is simply run again. It never drops or overwrites anything, and refuses a name whose database, MySQL user, directory or env file already exists.
 
-No other tenant is copied. The database starts empty: the first boot creates the tables and seeds what an instance needs (catalogs, Configuració General with demo values, home menu, the current year and its invoice series; see `src/services/seed-new-database.js`). With `--user-email`, that boot also creates a first app user with the `admin` permission; the script prints its generated password once and then removes `SEED_USER_*` from the env file. The Strapi admin user is registered at `/admin` as usual.
+No other tenant is copied. The database starts empty: the first boot creates the tables and seeds what an instance needs (catalogs, Configuració General with demo values, home menu, the current year and its invoice series; see `src/services/seed-new-database.js`). With `--user-email`, that boot also creates a first app user with the `admin` permission; the script prints its generated password once and then removes `SEED_USER_*` from the env file. The Strapi admin user is created from the command line, `docker exec esstrapis-back-<name>-blue npx strapi admin:create-user --email … --firstname … --password …`: nginx refuses `/admin/register-admin`, so a new site can't be claimed by whoever reaches it first (issues/393). Ports: the front container listens on 127.0.0.1 only and every backend gets `HOST=127.0.0.1` from render.sh.
 
-`envs/_shared.env` holds only what every tenant shares: SMTP and e-mail settings, API keys (`ZAI_API_KEY`, `SENDGRID_API_KEY`), `TICKETS_SSO_KEY`, `DOCS_SSO_KEY`, database host/client/pool, log settings, `IS_PROXIED`. No tenant uses it (render.sh reads `envs/<name>.env` by tenant name, and `_shared` can't be a tenant name). When a shared value changes, change it there too: `esstrapis-docs/deploy/set-docs-key.sh` already does (it updates every `envs/*.env`). Anything tenant-specific in it is dropped by `create-tenant.sh` anyway (URL, database name/user/password, secrets).
+`envs/_shared.env` holds only what every tenant shares: SMTP and e-mail settings, API keys (`ZAI_API_KEY`, `SENDGRID_API_KEY`), database host/client/pool, log settings, `IS_PROXIED`. It never holds the SSO keys. No tenant uses it (render.sh reads `envs/<name>.env` by tenant name, and `_shared` can't be a tenant name). When a shared value changes, change it there too. Anything tenant-specific in it is dropped by `create-tenant.sh` anyway (URL, database name/user/password, secrets).
 
 It holds the deploy lock while the backend starts (a few minutes on the first boot), so a CI deploy arriving in that window fails with "Another deploy is running" and has to be rerun.
 
@@ -127,3 +127,29 @@ Every `main` commit has its image on Docker Hub (`webcoop/esstrapis-back:v5-<sha
 Migrations only go forward, so not every older image can come back:
 
 - **Before issues/328 (back `179d1d2`, 2026-10-24)**: those images read the project totals and `dirty` from columns of `projects`. issues/328 moved them to `project_totals`, and issues/329 (migration `2026.10.30T00.00.00.drop-old-project-total-columns`) dropped the old columns, so an image from before 328 fails on every project read. Rolling back that far means adding the columns back first (the types are in `createTable`, `src/api/project/services/project-totals.js`), copying the values from `project_totals`, and `UPDATE projects SET dirty = 1` so its cron recomputes them.
+
+## SSO keys (tickets and docs)
+
+Each site keeps a **master key** in its own `.env` (`/var/www/tiquets`, `/var/www/docs`). A tenant only holds the key derived from it for its own SSO tenant, so reading one tenant's env doesn't let anyone sign in as another (issues/404). Its tokens start with the tenant (`<tenant>.<token>`) and the site checks the tenant inside matches. Never copy a master key to `envs/`.
+
+- `./tenant-sso-keys.sh <tenant>...` sets a tenant's keys; `create-tenant.sh` runs it. The user running it must be able to read both sites' `.env`. If it warns, fix that and run it by hand.
+- `./tenant-sso-keys.sh --all` does every tenant in `tenants.conf`.
+- `./tenant-sso-keys.sh --rotate` makes new master keys, turns off the old shared key (`SSO_SHARED_KEY_ALLOWED=0`), restarts both sites and does every tenant. SSO fails until the next backend deploy loads the new envs: do it right before one. Rotate if a master key may have leaked.
+
+A tenant on a preview build older than these tokens can't open Tiquets or Documentació until that build has main merged.
+
+The same e-mail can be in several tenants: the tickets site keeps one user, and each session only reaches the tickets of the tenant it came from.
+
+## Checklist for a new tenant
+
+After `create-tenant.sh`:
+
+1. Copies on the server: the scripts here are copied by hand (`render.sh`, `deploy.sh`, `create-tenant.sh`, `remove-tenant.sh`, `tenant-dumps.sh`, `tenant-sso-keys.sh`, `security-check.sh`). A push doesn't update them.
+2. Create the first Strapi admin from the command line, as the script prints. Web registration is blocked.
+3. Open the app, then **Tiquets** and **Documentació**, as a user of the tenant.
+4. `sudo ./security-check.sh --fix`: deletes Strapi's default API tokens (a new tenant always gets them, and they skip the app's permissions) and sets the env file to 600. Then check it reports no secret shared with another tenant.
+5. `docker ps --format '{{.Names}}\t{{.Ports}}'`: the new front must show `127.0.0.1:<port>`. Docker publishes ports past UFW.
+
+`--fix` also adds `/etc/nginx/conf.d/esstrapis-security.conf` (no nginx version, HSTS) once for all sites. Sites created by `create-tenant.sh` already have these and `client_max_body_size 100m`.
+
+Caddy's admin API is a socket inside the proxy container (`/config/caddy-admin.sock`), so `caddy reload` only works through `docker compose exec`.

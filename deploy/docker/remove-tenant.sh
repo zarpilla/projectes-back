@@ -97,7 +97,10 @@ drop_line "$FRONT_DIR/sites.conf"
 drop_line "$FRONT_DIR/pinned.conf"
 ./render.sh >/dev/null
 docker compose exec -T proxy caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1 || die "Invalid Caddyfile after render.sh (backups: *.bak-$STAMP)"
-docker compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile 2>&1 | grep -vE '^\s*$|obsolete|"level":"(info|warn)"' || true
+# the admin API moved to a socket (issues/404); a proxy still on the old
+# 127.0.0.1:2019 is reloaded there once, and listens on the socket after
+{ docker compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null \
+  || docker compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile --address 127.0.0.1:2019; } 2>&1 | grep -vE '^\s*$|obsolete|"level":"(info|warn)"' || true
 flock -u 9
 
 # ── 4. archive ─────────────────────────────────────────────────────────────────

@@ -43,16 +43,47 @@ function ipv4Private(ip) {
   );
 }
 
-/** Whether `ip` is loopback, private, link-local or otherwise not public. */
+/** The eight 16-bit groups of an IPv6 address (dotted IPv4 tail included), or null. */
+function ipv6Groups(ip) {
+  let text = String(ip).toLowerCase().replace(/%.*$/, '');
+  const dotted = /(\d+\.\d+\.\d+\.\d+)$/.exec(text);
+  if (dotted) {
+    const bytes = dotted[1].split('.').map(Number);
+    if (bytes.some((b) => b > 255)) return null;
+    text = text.slice(0, -dotted[1].length) + `${((bytes[0] << 8) | bytes[1]).toString(16)}:${((bytes[2] << 8) | bytes[3]).toString(16)}`;
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 1 ? head.length !== 8 : missing < 1) return null;
+  const groups = [...head, ...Array(halves.length === 2 ? missing : 0).fill('0'), ...tail].map((g) => parseInt(g, 16));
+  return groups.length === 8 && groups.every((g) => Number.isInteger(g) && g >= 0 && g <= 0xffff) ? groups : null;
+}
+
+const v4From = (hi, lo) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+
+/**
+ * Whether `ip` is loopback, private, link-local or otherwise not public. An
+ * IPv6 address that carries an IPv4 one is judged by it, in every notation
+ * (issues/394: `[::ffff:7f00:1]`, how the URL parser writes `::ffff:127.0.0.1`,
+ * passed): IPv4-mapped and -compatible, NAT64 (64:ff9b::/96) and 6to4 (2002::/16).
+ */
 function isPrivateAddress(ip) {
   const family = net.isIP(ip);
   if (family === 4) return ipv4Private(ip);
   if (family !== 6) return true;
-  const lower = ip.toLowerCase();
-  const mapped = /^(?:0*:)*:?ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower) || /^::(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-  if (mapped) return ipv4Private(mapped[1]);
-  if (lower === '::' || lower === '::1') return true;
-  return /^(f[cd]|fe[89ab]|ff)/.test(lower); // unique local, link-local, multicast
+  const g = ipv6Groups(ip);
+  if (!g) return true;
+  const zeroUpTo = (n) => g.slice(0, n).every((x) => x === 0);
+  if (zeroUpTo(5) && (g[5] === 0xffff || g[5] === 0)) return ipv4Private(v4From(g[6], g[7])); // mapped, compatible, ::, ::1
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return ipv4Private(v4From(g[6], g[7]));
+  if (g[0] === 0x2002) return ipv4Private(v4From(g[1], g[2]));
+  if (g[0] === 0x2001 && (g[1] === 0 || g[1] === 0xdb8)) return true; // Teredo, documentation
+  if (g[0] === 0x100 && zeroUpTo(4)) return true; // discard
+  // unique local fc00::/7, link-local fe80::/10, site-local fec0::/10, multicast ff00::/8
+  return (g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xffc0) === 0xfe80 || (g[0] & 0xffc0) === 0xfec0 || (g[0] & 0xff00) === 0xff00;
 }
 
 /** A `lookup` for agents that refuses private addresses (issues/378). */
@@ -124,7 +155,21 @@ function upstreamError(ctx, error, what, fallback) {
   return ctx.internalServerError(fallback);
 }
 
+/**
+ * The text of an admin-set calendar URL (user.ical / me.ical), through the same
+ * checks as the other admin-configured calls (issues/394): node-ical fetched it
+ * with no address check.
+ */
+async function fetchOutboundText(value) {
+  // eslint-disable-next-line global-require
+  const axios = require('axios');
+  const url = checkBaseUrl(value);
+  const res = await axios.get(url, { ...outboundAxiosOptions(), responseType: 'text', timeout: 15000, maxContentLength: 5 * 1024 * 1024 });
+  return typeof res.data === 'string' ? res.data : String(res.data);
+}
+
 module.exports = {
+  fetchOutboundText,
   OutboundUrlError,
   upstreamError,
   isPrivateAddress,
