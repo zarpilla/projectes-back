@@ -37,13 +37,14 @@ echo "== nginx"
 SNIPPET=/etc/nginx/conf.d/esstrapis-security.conf
 if [ -f "$SNIPPET" ]; then echo "$SNIPPET in place"
 elif $FIX; then
-  cat > "$SNIPPET" <<'NGINX'
-# No nginx version in answers; browsers stay on HTTPS (issues/404). Inherited by
-# the sites that set no add_header of their own.
-server_tokens off;
-add_header Strict-Transport-Security "max-age=31536000" always;
-NGINX
-  if nginx -t 2>/dev/null; then systemctl reload nginx; echo "added $SNIPPET, nginx reloaded"
-  else rm -f "$SNIPPET"; echo "nginx -t failed, snippet removed"; nginx -t; fi
+  {
+    echo '# Browsers stay on HTTPS, and no nginx version in answers (issues/404). Inherited'
+    echo '# by the sites that set no add_header of their own.'
+    echo 'add_header Strict-Transport-Security "max-age=31536000" always;'
+    # a second server_tokens in the same block is an error
+    grep -qE '^\s*server_tokens\s' /etc/nginx/nginx.conf || echo 'server_tokens off;'
+  } > "$SNIPPET"
+  if output=$(nginx -t 2>&1); then systemctl reload nginx; echo "added $SNIPPET, nginx reloaded"
+  else rm -f "$SNIPPET"; echo "nginx -t failed, snippet removed:"; echo "$output" | grep -v '\[warn\]'; fi
 else echo "$SNIPPET missing"
 fi
