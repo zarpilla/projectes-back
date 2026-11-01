@@ -3448,6 +3448,7 @@ export interface PluginUsersPermissionsUser extends Struct.CollectionTypeSchema 
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     daily_dedications: Schema.Attribute.Relation<'oneToMany', 'api::daily-dedication.daily-dedication'>;
+    display_name: Schema.Attribute.String;
     email: Schema.Attribute.Email &
       Schema.Attribute.Required &
       Schema.Attribute.SetMinMaxLength<{
