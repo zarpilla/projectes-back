@@ -18,7 +18,7 @@ async function dropTokensOfMovedUrls(params) {
   if (!data || typeof data !== 'object') return;
   const moved = URL_TOKENS.filter(([url, token]) => url in data && !data[token]);
   if (!moved.length) return;
-  const stored = await strapi.db
+  const stored = await global.strapi.db
     .query(UID)
     .findOne({ where: params.where || {}, select: ['id', ...moved.flat()] });
   if (!stored) return;
