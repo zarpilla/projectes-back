@@ -121,3 +121,34 @@ describe('the figures of the member list (issues/396)', () => {
     }
   });
 });
+
+describe('figures are not order rows (issues/396)', () => {
+  it.each([
+    ['totals', { active: 3, units: 9, price: 48.2 }],
+    ['checkMultidelivery', { multidelivery_discount: 10, volume_discount: 5 }],
+  ])('a member keeps the money of %s', async (action, answer) => {
+    jest.resetModules();
+    const strapi = {
+      db: {
+        query: () => ({
+          findOne: async ({ where }) => ({ id: where.id, permissions: [{ permission: 'orders' }] }),
+          findMany: async () => [],
+        }),
+      },
+      contentTypes: {},
+      components: {},
+    };
+    const middleware = require('../src/middlewares/app-permissions')({}, { strapi });
+    const ctx = {
+      method: action === 'totals' ? 'GET' : 'POST',
+      query: {},
+      params: {},
+      request: { body: { ownerId: ME, contactId: 3, date: '2026-11-24' } },
+      state: { user: { id: ME }, route: { handler: `api::order.order.${action}`, info: { apiName: 'order' } } },
+    };
+    await middleware(ctx, async () => {
+      ctx.body = { ...answer };
+    });
+    expect(ctx.body).toEqual(answer);
+  });
+});

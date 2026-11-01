@@ -1601,6 +1601,14 @@ const OWN_DATA_ACTIONS = new Set([
   'api::me.me.find',
   'plugin::users-permissions.user.home',
   'plugin::users-permissions.user.updateHome',
+  // figures over her own orders, or about herself (scoped above), not order
+  // rows: read as orders, their `price` / discounts were dropped (issues/396)
+  `${ORDER}.totals`,
+  `${ORDER}.tableCount`,
+  `${ORDER}.tableStatusCounts`,
+  `${ORDER}.checkMultidelivery`,
+  `${ORDER}.collectionPointRoutes`,
+  `${ORDER}.pdfmultiple`,
 ]);
 
 // Flags the server sets on the data it writes itself; never from a request
