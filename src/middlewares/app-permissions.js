@@ -209,6 +209,10 @@ const ME_PRIVATE_FIELDS = [
   'bank_account_vat',
   'google_credentials',
   'face_certificate',
+  // the entity's calendar URL (a read token) and its Social Security employer
+  // code: the admin form only (issues/401)
+  'ical',
+  'ccc',
 ];
 
 const forbidden = () => new errors.ForbiddenError('No tens permís per fer aquesta acció');
@@ -384,6 +388,32 @@ async function memberRouteRate(strapi, payload, userId, { order, csv }) {
 const ORDER_WRITES = new Set([`${ORDER}.create`, `${ORDER}.update`, `${ORDER}.createCSV`]);
 const ORDER_CREATES = new Set([`${ORDER}.create`, `${ORDER}.createCSV`]);
 
+// The most boxes an order or one of its lines may have (issues/397): the labels
+// PDF makes a page per box in one synchronous loop, and `units: 2000000000`
+// on her own order let a member hang the tenant. Real orders: 34 boxes at most,
+// lines 99.
+const MAX_BOXES = 1000;
+
+/**
+ * A new order brings no incidences (issues/403): `incidences: [<id>]` on create
+ * took another member's incidence to her new order (update only touches the
+ * order's own, issues/390). The order form adds incidences once the order exists.
+ */
+function dropCreateIncidences(ctx, action) {
+  if (ORDER_CREATES.has(action)) delete payloadOf(ctx).incidences;
+}
+
+/** Refuses an order write with more than MAX_BOXES boxes, on the order or on a line. */
+function refuseTooManyBoxes(ctx, action) {
+  if (!ORDER_WRITES.has(action)) return;
+  const payload = payloadOf(ctx);
+  const tooMany = (value) => value !== undefined && value !== null && value !== '' && !(Number(value) <= MAX_BOXES);
+  const lines = Array.isArray(payload.lines) ? payload.lines : [];
+  if (tooMany(payload.units) || lines.some((line) => line && tooMany(line.units))) {
+    throw new errors.ValidationError(`Una comanda no pot tenir més de ${MAX_BOXES} caixes`);
+  }
+}
+
 /**
  * Every order is created pending, whoever creates it (the user's decision,
  * 2026-10-19, issues/186): the office's state sent on create skipped the rate
@@ -517,7 +547,9 @@ async function memberOrderPayload(
   }
   // a collection order's price is the aggregate of its orders (route-price.js)
   const collection = Boolean(order && order.is_collection_order);
-  if (creating || (!collection && PRICE_INPUTS.some((field) => field in payload))) {
+  // once the office has the order its price is the office's (issues/403)
+  const pending = !order || order.status === 'pending';
+  if (creating || (!collection && pending && PRICE_INPUTS.some((field) => field in payload))) {
     payload.price = null;
     await memberRouteRate(strapi, payload, userId, { order, csv });
   }
@@ -562,7 +594,10 @@ async function memberOwnOrderUpdate(strapi, order, payload, userId, permissions 
   if (payload.owner !== undefined && idOf(payload.owner) !== userId) throw forbidden();
   if (!memberMayChangeStatus(order.status, payload.status)) throw forbidden();
   // once the office has the order, the form is read-only for her
-  if (order.status !== 'pending') pick(payload, [...MEMBER_LATE_FIELDS]);
+  if (order.status !== 'pending') {
+    pick(payload, [...MEMBER_LATE_FIELDS]);
+    await ownLateLines(strapi, order, payload);
+  }
   // the collection order of her farm-pickup orders, while pending, like her
   // other orders (the user's rule, 2026-10-19, as on master, issues/217): she
   // changes its route or cancels it; its delivery type stays (the form
@@ -595,6 +630,23 @@ async function scopeOrderList(ctx, next, { strapi, userId }) {
 }
 
 /**
+ * The figures of the Comandes list (totals, count, status tabs) over her own
+ * orders only: the screen always asks for `owner = her`, and the orders she
+ * reaches as pickup point gave their price through `orders/totals?_where[id]=…`
+ * (issues/396).
+ */
+async function scopeOwnOrderFigures(ctx, next, { userId }) {
+  narrowQuery(ctx, { 'owner.id': userId }, { owner: { id: userId } });
+  return next();
+}
+
+/** The ids of the orders a member owns: an order of hers keeps its money when its owner isn't in the answer (issues/396). */
+async function ownOrderIds(strapi, userId) {
+  const rows = await strapi.db.query(ORDER).findMany({ where: { owner: { id: userId } }, select: ['id'] });
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
  * The lines a pickup point sends (issues/377): she ticks what was picked up,
  * nothing else. Each line sent is matched with a stored one (by id, or by
  * position when the line has no id) and only its `picked_up` is taken: the
@@ -615,6 +667,31 @@ async function pickupPointLines(strapi, order, payload) {
     if (!match) throw forbidden();
     const { id, units, kilograms, name, nif } = line;
     return { id, units, kilograms, name, nif, picked_up: Boolean(match.picked_up) };
+  });
+}
+
+/**
+ * Her own order once the office has it (issues/403): of the lines she sends
+ * only `picked_up` counts, as for a pickup point; the boxes, names and NIFs
+ * stay the stored ones and none is added or removed. Unlike the pickup path it
+ * never refuses (the form posts the whole order): an invoiced or cancelled
+ * order just keeps its lines.
+ */
+async function ownLateLines(strapi, order, payload) {
+  if (!('lines' in payload)) return;
+  const sent = Array.isArray(payload.lines) ? payload.lines : [];
+  if (['invoiced', 'cancelled'].includes(order.status)) {
+    delete payload.lines;
+    return;
+  }
+  const row = await strapi.db.query(ORDER).findOne({ where: { id: order.id }, populate: { lines: true } });
+  const stored = (row && row.lines) || [];
+  payload.lines = stored.map((line, index) => {
+    const match =
+      sent.find((s) => s && s.id !== undefined && s.id === line.id) ||
+      (sent[index] && sent[index].id === undefined ? sent[index] : null);
+    const { id, units, kilograms, name, nif } = line;
+    return { id, units, kilograms, name, nif, picked_up: match ? Boolean(match.picked_up) : Boolean(line.picked_up) };
   });
 }
 
@@ -665,7 +742,12 @@ async function scopeOrderCsv(ctx, next, { strapi, userId, permissions }) {
 }
 
 async function scopeOrderPdf(ctx, next, { strapi, userId }) {
-  const ids = ((ctx.request.body && ctx.request.body.orders) || []).map(Number);
+  const sent = (ctx.request.body && ctx.request.body.orders) || [];
+  if (!Array.isArray(sent)) throw forbidden();
+  const ids = sent.map(Number);
+  // the ids checked are the ids printed: `"8972abc"` is NaN here but MySQL reads 8972 (issues/401)
+  if (ids.some((id) => !Number.isInteger(id) || id <= 0)) throw new errors.ValidationError('Comandes no vàlides');
+  ctx.request.body.orders = ids;
   if (ids.length) {
     const contactIds = await memberContactIds(strapi, userId);
     const orders = await strapi.db.query(ORDER).findMany({
@@ -1161,6 +1243,8 @@ async function scopeDriverContactUpdate(ctx, next, { strapi }) {
   if (!where) throw forbidden();
   const payload = payloadOf(ctx);
   delete payload.pickup_discount;
+  // the partners' money: she doesn't read it, so a form she saves can't clear it (issues/399)
+  omit(payload, DRIVER_HIDDEN_CONTACT_FIELDS);
   // nor the user the point belongs to (issues/377): its orders and invoices
   // would show up in that member's scope
   const relations = ['owner', 'users_permissions_user'].filter((field) => field in payload);
@@ -1182,9 +1266,14 @@ async function scopeDriverContactUpdate(ctx, next, { strapi }) {
 
 /** A new point a driver makes starts without pickup discount (issues/191). */
 async function scopeDriverContactCreate(ctx, next) {
-  delete payloadOf(ctx).pickup_discount;
+  const payload = payloadOf(ctx);
+  delete payload.pickup_discount;
+  omit(payload, DRIVER_HIDDEN_CONTACT_FIELDS);
   return next();
 }
+
+// What a driver doesn't read of a contact (response-sanitizer PARTNER_MONEY), nor write
+const DRIVER_HIDDEN_CONTACT_FIELDS = ['partner_amount', 'partner_amount_date', 'capital_contributions', 'followup_date'];
 
 /**
  * A member's «Factures» filter lists the projects by name (issues/383): she got
@@ -1375,12 +1464,27 @@ async function scopeActivityImportCalendar(ctx, next, { userId }) {
  * hours screens show only hers (issues/099). The user's decision (2026-10-19,
  * issues/188): there too, only her own activities.
  */
+/**
+ * The multidelivery check of a member's own order or import (issues/401): the
+ * owner is her. `ownerId` of someone else told that member's multidelivery flag
+ * and volume tier.
+ */
+async function scopeMemberMultidelivery(ctx, next, { userId }) {
+  const body = ctx.request.body;
+  if (body && typeof body === 'object') body.ownerId = userId;
+  return next();
+}
+
 async function scopeOwnActivitiesOfProjects(ctx, next, { userId }) {
   await next();
   const projects = Array.isArray(ctx.body) ? ctx.body : [];
   for (const project of projects) {
     if (project && Array.isArray(project.activities)) {
       project.activities = project.activities.filter((a) => idOf(a && a.users_permissions_user) === userId);
+    }
+    // her planned hours too, not everyone's (issues/401)
+    if (project && Array.isArray(project.planned_hours)) {
+      project.planned_hours = project.planned_hours.filter((h) => h && idOf(h.user) === userId);
     }
   }
 }
@@ -1425,12 +1529,14 @@ const MEMBER_SCOPES = {
   [`${ORDER}.create`]: scopeOrderCreate,
   [`${ORDER}.createCSV`]: scopeOrderCsv,
   [`${ORDER}.pdfmultiple`]: scopeOrderPdf,
+  [`${ORDER}.checkMultidelivery`]: scopeMemberMultidelivery,
   [`${ORDER}.table`]: scopeOrderTable,
   // the figures over the member's own orders, like the list (issues/177)
-  [`${ORDER}.totals`]: scopeOrderList,
+  // (only those she owns, not the ones she reaches as pickup point, issues/396)
+  [`${ORDER}.totals`]: scopeOwnOrderFigures,
   // the list's total and status tabs over her own orders, like find (issues/319)
-  [`${ORDER}.tableCount`]: scopeOrderList,
-  [`${ORDER}.tableStatusCounts`]: scopeOrderList,
+  [`${ORDER}.tableCount`]: scopeOwnOrderFigures,
+  [`${ORDER}.tableStatusCounts`]: scopeOwnOrderFigures,
   [`${INCIDENCE}.find`]: scopeIncidenceList,
   [`${INCIDENCE}.findOne`]: scopeIncidenceRow,
   [`${INCIDENCE}.update`]: scopeIncidenceRow,
@@ -1466,7 +1572,17 @@ function scopeAssignedIncomes(ctx, next) {
 }
 
 // for every user without full access
+/**
+ * A member's «Factures» for someone with `orders` who isn't counted as a member
+ * (a driver who is a member too, issues/401): her own invoices, as for members.
+ * The office reads them all.
+ */
+const ownInvoicesUnlessOffice = (scope) => (ctx, next, opts) =>
+  opts.permissions.includes('orders_admin') ? next() : scope(ctx, next, opts);
+
 const GENERAL_SCOPES = {
+  'api::emitted-invoice.emitted-invoice.findBasic': ownInvoicesUnlessOffice(scopeEmittedInvoiceList),
+  'api::received-income.received-income.findBasic': ownInvoicesUnlessOffice(scopeInvoiceList),
   'api::phase-income.phase-income.findAssigned': scopeAssignedIncomes,
   [`${PIVOT_VIEW}.find`]: scopePivotViewList,
   [`${PIVOT_VIEW}.findOne`]: scopePivotViewRow,
@@ -1704,6 +1820,8 @@ module.exports = (config, { strapi }) =>
     if (ORDER_WRITES.has(action) && !isOrdersMember(permissions)) await officeRouteRate(strapi, ctx, action);
     if (full) return next();
     limitMails(ctx, action, user.id);
+    refuseTooManyBoxes(ctx, action);
+    dropCreateIncidences(ctx, action);
     refuseRelationOperations(strapi, action, ctx);
     if (isOrdersMember(permissions)) refuseHiddenUserFilters(strapi, modelUidOfAction(action), ctx);
     narrowSearch(ctx, modelUidOfAction(action), isOrdersMember(permissions));
@@ -1724,18 +1842,23 @@ module.exports = (config, { strapi }) =>
     if (scope) await scope(ctx, next, { strapi, userId: user.id, permissions });
     else await next();
     if (!OWN_DATA_ACTIONS.has(action)) {
+      const body = ctx.body;
+      const sanitizable = body && typeof body === 'object' && !Buffer.isBuffer(body) && typeof body.pipe !== 'function';
+      const ownOrders = member && sanitizable ? await ownOrderIds(strapi, user.id) : null;
       sanitizeResponse(
         strapi,
         modelUidOfAction(action),
         ctx.body,
-        rulesFor({ member, selfId: user.id, permissions }),
+        rulesFor({ member, selfId: user.id, permissions, ownOrders }),
       );
     }
   };
 
 module.exports.actionOf = actionOf;
+module.exports.MAX_BOXES = MAX_BOXES;
 module.exports.MEMBER_SCOPES = MEMBER_SCOPES;
 module.exports.OWN_SCOPES = OWN_SCOPES;
+module.exports.stripMe = stripMe;
 module.exports.DRIVER_SCOPES = DRIVER_SCOPES;
 module.exports.GENERAL_SCOPES = GENERAL_SCOPES;
 module.exports._sentMails = sentMails;

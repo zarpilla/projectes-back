@@ -67,3 +67,57 @@ describe('a member and other members’ orders (issues/388)', () => {
     expect(body.data[0].price).toBe(20);
   });
 });
+
+/**
+ * issues/396 (security review round 3, 2026-11-01): the guard above needed
+ * `owner` in the row. Member 51 asked for order 8972 (member 56's) with
+ * `populate[emitted_invoice]=true` and no owner: she got its price (10.78) and
+ * invoice 2025-157 (534.50 €, PDF path); `orders/totals?_where[id]=8972` gave
+ * the price too. Now an order without its owner keeps its money only when it is
+ * one of hers, and the figures of the list count only her own orders.
+ */
+describe('orders whose owner is not in the answer (issues/396)', () => {
+  const noOwner = (id) => ({ ...order(null), id, owner: undefined });
+  const rules = rulesFor({ member: true, selfId: ME, permissions: ['orders'], ownOrders: new Set([510]) });
+
+  it('drops the money of an order that is not hers, at the root too', () => {
+    const body = { data: [noOwner(8972), noOwner(510)] };
+    sanitizeResponse(strapi, 'api::order.order', body, rules);
+    const [other, own] = body.data;
+    expect(other.price).toBeUndefined();
+    expect(other.emitted_invoice).toBeUndefined();
+    expect(other.units).toBe(3);
+    expect(own.price).toBe(20);
+    expect(own.emitted_invoice.code).toBe('2025-157');
+  });
+
+  it('a single row and a nested order the same way', () => {
+    const one = { data: noOwner(8972) };
+    sanitizeResponse(strapi, 'api::order.order', one, rules);
+    expect(one.data.finalPrice).toBeUndefined();
+    const nested = { data: [{ id: 1, order: noOwner(510) }] };
+    sanitizeResponse(strapi, 'api::incidence.incidence', nested, rules);
+    expect(nested.data[0].order.price).toBe(20);
+  });
+
+  it('without the list of her orders, nothing of unknown owner keeps its money', () => {
+    const body = { data: [noOwner(510)] };
+    sanitizeResponse(strapi, 'api::order.order', body, rulesFor({ member: true, selfId: ME, permissions: ['orders'] }));
+    expect(body.data[0].price).toBeUndefined();
+  });
+});
+
+describe('the figures of the member list (issues/396)', () => {
+  it('totals, count and status tabs only over the orders she owns', async () => {
+    jest.resetModules();
+    const { MEMBER_SCOPES } = require('../src/middlewares/app-permissions');
+    for (const action of ['totals', 'tableCount', 'tableStatusCounts']) {
+      const ctx = { query: { _where: { id: 8972 } } };
+      const next = jest.fn();
+      await MEMBER_SCOPES[`api::order.order.${action}`](ctx, next, { strapi: {}, userId: ME });
+      expect(next).toHaveBeenCalled();
+      expect(JSON.stringify(ctx.query)).toContain(`"owner.id":${ME}`);
+      expect(JSON.stringify(ctx.query)).not.toContain('contact.id_in');
+    }
+  });
+});

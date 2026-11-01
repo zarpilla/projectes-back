@@ -24,6 +24,8 @@ const { scheduleRefresh } = require('../../project/services/totalsRefreshSchedul
 const { getMe } = require('../../../services/me-settings');
 const { withBadQueryAs400 } = require('../../../services/query-errors');
 
+const MAX_IMPORT_DAYS = 2 * 366;
+
 module.exports = createCoreController('api::activity.activity', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
   // and flat field operators to native v5 params before core handling.
@@ -124,6 +126,11 @@ module.exports = createCoreController('api::activity.activity', ({ strapi }) => 
     }
     if (to && !moment(to, 'YYYY-MM-DD', true).isValid()) {
       return ctx.badRequest('Invalid to date format. Use YYYY-MM-DD');
+    }
+    // the hours screen asks for the days it shows (a year at most); recurring
+    // events are expanded over the whole range (issues/401)
+    if (toDate.diff(fromDate, 'days') > MAX_IMPORT_DAYS) {
+      return ctx.badRequest('El període a importar no pot passar de dos anys');
     }
 
     const googleCredentials = me && me.google_credentials ? me.google_credentials : null;

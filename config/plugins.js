@@ -107,6 +107,9 @@ module.exports = ({ env }) => ({
           path: path.resolve(__dirname, '..', 'public', 'uploads'),
         },
       },
+      // 100 MB per file (Strapi's default is 1 GB, open to members and energy
+      // users, issues/401); the largest real upload is a 38 MB video
+      sizeLimit: 100 * 1024 * 1024,
       security: {
         allowedTypes: allowedMediaTypes,
         deniedTypes: deniedExecutableTypes,
