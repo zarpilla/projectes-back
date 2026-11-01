@@ -147,9 +147,9 @@ After `create-tenant.sh`:
 1. Copies on the server: the scripts here are copied by hand (`render.sh`, `deploy.sh`, `create-tenant.sh`, `remove-tenant.sh`, `tenant-dumps.sh`, `tenant-sso-keys.sh`, `security-check.sh`). A push doesn't update them.
 2. Create the first Strapi admin from the command line, as the script prints. Web registration is blocked.
 3. Open the app, then **Tiquets** and **Documentació**, as a user of the tenant.
-4. `sudo ./security-check.sh`: no secret shared with another tenant, env file 600, no Strapi API tokens you didn't make.
+4. `sudo ./security-check.sh --fix`: deletes Strapi's default API tokens (a new tenant always gets them, and they skip the app's permissions) and sets the env file to 600. Then check it reports no secret shared with another tenant.
 5. `docker ps --format '{{.Names}}\t{{.Ports}}'`: the new front must show `127.0.0.1:<port>`. Docker publishes ports past UFW.
 
-`sudo ./security-check.sh --fix` also sets the env files to 600 and adds `/etc/nginx/conf.d/esstrapis-security.conf` (no nginx version, HSTS) once for all sites. Sites created by `create-tenant.sh` already have these and `client_max_body_size 100m`.
+`--fix` also adds `/etc/nginx/conf.d/esstrapis-security.conf` (no nginx version, HSTS) once for all sites. Sites created by `create-tenant.sh` already have these and `client_max_body_size 100m`.
 
 Caddy's admin API is a socket inside the proxy container (`/config/caddy-admin.sock`), so `caddy reload` only works through `docker compose exec`.

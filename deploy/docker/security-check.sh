@@ -3,7 +3,8 @@
 # Run as root from /var/www/esstrapis-back. Prints no secrets.
 #
 #   sudo ./security-check.sh          what is wrong
-#   sudo ./security-check.sh --fix    also: envs to 600, and nginx's global snippet
+#   sudo ./security-check.sh --fix    also: envs to 600, nginx's global snippet, and
+#                                     deletes Strapi's unused default API tokens
 set -uo pipefail
 cd "$(dirname "$0")"
 FIX=false; [ "${1:-}" = --fix ] && FIX=true
@@ -24,6 +25,9 @@ while read -r name _; do
   [[ -z "$name" || "$name" == \#* ]] && continue
   db=$(grep '^DATABASE_NAME=' "envs/$name.env" | cut -d= -f2- | tr -d "'\"")
   printf '%s: ' "$name"
+  # Strapi's default tokens skip the app's permissions. It makes them on a first
+  # boot without admin users (a new tenant); nothing uses them.
+  $FIX && mysql "$db" -e "DELETE FROM strapi_api_tokens WHERE name IN ('Read Only', 'Full Access') AND last_used_at IS NULL" 2>&1
   mysql -N -B "$db" -e "SELECT COALESCE(GROUP_CONCAT(name), '-') FROM strapi_api_tokens" 2>&1
 done < tenants.conf
 
