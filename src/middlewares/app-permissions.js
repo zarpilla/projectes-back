@@ -1269,6 +1269,10 @@ async function scopeDriverContactCreate(ctx, next) {
   const payload = payloadOf(ctx);
   delete payload.pickup_discount;
   omit(payload, DRIVER_HIDDEN_CONTACT_FIELDS);
+  // the member a pickup point belongs to is the office's to set, as on update
+  // (issues/377): the user's decision, 2026-11-01 (issues/403). The form sends 0 for none.
+  const member = relationId(payload.users_permissions_user);
+  if (member !== undefined && member !== null && member !== 0 && member !== '0' && member !== '') throw forbidden();
   return next();
 }
 

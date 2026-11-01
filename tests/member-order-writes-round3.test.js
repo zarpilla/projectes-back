@@ -88,3 +88,24 @@ describe("a member's processed order (issues/403)", () => {
     expect(sent.data.price).toBeNull();
   });
 });
+
+// issues/403 point 3, the user's decision (2026-11-01): a driver doesn't set
+// the member a new pickup point belongs to (as on update, issues/377); the
+// form no longer shows her the field and sends 0 for none.
+describe("a driver's new point belongs to no member", () => {
+  const create = async (users_permissions_user) => {
+    jest.resetModules();
+    const { DRIVER_SCOPES } = require('../src/middlewares/app-permissions');
+    const next = jest.fn();
+    await DRIVER_SCOPES['api::contact.contact.create']({ request: { body: { data: { name: 'P', users_permissions_user } } } }, next, {});
+    return next;
+  };
+
+  it.each([[51], ['51'], [{ id: 51 }], [{ connect: [{ id: 51 }] }]])('refuses %j', async (value) => {
+    await expect(create(value)).rejects.toMatchObject({ name: 'ForbiddenError' });
+  });
+
+  it.each([[0], [null], [undefined], ['']])('lets %j through', async (value) => {
+    expect(await create(value)).toHaveBeenCalled();
+  });
+});
