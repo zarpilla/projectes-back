@@ -37,6 +37,7 @@ const { isAppAdmin } = require('../../services/app-permissions');
 const { cachePermissionReads } = require('../../services/role-permissions-cache');
 const { cacheAuthenticatedUser } = require('../../services/authenticated-user-cache');
 const userHome = require('../../services/user-home');
+const loginAttempts = require('../../services/login-attempts');
 const { passwordProblem, contextFor } = require('../../services/password-policy');
 
 const USER = 'plugin::users-permissions.user';
@@ -165,7 +166,22 @@ module.exports = (plugin) => {
     auth.callback = async (ctx, ...rest) => {
       const params = (ctx.request && ctx.request.body) || {};
       const password = params.password;
-      const result = await callback(ctx, ...rest);
+      // wrong passwords per account, from any address (issues/400)
+      const local = !ctx.params || !ctx.params.provider || ctx.params.provider === 'local';
+      const identifier = local ? params.identifier : null;
+      if (identifier && loginAttempts.isLocked(identifier)) {
+        throw new errors.RateLimitError("Massa intents d'entrar amb aquest usuari. Torna-ho a provar d'aquí a una estona.");
+      }
+      let result;
+      try {
+        result = await callback(ctx, ...rest);
+      } catch (error) {
+        if (identifier && /invalid identifier or password/i.test(String(error && error.message))) {
+          loginAttempts.recordFailure(identifier);
+        }
+        throw error;
+      }
+      if (identifier && ctx.body && ctx.body.jwt) loginAttempts.recordSuccess(identifier);
       const answer = ctx.body;
       if (typeof password === 'string' && answer && answer.jwt && answer.user && answer.user.id) {
         try {
