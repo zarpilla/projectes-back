@@ -15,6 +15,9 @@
       "type": "string",
       "required": true,
       "unique": true
+    },
+    "municipality_code": {
+      "type": "string"
     }
   }
 }
