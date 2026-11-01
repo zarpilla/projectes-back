@@ -28,7 +28,9 @@ function decrypt(token, secret) {
   return JSON.parse(Buffer.concat([decipher.update(raw.subarray(12, raw.length - 16)), decipher.final()]).toString('utf8'));
 }
 
-const tokenOf = (url) => new URL(url).searchParams.get('token');
+// `<tenant>.<token>` (issues/404): the site picks the instance's own key by the tenant
+const prefixOf = (url) => new URL(url).searchParams.get('token').split('.')[0];
+const tokenOf = (url) => new URL(url).searchParams.get('token').split('.').slice(1).join('.');
 
 function fakeCtx(user) {
   const headers = {};
@@ -173,5 +175,22 @@ describe('me.ticketsLogin', () => {
     global.strapi.db = { query: () => ({ findOne: async () => ({ name: 'Fusteria La Serra, SCCL' }) }) };
     await require('../src/services/sso-tenant').freezeSsoTenant();
     expect(kept).toBe('fusteria-la-serra-sccl');
+  });
+});
+
+// issues/404 (security review round 3, 2026-11-01): every instance had the same
+// TICKETS_SSO_KEY / DOCS_SSO_KEY, so whoever read one instance's environment
+// could sign in as anyone of any instance. Each instance now gets its own key
+// from the sites (`npm run tenant -- key <tenant>`), and says which it is in
+// front of the token, so the site can pick that key.
+describe('the token says its instance (issues/404)', () => {
+  test('tickets and docs tokens start with the tenant', () => {
+    const { buildTicketsLoginUrl } = require('../src/services/tickets-sso');
+    const { buildDocsLoginUrl } = require('../src/services/docs-sso');
+    const opts = { secret: 'k'.repeat(40), tenant: 'coop-a-sccl', tenantName: 'Coop A', email: 'a@b.cat', name: 'A' };
+    for (const url of [buildTicketsLoginUrl(opts), buildDocsLoginUrl(opts)]) {
+      expect(prefixOf(url)).toBe('coop-a-sccl');
+      expect(tokenOf(url)).toMatch(/^[A-Za-z0-9_-]+$/);
+    }
   });
 });

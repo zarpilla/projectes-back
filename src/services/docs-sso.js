@@ -64,7 +64,9 @@ function buildDocsLoginUrl({ secret, tenant, tenantName, baseUrl = DEFAULT_URL, 
   cipher.setAAD(AAD);
   const enc = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()]);
   const token = Buffer.concat([iv, enc, cipher.getAuthTag()]).toString('base64url');
-  return `${baseUrl}/sso?token=${token}`;
+  // `<tenant>.`: the site picks this instance's own key (issues/404); the
+  // secret here is that key, or still the shared one until the env is updated
+  return `${baseUrl}/sso?token=${tenant}.${token}`;
 }
 
 module.exports = { docsConfig, buildDocsLoginUrl, cleanRoute, TTL_SECONDS };
