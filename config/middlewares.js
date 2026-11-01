@@ -10,12 +10,10 @@ module.exports = ({ env }) => [
   // 4xx http-errors from koa-static (bot scans) answered without an error log
   // (issues/052). Must come right after strapi::errors.
   'global::quiet-client-errors',
-  {
-    name: 'strapi::security',
-    config: {
-      contentsecurity: false,
-    },
-  },
+  // Strapi's defaults, CSP included: /uploads is served from the app's own
+  // origin, so its `script-src 'self'` must stay (issues/401; the old
+  // `contentsecurity: false` here was no helmet option and did nothing).
+  'strapi::security',
   {
     name: 'strapi::cors',
     config: {
@@ -45,6 +43,8 @@ module.exports = ({ env }) => [
   'strapi::body',
   // Clients can't send the one-shot «Modificable» bypass. Right after the body parser.
   'global::strip-unlock-flag',
+  // no HTML, XML or script files among uploads (issues/395)
+  'global::upload-file-types',
   'strapi::session',
   'strapi::favicon',
   // Must precede strapi::public: uploads are served straight off disk, and that
@@ -52,6 +52,8 @@ module.exports = ({ env }) => [
   'global::block-key-material',
   // No API answer carries a user's password hash or tokens (issues/028).
   'global::strip-user-secrets',
+  // HTML/scripts/SVG already under /uploads are never served as active content (issues/395)
+  'global::uploads-inert',
   'strapi::public',
   // v3 -> v5 REST transport compat (P9): numeric id -> documentId on core
   // routes, and v3's default first-level populate. Must run before the router.
