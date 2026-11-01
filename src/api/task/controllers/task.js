@@ -182,7 +182,11 @@ module.exports = createCoreController('api::task.task', ({ strapi }) => ({
     const seenAt = iso(ctx.query.seen);
     const [tasks, states, mentions] = await Promise.all([
       strapi.db.query(TASK_UID).findMany({
-        where: { archived: false, users_permissions_users: { id: me } },
+        // a checklist item of hers can sit on a task of someone else
+        where: {
+          archived: false,
+          $or: [{ users_permissions_users: { id: me } }, { checklist: { user: { id: me } } }],
+        },
         select: ['id', 'due_date', 'archived', 'createdAt'],
         populate: {
           task_state: { select: ['id'] },

@@ -50,6 +50,22 @@ describe('task alerts (the front rules, now on the server)', () => {
     expect(taskAlerts({ tasks, states, mentions, me, seenAt, today })).toEqual({ overdue: 0, fresh: 2 });
   });
 
+  // the projects list's notice counted them, and the dot took over from it
+  it('counts my checklist items on a task of someone else, not that task itself', () => {
+    const tasks = [
+      {
+        id: 1,
+        users_permissions_users: [{ id: 9 }],
+        task_state: { id: 1 },
+        due_date: '2026-10-10',
+        created: { id: 8 },
+        createdAt: '2026-10-17T08:00:00.000Z',
+        checklist: [{ user: { id: me }, done: false, due_date: '2026-10-01' }],
+      },
+    ];
+    expect(taskAlerts({ tasks, states, me, seenAt, today })).toEqual({ overdue: 1, fresh: 0 });
+  });
+
   it('reads dates as the database gives them (Date objects too)', () => {
     const tasks = [
       { id: 1, users_permissions_users: [{ id: me }], task_state: { id: 1 }, created: { id: 8 }, createdAt: new Date('2026-10-17T08:00:00.000Z') },
@@ -101,7 +117,10 @@ describe('GET /api/tasks/alerts', () => {
   it('asks only her open tasks, with the fields the rules read', async () => {
     await ask({ seen: seenAt, today });
     const [, tasks] = calls.find(([uid]) => uid === 'api::task.task');
-    expect(tasks.where).toEqual({ archived: false, users_permissions_users: { id: me } });
+    expect(tasks.where).toEqual({
+      archived: false,
+      $or: [{ users_permissions_users: { id: me } }, { checklist: { user: { id: me } } }],
+    });
     expect(tasks.select).toEqual(['id', 'due_date', 'archived', 'createdAt']);
     // no project, no description, no whole users
     expect(Object.keys(tasks.populate).sort()).toEqual(['checklist', 'created', 'task_state', 'users_permissions_users']);
