@@ -23,9 +23,9 @@ async function readUploadedPdfBuffer(ctx) {
       else candidates.push(value);
     });
     const file = candidates.find((f) => isPdf(f)) || candidates[0];
-    if (file && file.path) {
-      const buffer = fs.readFileSync(file.path);
-      cleanupTempFile(file.path);
+    if (file && file.filepath) {
+      const buffer = fs.readFileSync(file.filepath);
+      cleanupTempFile(file.filepath);
       return buffer;
     }
   }
@@ -36,8 +36,8 @@ async function readUploadedPdfBuffer(ctx) {
 
 function isPdf(file) {
   if (!file) return false;
-  const name = (file.name || '').toLowerCase();
-  const type = (file.type || '').toLowerCase();
+  const name = (file.originalFilename || '').toLowerCase();
+  const type = (file.mimetype || '').toLowerCase();
   return name.endsWith('.pdf') || type === 'application/pdf';
 }
 
