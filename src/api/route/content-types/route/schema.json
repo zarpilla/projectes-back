@@ -98,6 +98,12 @@
     "time_to": {
       "type": "time"
     },
+    "time_from_2": {
+      "type": "time"
+    },
+    "time_to_2": {
+      "type": "time"
+    },
     "afternoon": {
       "type": "boolean",
       "default": false

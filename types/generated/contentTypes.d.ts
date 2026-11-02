@@ -492,6 +492,8 @@ export interface ApiCityRouteCityRoute extends Struct.CollectionTypeSchema {
     route: Schema.Attribute.Relation<'oneToOne', 'api::route.route'>;
     time_from: Schema.Attribute.Time;
     time_to: Schema.Attribute.Time;
+    time_from_2: Schema.Attribute.Time;
+    time_to_2: Schema.Attribute.Time;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
   };
@@ -2541,6 +2543,8 @@ export interface ApiRouteRoute extends Struct.CollectionTypeSchema {
     thursday: Schema.Attribute.Boolean;
     time_from: Schema.Attribute.Time;
     time_to: Schema.Attribute.Time;
+    time_from_2: Schema.Attribute.Time;
+    time_to_2: Schema.Attribute.Time;
     transfer_pickup: Schema.Attribute.Relation<'oneToOne', 'api::pickup.pickup'>;
     tuesday: Schema.Attribute.Boolean;
     updatedAt: Schema.Attribute.DateTime;
