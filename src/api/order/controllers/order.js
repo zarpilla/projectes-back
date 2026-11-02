@@ -41,7 +41,16 @@ const changeLog = require('../../../services/change-log');
 const { orderTotals, TOTALS_SELECT } = require('../services/order-totals');
 const { currentOrderVolumeDiscount } = require('../services/volume-discount');
 const { relationId } = require('../../../services/relation-input');
-const { isLateDelivery, isLatePickup, lateRules } = require('../../../services/late-order');
+const {
+  closingOf,
+  isAfternoonPickupCutoff,
+  isClosedDelivery,
+  isClosedPickup,
+  isLateDelivery,
+  isLatePickup,
+  lateRules,
+} = require('../../../services/late-order');
+const { openLateIncidence } = require('../services/late-incidence');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 // collection_point and route_rate: the quick edit picks the rate with them; an
@@ -104,6 +113,46 @@ async function ordersOptions() {
 }
 
 /**
+ * The holidays for everyone (Festius without a person) of the coming weeks,
+ * YYYY-MM-DD: they are no working day, so the limits of the day after one
+ * fall on the working day before it (issues/363).
+ */
+async function holidaysAhead() {
+  try {
+    const from = moment().subtract(1, 'month').format('YYYY-MM-DD');
+    const to = moment().add(3, 'months').format('YYYY-MM-DD');
+    const rows = await strapi.db.query('api::festive.festive').findMany({
+      where: { date: { $gte: from, $lte: to } },
+      select: ['id', 'date'],
+      populate: { users_permissions_user: { select: ['id'] } },
+    });
+    return (rows || []).filter((f) => f && f.date && !f.users_permissions_user).map((f) => String(f.date).slice(0, 10));
+  } catch {
+    return [];
+  }
+}
+
+/** The tenant's late rules, with the holidays (services/late-order). */
+async function currentLateRules() {
+  const [options, holidays] = await Promise.all([ordersOptions(), holidaysAhead()]);
+  return lateRules(options, undefined, { holidays });
+}
+
+/** The numeric id of the order core create answered (it may answer the documentId only). */
+async function createdOrderId(response) {
+  const data = response && response.data;
+  if (!data) return null;
+  if (typeof data.id === 'number') return data.id;
+  if (!data.documentId) return null;
+  const row = await strapi.db
+    .query('api::order.order')
+    .findOne({ where: { documentId: data.documentId }, select: ['id'] });
+  return row ? row.id : null;
+}
+
+const dayText = (value) => moment(toQueryDay(value), 'YYYY-MM-DD').locale('ca').format('dddd D/M');
+
+/**
  * Why a member can't deliver an order on `date`, or null when she can: not
  * today nor in the past. Tomorrow past the cutoff hour
  * (me.orders_options.next_day_limit_hour) was refused too; it is now accepted
@@ -120,9 +169,74 @@ async function deliveryDateRefusal(date, user) {
   // the tenant's days, not the server's UTC ones (issues/346)
   const day = toQueryDay(date);
   const today = toQueryDay(new Date());
-  if (day > today) return null;
+  if (day > today) {
+    // past the route's closing hour of the working day before (issues/363):
+    // the form offers the next date a route of the town runs instead
+    const rules = await currentLateRules();
+    if (!isClosedDelivery(date, new Date(), rules)) return null;
+    if (await exemptFromDateRules(user)) return null;
+    const closing = closingOf(date, rules);
+    return (
+      `No es pot crear la comanda: la ruta ja és tancada per a ${dayText(date)}. ` +
+      `Les comandes s'hi han d'informar abans de les ${rules.routeClosingHour} h de ${closing.locale('ca').format('dddd D/M')}.`
+    );
+  }
   if (await exemptFromDateRules(user)) return null;
   return "No es pot crear la comanda: la data d'entrega ha de ser a partir de demà.";
+}
+
+/**
+ * Whether the member already has a pending collection order (-R) for the
+ * point, route and day: the one a new pickup joins (order lifecycles
+ * processCollectionOrder groups by owner, point, route and pickup day).
+ */
+async function hasPendingCollectionOrder({ ownerId, pointId, routeId, day }) {
+  if (!ownerId || !pointId || !routeId) return false;
+  const rows = await strapi.db.query('api::order.order').findMany({
+    where: { is_collection_order: true, owner: ownerId, contact: pointId, route: routeId, status: 'pending' },
+    select: ['id', 'collection_pickup_date', 'estimated_delivery_date'],
+  });
+  return (rows || []).some((co) => toQueryDay(co.collection_pickup_date || co.estimated_delivery_date) === day);
+}
+
+/**
+ * Why a member can't save the farm pickup of an order, or null: a morning
+ * pickup closes as the deliveries do, at the closing hour of the working day
+ * before (issues/363). An afternoon one, on its own day from
+ * «Hora límit de les recollides de tarda» (10 h), can only join a collection
+ * order already pending for that point, route and day: none is created any
+ * more. Only a new or moved pickup (date or route) is judged.
+ */
+async function pickupDateRefusal(payload, user, stored = null) {
+  if (!payload || !('collection_pickup_date' in payload) || !payload.collection_pickup_date) return null;
+  const pickupDate = payload.collection_pickup_date;
+  const routeId = relationId(payload.collection_pickup_route ?? (stored && stored.collection_pickup_route));
+  const storedRouteId = stored ? relationId(stored.collection_pickup_route) : undefined;
+  const sameDay = stored && stored.collection_pickup_date && toQueryDay(stored.collection_pickup_date) === toQueryDay(pickupDate);
+  const routeMoved = typeof routeId === 'number' && typeof storedRouteId === 'number' && routeId !== storedRouteId;
+  if (sameDay && !routeMoved) return null;
+  const rules = await currentLateRules();
+  const afternoon = await pickupIsAfternoon(routeId);
+  if (afternoon && isAfternoonPickupCutoff(pickupDate, new Date(), rules)) {
+    if (await exemptFromDateRules(user)) return null;
+    const joins = await hasPendingCollectionOrder({
+      ownerId: relationId(payload.owner ?? (stored && stored.owner)) ?? (user && user.id),
+      pointId: relationId(payload.collection_point ?? (stored && stored.collection_point)),
+      routeId,
+      day: toQueryDay(pickupDate),
+    });
+    if (joins) return null;
+    return (
+      `No es pot desar la comanda: avui ja no es poden demanar recollides noves a la ruta de tarda ` +
+      `a partir de les ${rules.pickupSameDayLimitHour} h. Només es pot afegir a una recollida que ja hi tinguis per avui.`
+    );
+  }
+  if (!isClosedPickup(pickupDate, new Date(), rules, { afternoon })) return null;
+  if (await exemptFromDateRules(user)) return null;
+  return (
+    `No es pot desar la comanda: la recollida de ${dayText(pickupDate)} ja és tancada. ` +
+    `Les recollides s'han d'informar abans de les ${rules.routeClosingHour} h del dia laborable anterior.`
+  );
 }
 
 /**
@@ -143,21 +257,35 @@ async function pickupIsAfternoon(routeId) {
  * surcharge when the delivery is entered past its deadline (the next-day
  * limit of the working day before it, services/late-order),
  * `late_pickup` when the farm pickup is too close. On an update only a moved
- * date is judged again. The office and the staff are exempt: they set
- * «Recàrrec per incidència» by hand.
+ * date is judged again. The staff are exempt on a change: they set
+ * «Recàrrec per incidència» by hand; a new order of theirs past the limit
+ * (even past the route's closing, which only they can still enter) is late
+ * with the surcharge too (issues/363).
+ *
+ * Answers what became late, `{ lateOrder, latePickup, payload, rules }`, for
+ * the incidence to open once the order is saved (openLateIncidence), or null.
  */
 async function applyLateFlags(payload, user, stored = null) {
-  if (await exemptFromDateRules(user)) return;
-  const rules = lateRules(await ordersOptions());
   const now = new Date();
+  if (await exemptFromDateRules(user)) {
+    if (stored || !payload.estimated_delivery_date) return null;
+    const rules = await currentLateRules();
+    if (!isLateDelivery(payload.estimated_delivery_date, now, rules)) return null;
+    payload.late_order = true;
+    if (!Number(payload.late_surcharge)) payload.late_surcharge = rules.lateSurcharge;
+    return { lateOrder: true, latePickup: false, payload, rules, now };
+  }
+  const rules = await currentLateRules();
   // the tenant's days: the form sends local midnight, the day before in UTC (issues/346)
   const sameDay = (a, b) => Boolean(a && b) && toQueryDay(a) === toQueryDay(b);
+  const became = { lateOrder: false, latePickup: false, payload, rules, now };
 
   const deliveryDate = payload.estimated_delivery_date;
   if (deliveryDate && !(stored && sameDay(stored.estimated_delivery_date, deliveryDate))) {
     const late = isLateDelivery(deliveryDate, now, rules);
     payload.late_order = late;
     payload.late_surcharge = late ? rules.lateSurcharge : 0;
+    became.lateOrder = late;
   }
 
   if ('collection_pickup_date' in payload) {
@@ -170,11 +298,14 @@ async function applyLateFlags(payload, user, stored = null) {
       // (ids only: a documentId sent for the same route is no move)
       const storedRouteId = stored ? relationId(stored.collection_pickup_route) : undefined;
       const routeMoved = typeof routeId === 'number' && typeof storedRouteId === 'number' && routeId !== storedRouteId;
-      if (stored && sameDay(stored.collection_pickup_date, pickupDate) && !routeMoved) return;
-      const afternoon = await pickupIsAfternoon(routeId);
-      payload.late_pickup = isLatePickup(pickupDate, now, rules, { afternoon });
+      if (!(stored && sameDay(stored.collection_pickup_date, pickupDate) && !routeMoved)) {
+        const afternoon = await pickupIsAfternoon(routeId);
+        payload.late_pickup = isLatePickup(pickupDate, now, rules, { afternoon });
+        became.latePickup = payload.late_pickup;
+      }
     }
   }
+  return became.lateOrder || became.latePickup ? became : null;
 }
 
 /**
@@ -191,7 +322,7 @@ async function applySurchargeSwitch(payload, stored) {
   }
   payload.late_order = true;
   const current = 'late_surcharge' in payload ? payload.late_surcharge : stored && stored.late_surcharge;
-  if (!Number(current)) payload.late_surcharge = lateRules(await ordersOptions()).lateSurcharge;
+  if (!Number(current)) payload.late_surcharge = (await currentLateRules()).lateSurcharge;
 }
 
 // A relation the request names: an id, a documentId, an `{ id }` /
@@ -504,6 +635,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     if (missing) return ctx.badRequest(missing);
     const refusal = await deliveryDateRefusal(ctx.request.body?.estimated_delivery_date, ctx.state.user);
     if (refusal) return ctx.badRequest(refusal);
+    const pickupRefusal = await pickupDateRefusal(ctx.request.body, ctx.state.user);
+    if (pickupRefusal) return ctx.badRequest(pickupRefusal);
     const order = { ...ctx.request.body };
     delete order.id;
     order.pickup = order.pickup?.id;
@@ -513,7 +646,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     order.route_rate = order.route_rate?.id;
     order.status = 'pending';
     order.comments = order.notes;
-    await applyLateFlags(order, ctx.state.user);
+    const late = await applyLateFlags(order, ctx.state.user);
 
     if (order.contact && order.contact.id) {
       order.contact = order.contact.id;
@@ -560,6 +693,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     const created = await strapi.service('api::order.order').create({
       data: { ...order, publishedAt: new Date() },
     });
+    await openLateIncidence(created && created.id, late, ctx.state.user);
     return created;
   },
 
@@ -907,10 +1041,15 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     if (missing) return ctx.badRequest(missing);
     const refusal = await deliveryDateRefusal(payload.estimated_delivery_date, ctx.state.user);
     if (refusal) return ctx.badRequest(refusal);
+    const pickupRefusal = await pickupDateRefusal(payload, ctx.state.user);
+    if (pickupRefusal) return ctx.badRequest(pickupRefusal);
     payload.status = 'pending';
     await applySurchargeSwitch(payload, null);
-    await applyLateFlags(payload, ctx.state.user);
-    return super.create(ctx);
+    const late = await applyLateFlags(payload, ctx.state.user);
+    const response = await super.create(ctx);
+    // the incidence of a late order (issues/363)
+    if (late) await openLateIncidence(await createdOrderId(response), late, ctx.state.user);
+    return response;
   },
 
   /**
@@ -946,7 +1085,11 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       ? await strapi.db.query('api::order.order').findOne({
           where: { id: numericId(ctx) },
           select: ['id', 'estimated_delivery_date', 'collection_pickup_date', 'late_surcharge'],
-          populate: { collection_pickup_route: { select: ['id'] }, collection_point: { select: ['id'] } },
+          populate: {
+            collection_pickup_route: { select: ['id'] },
+            collection_point: { select: ['id'] },
+            owner: { select: ['id'] },
+          },
         })
       : null;
     if (payload.estimated_delivery_date) {
@@ -955,8 +1098,10 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
         if (dateRefusal) return ctx.badRequest(dateRefusal.replace('crear', 'moure'));
       }
     }
+    const pickupRefusal = await pickupDateRefusal(payload, ctx.state.user, stored);
+    if (pickupRefusal) return ctx.badRequest(pickupRefusal);
     await applySurchargeSwitch(payload, stored);
-    if (judgesDates) await applyLateFlags(payload, ctx.state.user, stored);
+    const late = judgesDates ? await applyLateFlags(payload, ctx.state.user, stored) : null;
 
     const incidences = Array.isArray(payload.incidences) ? payload.incidences : null;
     if (incidences) delete payload.incidences;
@@ -973,6 +1118,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       const orderId = numericId(ctx);
       await processIncidences(orderId, incidences, ctx.state.user);
     }
+    if (late) await openLateIncidence(numericId(ctx), late, ctx.state.user);
 
     return response;
   },
@@ -984,7 +1130,9 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 module.exports.orderRules = {
   missingOrderFields,
   deliveryDateRefusal,
+  pickupDateRefusal,
   applyLateFlags,
+  openLateIncidence,
   exemptFromDateRules,
 };
 
