@@ -23,7 +23,7 @@
     },
     "late_surcharge": {
       "type": "decimal",
-      "default": 25
+      "default": 15
     },
     "late_order_message": {
       "type": "text"
@@ -33,6 +33,13 @@
     },
     "working_days": {
       "type": "json"
+    },
+    "route_closing_hour": {
+      "type": "integer",
+      "default": 14
+    },
+    "route_closed_message": {
+      "type": "text"
     }
   }
 }

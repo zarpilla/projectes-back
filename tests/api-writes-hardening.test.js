@@ -227,7 +227,9 @@ describe('«Contacta» (issues/167)', () => {
 });
 
 describe('delivery date rules (issues/168)', () => {
-  const NOW = new Date('2026-10-18T19:37:00');
+  // Friday between the next-day limit (13 h) and the route closing (14 h,
+  // issues/363): Monday the 19th is late, not closed yet
+  const NOW = new Date('2026-10-16T13:30:00+02:00');
 
   function load({ permissions = ['orders'], stored = null } = {}) {
     jest.resetModules();
@@ -243,8 +245,11 @@ describe('delivery date rules (issues/168)', () => {
             uid === 'plugin::users-permissions.user'
               ? { id: where.id, permissions: permissions.map((permission) => ({ permission })) }
               : stored,
+          findMany: async () => [],
+          create: async ({ data }) => ({ id: 1, ...data }),
         }),
       },
+      log: { error: jest.fn(), warn: jest.fn() },
       service: () => ({ create: jest.fn(async () => ({ id: 1 })) }),
     };
     jest.doMock(src('services', 'me-settings'), () => ({
@@ -270,10 +275,10 @@ describe('delivery date rules (issues/168)', () => {
     await ctrl.create(ctx);
     expect(ctx.badRequest).not.toHaveBeenCalled();
     expect(base.create).toHaveBeenCalled();
-    expect(ctx.request.body.data).toMatchObject({ late_order: true, late_surcharge: 25 });
+    expect(ctx.request.body.data).toMatchObject({ late_order: true, late_surcharge: 15 });
   });
 
-  it.each([['2026-10-18'], ['2026-10-01']])('refuses delivering on %s', async (date) => {
+  it.each([['2026-10-16'], ['2026-10-01']])('refuses delivering on %s', async (date) => {
     const { ctrl } = load();
     const ctx = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: date } });
     await ctrl.create(ctx);
@@ -318,7 +323,7 @@ describe('delivery date rules (issues/168)', () => {
 
   it('refuses moving an order to today, and marks one moved to tomorrow past the cutoff late', async () => {
     const today = load({ stored: { id: 1, estimated_delivery_date: '2026-10-22' } });
-    const refused = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-18' } }, { state: { v3: { numericId: 1 } } });
+    const refused = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-16' } }, { state: { v3: { numericId: 1 } } });
     await today.ctrl.update(refused);
     expect(refused.badRequest).toHaveBeenCalledWith(expect.stringMatching(/No es pot moure la comanda/));
 
@@ -326,7 +331,7 @@ describe('delivery date rules (issues/168)', () => {
     const ctx = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-19' } }, { state: { v3: { numericId: 1 } } });
     await moved.ctrl.update(ctx);
     expect(ctx.badRequest).not.toHaveBeenCalled();
-    expect(ctx.request.body.data).toMatchObject({ late_order: true, late_surcharge: 25 });
+    expect(ctx.request.body.data).toMatchObject({ late_order: true, late_surcharge: 15 });
 
     const same = load({ stored: { id: 1, estimated_delivery_date: '2026-10-19' } });
     const keep = ctxFor({ data: { route: 3, contact: 4, estimated_delivery_date: '2026-10-19', units: 2 } }, { state: { v3: { numericId: 1 } } });
@@ -337,7 +342,7 @@ describe('delivery date rules (issues/168)', () => {
 
   it('applies to the CSV import', async () => {
     const { ctrl } = load();
-    const ctx = ctxFor({ route: { id: 3 }, contact: { id: 4 }, estimated_delivery_date: '2026-10-18' });
+    const ctx = ctxFor({ route: { id: 3 }, contact: { id: 4 }, estimated_delivery_date: '2026-10-16' });
     await ctrl.createCSV(ctx);
     expect(ctx.badRequest).toHaveBeenCalledWith(expect.stringMatching(/a partir de demà/));
 
@@ -346,6 +351,6 @@ describe('delivery date rules (issues/168)', () => {
     const late = ctxFor({ route: { id: 3 }, contact: { id: 4 }, estimated_delivery_date: '2026-10-19' });
     await ctrl.createCSV(late);
     expect(late.badRequest).not.toHaveBeenCalled();
-    expect(create.mock.calls[0][0].data).toMatchObject({ late_order: true, late_surcharge: 25 });
+    expect(create.mock.calls[0][0].data).toMatchObject({ late_order: true, late_surcharge: 15 });
   });
 });

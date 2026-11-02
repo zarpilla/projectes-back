@@ -19,7 +19,7 @@ const { currentTimeZone } = require('./time-zone');
  * and moved to the route's next day by the form, so it mixed with the orders
  * entered on time for next week. It is now accepted for the day asked, marked
  * late (`late_order`, red in the lists, a warning triangle on the delivery
- * note) and charged a surcharge (`late_surcharge` %, default 25) that the
+ * note) and charged a surcharge (`late_surcharge` %, default 15 since issues/363) that the
  * office can cancel with «Recàrrec per incidència».
  *
  * A farm pickup (collection_pickup_date) is late:
@@ -32,6 +32,19 @@ const { currentTimeZone } = require('./time-zone');
  * (from 13 h); no route had one, so La Diligència's «(TARDA)» routes were
  * judged as morning ones (issues/346).
  *
+ * Route closing (issues/363): from «Hora de tancament de la ruta»
+ * (`route_closing_hour`, 14 h by default) of that same working day the route
+ * is closed for D: a member can't order for D any more (the API refuses it,
+ * the form offers the next date a route of the town runs), and a morning
+ * farm pickup on D is refused the same way. Between the next-day limit and
+ * the closing hour the order is late: surcharge (`late_surcharge` %, flat, 15
+ * by default) and an incidence. The office can still enter orders after the
+ * closing hour, with the surcharge too.
+ *
+ * The working day before skips the entity's holidays for everyone (Festius,
+ * those without a person) as well as the days off of the week: with Monday a
+ * holiday, Tuesday's orders close on Friday.
+ *
  * Days and hours are those of the tenant's «Zona horària» (Configuració
  * general, Europe/Andorra by default), not the server's: the
  * containers run in UTC, so «13 h» was 14 h in winter, and the form's dates
@@ -42,7 +55,8 @@ const { currentTimeZone } = require('./time-zone');
 
 const DEFAULT_NEXT_DAY_LIMIT_HOUR = 14;
 const DEFAULT_PICKUP_SAME_DAY_LIMIT_HOUR = 10;
-const DEFAULT_LATE_SURCHARGE = 25;
+const DEFAULT_ROUTE_CLOSING_HOUR = 14;
+const DEFAULT_LATE_SURCHARGE = 15;
 // moment's day(): 0 Sunday … 6 Saturday; the names of the route fields
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DEFAULT_WORKING_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
@@ -61,15 +75,22 @@ const numberOr = (value, fallback) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
-/** The limits of the tenant, with their defaults for the fields left empty. */
-function lateRules(ordersOptions, timeZone = currentTimeZone()) {
+/**
+ * The limits of the tenant, with their defaults for the fields left empty.
+ * `holidays`: the holidays for everyone, YYYY-MM-DD (never working days).
+ */
+function lateRules(ordersOptions, timeZone = currentTimeZone(), { holidays = [] } = {}) {
   const o = ordersOptions || {};
+  const nextDayLimitHour = numberOr(o.next_day_limit_hour, DEFAULT_NEXT_DAY_LIMIT_HOUR);
   return {
     timeZone,
-    nextDayLimitHour: numberOr(o.next_day_limit_hour, DEFAULT_NEXT_DAY_LIMIT_HOUR),
+    nextDayLimitHour,
+    // never before the next-day limit: the late window is limit → closing
+    routeClosingHour: Math.max(nextDayLimitHour, numberOr(o.route_closing_hour, DEFAULT_ROUTE_CLOSING_HOUR)),
     pickupSameDayLimitHour: numberOr(o.pickup_same_day_limit_hour, DEFAULT_PICKUP_SAME_DAY_LIMIT_HOUR),
     lateSurcharge: numberOr(o.late_surcharge, DEFAULT_LATE_SURCHARGE),
     workingDays: workingDaysOf(o.working_days),
+    holidays: [...new Set((holidays || []).map((d) => String(d).slice(0, 10)))],
   };
 }
 
@@ -107,12 +128,49 @@ function wallClockOf(now, timeZone = currentTimeZone()) {
 
 const workingDaysOfRules = (rules) => workingDaysOf(rules && rules.workingDays);
 
+/** The last working day before `day`: not a day off of the week nor a holiday for everyone. */
+function previousWorkingDay(day, rules) {
+  const working = workingDaysOfRules(rules);
+  const holidays = new Set((rules && rules.holidays) || []);
+  const isOff = (d) => !working.includes(WEEKDAYS[d.day()]) || holidays.has(d.format('YYYY-MM-DD'));
+  const previous = dayOf(day, zoneOf(rules)).subtract(1, 'day');
+  for (let i = 0; i < 60 && isOff(previous); i++) previous.subtract(1, 'day');
+  return previous;
+}
+
 /** The moment the orders for `day` stop being on time: the next-day limit of the last working day before it. */
 function deadlineOf(day, rules) {
-  const working = workingDaysOfRules(rules);
-  const previous = dayOf(day, zoneOf(rules)).subtract(1, 'day');
-  for (let i = 0; i < 7 && !working.includes(WEEKDAYS[previous.day()]); i++) previous.subtract(1, 'day');
-  return previous.hour(rules.nextDayLimitHour);
+  return previousWorkingDay(day, rules).hour(rules.nextDayLimitHour);
+}
+
+/** The moment the routes of `day` close: the closing hour of the last working day before it (issues/363). */
+function closingOf(day, rules) {
+  const hour = rules.routeClosingHour ?? DEFAULT_ROUTE_CLOSING_HOUR;
+  return previousWorkingDay(day, rules).hour(hour);
+}
+
+/** A delivery after today asked at or after its route's closing (see closingOf). */
+function isClosedDelivery(date, now, rules) {
+  const day = dayOf(date, zoneOf(rules));
+  if (!day) return false;
+  const current = wallClockOf(now, zoneOf(rules));
+  if (!day.isAfter(current, 'day')) return false; // refused elsewhere
+  return !current.isBefore(closingOf(day, rules));
+}
+
+/**
+ * A morning farm pickup asked at or after its closing, or for today (issues/363).
+ * An afternoon one («Ruta de tarda») never closes: it is late from
+ * pickupSameDayLimitHour of its own day.
+ */
+function isClosedPickup(date, now, rules, { afternoon = false } = {}) {
+  if (afternoon) return false;
+  const day = dayOf(date, zoneOf(rules));
+  if (!day) return false;
+  const current = wallClockOf(now, zoneOf(rules));
+  if (day.isBefore(current, 'day')) return false; // refused elsewhere (issues/302)
+  if (day.isSame(current, 'day')) return true;
+  return !current.isBefore(closingOf(day, rules));
 }
 
 /** A delivery after today entered at or after its deadline (see deadlineOf). */
@@ -140,10 +198,15 @@ module.exports = {
   DEFAULT_LATE_SURCHARGE,
   DEFAULT_NEXT_DAY_LIMIT_HOUR,
   DEFAULT_PICKUP_SAME_DAY_LIMIT_HOUR,
+  DEFAULT_ROUTE_CLOSING_HOUR,
   DEFAULT_WORKING_DAYS,
+  closingOf,
   deadlineOf,
+  isClosedDelivery,
+  isClosedPickup,
   isLateDelivery,
   isLatePickup,
+  previousWorkingDay,
   lateRules,
   wallClockOf,
   workingDaysOf,

@@ -250,9 +250,18 @@ async function pointByNifAndName(value, ctx) {
 
 const tomorrow = () => moment(today(), 'YYYY-MM-DD').add(1, 'day').format('YYYY-MM-DD');
 
-/** The day asked for (YYYY-MM-DD), from tomorrow on; blank → tomorrow. */
+/**
+ * The day asked for (YYYY-MM-DD), from tomorrow on; blank → tomorrow, or the
+ * first day after it whose routes haven't closed yet (issues/363).
+ */
 async function requestedDayOf(value, ctx, { moving = false } = {}) {
-  if (isBlank(value)) return tomorrow();
+  if (isBlank(value)) {
+    let day = tomorrow();
+    for (let i = 0; i < 14 && (await orderRules.deliveryDateRefusal(day, ctx.user)); i++) {
+      day = moment(day, 'YYYY-MM-DD').add(1, 'day').format('YYYY-MM-DD');
+    }
+    return day;
+  }
   const text = String(value).trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || !moment(text, 'YYYY-MM-DD', true).isValid()) {
     reject('INVALID', 'estimated_delivery_date ha de ser una data AAAA-MM-DD', {
@@ -283,7 +292,11 @@ async function assignedFor(point, day, ctx) {
 /** The delivery date sent, checked against the route; or the route's next open day. */
 async function deliveryDateOf(value, route, ctx, { moving = false } = {}) {
   if (isBlank(value)) {
-    const day = await nextRouteDay(route, { after: today() });
+    // the route's next open day whose closing hour hasn't passed (issues/363)
+    let day = await nextRouteDay(route, { after: today() });
+    for (let i = 0; i < 8 && day && (await orderRules.deliveryDateRefusal(day, ctx.user)); i++) {
+      day = await nextRouteDay(route, { after: day });
+    }
     if (!day) reject('ROUTE_WITHOUT_DAYS', `La ruta ${route.name} no té cap dia obert`, { field: 'route' });
     return day;
   }
@@ -496,7 +509,7 @@ async function createOrder(item, externalId, ctx) {
   payload.status = 'pending';
   const missingField = orderRules.missingOrderFields(payload);
   if (missingField) reject('INVALID', missingField);
-  await orderRules.applyLateFlags(payload, ctx.user);
+  const late = await orderRules.applyLateFlags(payload, ctx.user);
 
   if (ctx.dryRun) {
     const out = await dryRunOut({ ...payload, route: wanted.route });
@@ -508,6 +521,8 @@ async function createOrder(item, externalId, ctx) {
   try {
     created = await strapi.service(ORDER).create({ data: payload });
     await refs.complete(refId, 'order', created.id, { requested_date: requested });
+    // the incidence of a late order (issues/363)
+    await orderRules.openLateIncidence(created.id, late, ctx.user);
   } catch (error) {
     if (created)
       await strapi.db
@@ -621,7 +636,9 @@ async function updateOrder(item, stored, ctx) {
   if (payload.contact) Object.assign(payload, contactSnapshot(wanted.point));
 
   await memberRules.memberOwnOrderUpdate(strapi, stored, payload, ctx.userId, ctx.permissions);
-  if (payload.estimated_delivery_date) await orderRules.applyLateFlags(payload, ctx.user, stored);
+  const late = payload.estimated_delivery_date
+    ? await orderRules.applyLateFlags(payload, ctx.user, stored)
+    : null;
 
   if (ctx.dryRun) {
     const repriced = 'price' in payload;
@@ -641,6 +658,7 @@ async function updateOrder(item, stored, ctx) {
     };
   }
   await strapi.service(ORDER).update(stored.documentId, { data: payload });
+  await orderRules.openLateIncidence(stored.id, late, ctx.user);
   if (requested !== undefined && ref.id) await refs.setRequestedDate(ref.id, requested);
   const order = await loadOrder(stored.id);
   return { result: 'updated', ...orderOut(order), changed, warnings: [...warnings, ...warningsOf(order)] };
