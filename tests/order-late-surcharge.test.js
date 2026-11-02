@@ -215,6 +215,7 @@ describe('order controller: late flags', () => {
   let cityRoutes;
   let holidays;
   let incidences;
+  let collectionOrders;
 
   function load({ permissions = ['orders'], stored = null, options = { next_day_limit_hour: 13 }, now = NOW } = {}) {
     jest.resetModules();
@@ -236,7 +237,8 @@ describe('order controller: late flags', () => {
             if (uid === 'api::city-route.city-route') return cityRoutes[where.route] || null;
             return stored;
           },
-          findMany: async () => (uid === 'api::festive.festive' ? holidays : []),
+          findMany: async () =>
+            uid === 'api::festive.festive' ? holidays : uid === 'api::order.order' ? collectionOrders : [],
           create: async ({ data }) => {
             if (uid === 'api::incidence.incidence') incidences.push(data);
             return { id: 900 + incidences.length, ...data };
@@ -267,6 +269,7 @@ describe('order controller: late flags', () => {
     cityRoutes = {};
     holidays = [];
     incidences = [];
+    collectionOrders = [];
   });
   afterEach(() => {
     jest.useRealTimers();
@@ -323,6 +326,8 @@ describe('order controller: late flags', () => {
   });
 
   it('an afternoon pickup today past 10 h is late, without surcharge', async () => {
+    // it joins the member's pickup already pending today (issues/363)
+    collectionOrders = [{ id: 70, collection_pickup_date: '2026-10-21' }];
     const { ctrl } = load();
     const ctx = ctxFor(order({ collection_point: 8, collection_pickup_route: 6, collection_pickup_date: '2026-10-21' }));
     await ctrl.create(ctx);

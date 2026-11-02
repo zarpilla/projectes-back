@@ -82,6 +82,7 @@ describe('route closing rules (services/late-order)', () => {
 describe('order controller: route closing (issues/363)', () => {
   let holidays;
   let incidences;
+  let collectionOrders;
 
   function load({ permissions = ['orders'], stored = null, now, options = { next_day_limit_hour: 13 } }) {
     jest.resetModules();
@@ -100,7 +101,8 @@ describe('order controller: route closing (issues/363)', () => {
             if (uid === 'api::route.route') return { id: where.id, afternoon: where.id === 6 };
             return stored;
           },
-          findMany: async () => (uid === 'api::festive.festive' ? holidays : []),
+          findMany: async () =>
+            uid === 'api::festive.festive' ? holidays : uid === 'api::order.order' ? collectionOrders : [],
           create: async ({ data }) => {
             if (uid === 'api::incidence.incidence') incidences.push(data);
             return { id: 900 + incidences.length, ...data };
@@ -134,6 +136,7 @@ describe('order controller: route closing (issues/363)', () => {
   beforeEach(() => {
     holidays = [];
     incidences = [];
+    collectionOrders = [];
   });
   afterEach(() => {
     jest.useRealTimers();
@@ -217,6 +220,8 @@ describe('order controller: route closing (issues/363)', () => {
     expect(morning.base.create).not.toHaveBeenCalled();
     expect(answer).toMatch(/la recollida de dijous 22\/10 ja és tancada/);
 
+    // an afternoon one today joins the member's pending pickup: only late
+    collectionOrders = [{ id: 70, collection_pickup_date: '2026-10-21' }];
     const tarda = load({ now: wed('15:00') });
     const afternoon = ctxFor(
       order({
@@ -233,5 +238,35 @@ describe('order controller: route closing (issues/363)', () => {
     expect(incidences[0].description).toBe(
       'Recollida informada tard: informada dimecres 21/10 a les 15:00 per a dimecres 21/10.',
     );
+  });
+
+  it('an afternoon pickup for today from 10 h creates no new collection order: refused, unless one is pending', async () => {
+    const pickup = (extra = {}) =>
+      order({
+        estimated_delivery_date: '2026-10-24',
+        collection_point: 8,
+        collection_pickup_route: 6,
+        collection_pickup_date: '2026-10-21',
+        ...extra,
+      });
+    // none pending (another day's doesn't count)
+    collectionOrders = [{ id: 71, collection_pickup_date: '2026-10-22' }];
+    const none = load({ now: wed('10:00') });
+    const ctx = ctxFor(pickup());
+    const answer = await none.ctrl.create(ctx);
+    expect(none.base.create).not.toHaveBeenCalled();
+    expect(answer).toMatch(
+      /avui ja no es poden demanar recollides noves a la ruta de tarda a partir de les 10 h/,
+    );
+
+    // before 10 h it creates one
+    const early = load({ now: wed('09:59') });
+    await early.ctrl.create(ctxFor(pickup()));
+    expect(early.base.create).toHaveBeenCalled();
+
+    // the office can
+    const office = load({ now: wed('15:00'), permissions: ['orders_admin'] });
+    await office.ctrl.create(ctxFor(pickup()));
+    expect(office.base.create).toHaveBeenCalled();
   });
 });

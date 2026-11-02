@@ -194,7 +194,20 @@ function isLatePickup(date, now, rules, { afternoon = false } = {}) {
   return !current.isBefore(deadlineOf(day, rules));
 }
 
+/**
+ * An afternoon pickup («Ruta de tarda») asked on its own day from
+ * pickupSameDayLimitHour on: it can only join a collection order (-R) already
+ * pending for that point, route and day, never create one (issues/363).
+ */
+function isAfternoonPickupCutoff(date, now, rules) {
+  const day = dayOf(date, zoneOf(rules));
+  if (!day) return false;
+  const current = wallClockOf(now, zoneOf(rules));
+  return day.isSame(current, 'day') && current.hour() >= rules.pickupSameDayLimitHour;
+}
+
 module.exports = {
+  isAfternoonPickupCutoff,
   DEFAULT_LATE_SURCHARGE,
   DEFAULT_NEXT_DAY_LIMIT_HOUR,
   DEFAULT_PICKUP_SAME_DAY_LIMIT_HOUR,

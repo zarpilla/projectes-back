@@ -43,6 +43,7 @@ const { currentOrderVolumeDiscount } = require('../services/volume-discount');
 const { relationId } = require('../../../services/relation-input');
 const {
   closingOf,
+  isAfternoonPickupCutoff,
   isClosedDelivery,
   isClosedPickup,
   isLateDelivery,
@@ -185,9 +186,26 @@ async function deliveryDateRefusal(date, user) {
 }
 
 /**
+ * Whether the member already has a pending collection order (-R) for the
+ * point, route and day: the one a new pickup joins (order lifecycles
+ * processCollectionOrder groups by owner, point, route and pickup day).
+ */
+async function hasPendingCollectionOrder({ ownerId, pointId, routeId, day }) {
+  if (!ownerId || !pointId || !routeId) return false;
+  const rows = await strapi.db.query('api::order.order').findMany({
+    where: { is_collection_order: true, owner: ownerId, contact: pointId, route: routeId, status: 'pending' },
+    select: ['id', 'collection_pickup_date', 'estimated_delivery_date'],
+  });
+  return (rows || []).some((co) => toQueryDay(co.collection_pickup_date || co.estimated_delivery_date) === day);
+}
+
+/**
  * Why a member can't save the farm pickup of an order, or null: a morning
  * pickup closes as the deliveries do, at the closing hour of the working day
- * before (issues/363). Only a new or moved pickup (date or route) is judged.
+ * before (issues/363). An afternoon one, on its own day from
+ * «Hora límit de les recollides de tarda» (10 h), can only join a collection
+ * order already pending for that point, route and day: none is created any
+ * more. Only a new or moved pickup (date or route) is judged.
  */
 async function pickupDateRefusal(payload, user, stored = null) {
   if (!payload || !('collection_pickup_date' in payload) || !payload.collection_pickup_date) return null;
@@ -198,7 +216,22 @@ async function pickupDateRefusal(payload, user, stored = null) {
   const routeMoved = typeof routeId === 'number' && typeof storedRouteId === 'number' && routeId !== storedRouteId;
   if (sameDay && !routeMoved) return null;
   const rules = await currentLateRules();
-  if (!isClosedPickup(pickupDate, new Date(), rules, { afternoon: await pickupIsAfternoon(routeId) })) return null;
+  const afternoon = await pickupIsAfternoon(routeId);
+  if (afternoon && isAfternoonPickupCutoff(pickupDate, new Date(), rules)) {
+    if (await exemptFromDateRules(user)) return null;
+    const joins = await hasPendingCollectionOrder({
+      ownerId: relationId(payload.owner ?? (stored && stored.owner)) ?? (user && user.id),
+      pointId: relationId(payload.collection_point ?? (stored && stored.collection_point)),
+      routeId,
+      day: toQueryDay(pickupDate),
+    });
+    if (joins) return null;
+    return (
+      `No es pot desar la comanda: avui ja no es poden demanar recollides noves a la ruta de tarda ` +
+      `a partir de les ${rules.pickupSameDayLimitHour} h. Només es pot afegir a una recollida que ja hi tinguis per avui.`
+    );
+  }
+  if (!isClosedPickup(pickupDate, new Date(), rules, { afternoon })) return null;
   if (await exemptFromDateRules(user)) return null;
   return (
     `No es pot desar la comanda: la recollida de ${dayText(pickupDate)} ja és tancada. ` +
@@ -1052,7 +1085,11 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       ? await strapi.db.query('api::order.order').findOne({
           where: { id: numericId(ctx) },
           select: ['id', 'estimated_delivery_date', 'collection_pickup_date', 'late_surcharge'],
-          populate: { collection_pickup_route: { select: ['id'] }, collection_point: { select: ['id'] } },
+          populate: {
+            collection_pickup_route: { select: ['id'] },
+            collection_point: { select: ['id'] },
+            owner: { select: ['id'] },
+          },
         })
       : null;
     if (payload.estimated_delivery_date) {
