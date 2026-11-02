@@ -1615,6 +1615,10 @@ const OWN_DATA_ACTIONS = new Set([
   'api::me.me.find',
   'plugin::users-permissions.user.home',
   'plugin::users-permissions.user.updateHome',
+  // the default warehouse: its controller checks who asks (issues/361)
+  'plugin::users-permissions.user.defaultPickup',
+  'plugin::users-permissions.user.updateDefaultPickup',
+  'plugin::users-permissions.user.defaultPickups',
   // figures over her own orders, or about herself (scoped above), not order
   // rows: read as orders, their `price` / discounts were dropped (issues/396)
   `${ORDER}.totals`,
@@ -1883,4 +1887,15 @@ module.exports.OWN_SCOPES = OWN_SCOPES;
 module.exports.stripMe = stripMe;
 module.exports.DRIVER_SCOPES = DRIVER_SCOPES;
 module.exports.GENERAL_SCOPES = GENERAL_SCOPES;
+// the member's rules, for the integrations API (api/integration), which writes
+// in her name without going through these routes
+module.exports.memberRules = {
+  forbidden,
+  memberOrderPayload,
+  memberOwnOrderUpdate,
+  memberNewContact,
+  loadVisibleContact,
+  MEMBER_CONTACT_FIELDS,
+  SHARED_CONTACT_FIELDS,
+};
 module.exports._sentMails = sentMails;

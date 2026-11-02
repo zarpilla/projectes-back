@@ -82,7 +82,15 @@ describe('users/me/home', () => {
     const p = require(EXTENSION)(plugin);
     expect(typeof p.controllers.user.home).toBe('function');
     expect(typeof p.controllers.user.updateHome).toBe('function');
-    expect(routes.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /users/me/home', 'PUT /users/me/home', 'GET /users/:id']);
+    expect(routes.map((r) => `${r.method} ${r.path}`)).toEqual([
+      'GET /users/me/home',
+      'PUT /users/me/home',
+      // the default warehouse (issues/361), also before /users/:id
+      'GET /users/default-pickups',
+      'GET /users/:id/default-pickup',
+      'PUT /users/:id/default-pickup',
+      'GET /users/:id',
+    ]);
   });
 
   it('is open to every logged-in user, whatever their app permissions', () => {

@@ -492,6 +492,8 @@ export interface ApiCityRouteCityRoute extends Struct.CollectionTypeSchema {
     route: Schema.Attribute.Relation<'oneToOne', 'api::route.route'>;
     time_from: Schema.Attribute.Time;
     time_to: Schema.Attribute.Time;
+    time_from_2: Schema.Attribute.Time;
+    time_to_2: Schema.Attribute.Time;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
   };
@@ -512,6 +514,7 @@ export interface ApiCityCity extends Struct.CollectionTypeSchema {
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::city.city'> & Schema.Attribute.Private;
+    municipality_code: Schema.Attribute.String;
     name: Schema.Attribute.String & Schema.Attribute.Required & Schema.Attribute.Unique;
     publishedAt: Schema.Attribute.DateTime;
     updatedAt: Schema.Attribute.DateTime;
@@ -1261,6 +1264,81 @@ export interface ApiIncomeTypeIncomeType extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiIntegrationApiKey extends Struct.CollectionTypeSchema {
+  collectionName: 'api_keys';
+  info: {
+    description: "Keys of the integrations API (x-api-key), one user each; only the key's SHA-256 is stored";
+    displayName: 'API keys';
+    pluralName: 'api-keys';
+    singularName: 'api-key';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  pluginOptions: {
+    'content-manager': {
+      visible: false;
+    };
+    'content-type-builder': {
+      visible: false;
+    };
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    issued_by: Schema.Attribute.Integer;
+    key_hash: Schema.Attribute.String & Schema.Attribute.Required & Schema.Attribute.Private;
+    last_used_at: Schema.Attribute.DateTime;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::integration.api-key'> &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String;
+    prefix: Schema.Attribute.String & Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    revoked_at: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    user_id: Schema.Attribute.Integer & Schema.Attribute.Required;
+  };
+}
+
+export interface ApiIntegrationIntegrationRef extends Struct.CollectionTypeSchema {
+  collectionName: 'integration_refs';
+  info: {
+    description: "Which order or delivery point each external_id of a member's system is; unique per (owner_id, kind, external_id) by a database index; requested_date = the day the member asked for, when the order went to a later route day";
+    displayName: 'Integration refs';
+    pluralName: 'integration-refs';
+    singularName: 'integration-ref';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  pluginOptions: {
+    'content-manager': {
+      visible: false;
+    };
+    'content-type-builder': {
+      visible: false;
+    };
+  };
+  attributes: {
+    contact_id: Schema.Attribute.Integer;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    external_id: Schema.Attribute.String & Schema.Attribute.Required;
+    kind: Schema.Attribute.Enumeration<['order', 'contact']> & Schema.Attribute.Required;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::integration.integration-ref'> &
+      Schema.Attribute.Private;
+    order_id: Schema.Attribute.Integer;
+    owner_id: Schema.Attribute.Integer & Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    requested_date: Schema.Attribute.Date;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
 export interface ApiJustificationJustification extends Struct.CollectionTypeSchema {
   collectionName: 'justifications';
   info: {
@@ -1525,6 +1603,7 @@ export interface ApiOrderOrder extends Struct.CollectionTypeSchema {
     route: Schema.Attribute.Relation<'oneToOne', 'api::route.route'>;
     route_date: Schema.Attribute.Date;
     route_rate: Schema.Attribute.Relation<'oneToOne', 'api::route-rate.route-rate'>;
+    route_redirected_from: Schema.Attribute.String;
     status: Schema.Attribute.Enumeration<
       ['pending', 'deposited', 'processed', 'delivered', 'invoiced', 'cancelled', 'distributing', 'lastmile']
     >;
@@ -2355,7 +2434,10 @@ export interface ApiRouteFestiveRouteFestive extends Struct.CollectionTypeSchema
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::route-festive.route-festive'> &
       Schema.Attribute.Private;
     publishedAt: Schema.Attribute.DateTime;
+    reason: Schema.Attribute.Text;
     route: Schema.Attribute.Relation<'oneToOne', 'api::route.route'>;
+    substitute_date: Schema.Attribute.Date;
+    substitute_route: Schema.Attribute.Relation<'manyToOne', 'api::route.route'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
   };
@@ -2461,6 +2543,8 @@ export interface ApiRouteRoute extends Struct.CollectionTypeSchema {
     thursday: Schema.Attribute.Boolean;
     time_from: Schema.Attribute.Time;
     time_to: Schema.Attribute.Time;
+    time_from_2: Schema.Attribute.Time;
+    time_to_2: Schema.Attribute.Time;
     transfer_pickup: Schema.Attribute.Relation<'oneToOne', 'api::pickup.pickup'>;
     tuesday: Schema.Attribute.Boolean;
     updatedAt: Schema.Attribute.DateTime;
@@ -3448,6 +3532,7 @@ export interface PluginUsersPermissionsUser extends Struct.CollectionTypeSchema 
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     daily_dedications: Schema.Attribute.Relation<'oneToMany', 'api::daily-dedication.daily-dedication'>;
+    default_pickup: Schema.Attribute.Relation<'manyToOne', 'api::pickup.pickup'> & Schema.Attribute.Private;
     display_name: Schema.Attribute.String;
     email: Schema.Attribute.Email &
       Schema.Attribute.Required &
@@ -3531,6 +3616,8 @@ declare module '@strapi/strapi' {
       'api::home-menu.home-menu': ApiHomeMenuHomeMenu;
       'api::incidence.incidence': ApiIncidenceIncidence;
       'api::income-type.income-type': ApiIncomeTypeIncomeType;
+      'api::integration.api-key': ApiIntegrationApiKey;
+      'api::integration.integration-ref': ApiIntegrationIntegrationRef;
       'api::justification.justification': ApiJustificationJustification;
       'api::kanban-view.kanban-view': ApiKanbanViewKanbanView;
       'api::legal-form.legal-form': ApiLegalFormLegalForm;

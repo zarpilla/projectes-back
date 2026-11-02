@@ -21,6 +21,8 @@ describe('schema', () => {
     const attrs = schema(api);
     expect(attrs.time_from).toEqual({ type: 'time' });
     expect(attrs.time_to).toEqual({ type: 'time' });
+    expect(attrs.time_from_2).toEqual({ type: 'time' });
+    expect(attrs.time_to_2).toEqual({ type: 'time' });
   });
 });
 
@@ -45,6 +47,39 @@ describe('checkSlot', () => {
     ['09:00:00.000', '09:00:00.000'],
   ])('refuses %s – %s (end not after start)', (from, to) => {
     expect(checkSlot(from, to)).toMatch(/posterior/);
+  });
+});
+
+// 2026-11-02: a route or a town can have a second slot («de 9 a 13 h i de 16 a 19 h»)
+describe('checkSlots', () => {
+  const { checkSlots } = require('../src/services/time-slot');
+  const slots = (time_from, time_to, time_from_2, time_to_2) => ({ time_from, time_to, time_from_2, time_to_2 });
+
+  it.each([
+    [slots(null, null, null, null)],
+    [slots('09:00', '13:00', null, null)],
+    [slots('09:00', '13:00', '16:00', '19:00')],
+    [slots('07:00', null, '12:00', null)],
+    [slots('09:00', '13:00', '13:30', null)],
+  ])('accepts %o', (s) => {
+    expect(checkSlots(s)).toBeNull();
+  });
+
+  it('refuses a second slot without the first', () => {
+    expect(checkSlots(slots(null, null, '16:00', '19:00'))).toMatch(/necessita la primera/);
+  });
+
+  it.each([
+    [slots('09:00', '13:00', '12:00', '19:00')],
+    [slots('09:00', '13:00', '13:00', '19:00')],
+    [slots('09:00', null, '08:00', null)],
+  ])('refuses a second slot that does not come after the first: %o', (s) => {
+    expect(checkSlots(s)).toMatch(/després de la primera/);
+  });
+
+  it('checks the second slot on its own too', () => {
+    expect(checkSlots(slots('09:00', '13:00', '19:00', '16:00'))).toMatch(/posterior/);
+    expect(checkSlots(slots('09:00', '13:00', null, '16:00'))).toMatch(/inici/);
   });
 });
 
@@ -87,6 +122,22 @@ describe.each([
     expect(global.strapi.db.query).toHaveBeenCalledWith(uid);
   });
 
+  it('checks a second slot against the stored first one', async () => {
+    await expect(
+      lifecycles.beforeUpdate({ params: { where: { id: 1 }, data: { time_from_2: '12:00:00.000' } } })
+    ).rejects.toMatchObject({ name: 'ApplicationError' });
+    await expect(
+      lifecycles.beforeUpdate({ params: { where: { id: 1 }, data: { time_from_2: '16:00:00.000', time_to_2: '19:00:00.000' } } })
+    ).resolves.toBeUndefined();
+  });
+
+  it('clearing the first slot alone, with a second one stored, is refused', async () => {
+    existing = { ...existing, time_from_2: '16:00:00', time_to_2: '19:00:00' };
+    await expect(
+      lifecycles.beforeUpdate({ params: { where: { id: 1 }, data: { time_from: null, time_to: null } } })
+    ).rejects.toMatchObject({ name: 'ApplicationError' });
+  });
+
   it('leaves updates that do not touch the slot alone', async () => {
     await lifecycles.beforeUpdate({ params: { where: { id: 1 }, data: { name: 'x' } } });
     expect(query.findOne).not.toHaveBeenCalled();
@@ -96,7 +147,7 @@ describe.each([
 describe('city-routes/basic and permissions', () => {
   it('basic returns the town slot (the route comes whole, with its own)', () => {
     const { BASIC_SELECT, BASIC_POPULATE } = require('../src/api/city-route/services/basic-shape');
-    expect(BASIC_SELECT).toEqual(expect.arrayContaining(['id', 'time_from', 'time_to']));
+    expect(BASIC_SELECT).toEqual(expect.arrayContaining(['id', 'time_from', 'time_to', 'time_from_2', 'time_to_2']));
     expect(BASIC_POPULATE.route).toBe(true);
   });
 

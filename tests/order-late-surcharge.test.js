@@ -42,17 +42,24 @@ describe('late rules (services/late-order)', () => {
     expect(lateRules(null)).toEqual({
       timeZone: 'Europe/Andorra',
       nextDayLimitHour: 14,
+      routeClosingHour: 14,
       pickupSameDayLimitHour: 10,
-      lateSurcharge: 25,
+      // 0 until the tenant sets it (the user's decision, 2026-11-02, issues/363)
+      lateSurcharge: 0,
       workingDays: weekdays,
+      holidays: [],
     });
     expect(lateRules({ next_day_limit_hour: 13, pickup_same_day_limit_hour: 9, late_surcharge: 30 })).toEqual({
       timeZone: 'Europe/Andorra',
       nextDayLimitHour: 13,
+      routeClosingHour: 14,
       pickupSameDayLimitHour: 9,
       lateSurcharge: 30,
       workingDays: weekdays,
+      holidays: [],
     });
+    // the closing hour is never before the next-day limit
+    expect(lateRules({ next_day_limit_hour: 15, route_closing_hour: 14 }).routeClosingHour).toBe(15);
   });
 
   it('a delivery for tomorrow is late from the next-day limit on', () => {
@@ -61,9 +68,11 @@ describe('late rules (services/late-order)', () => {
     expect(isLateDelivery('2026-10-23', at('20:00'), rules)).toBe(false);
   });
 
-  it('an afternoon pickup is late on its own day from 10 h', () => {
+  // since issues/363 (2026-11-02) an afternoon pickup is never late: from 10 h
+  // of its day it can only join a pending collection order, and is refused otherwise
+  it('an afternoon pickup is never late', () => {
     expect(isLatePickup('2026-10-21', at('09:59'), rules, { afternoon: true })).toBe(false);
-    expect(isLatePickup('2026-10-21', at('10:00'), rules, { afternoon: true })).toBe(true);
+    expect(isLatePickup('2026-10-21', at('10:00'), rules, { afternoon: true })).toBe(false);
     expect(isLatePickup('2026-10-22', at('20:00'), rules, { afternoon: true })).toBe(false);
   });
 
@@ -159,7 +168,8 @@ describe('late rules (services/late-order)', () => {
       // 25763, 25765–25768
       expect(isLatePickup('2026-10-27', mon('16:13'), rules13, { afternoon: true })).toBe(false);
       expect(isLatePickup('2026-10-27', new Date('2026-10-27T09:59:00+01:00'), rules13, { afternoon: true })).toBe(false);
-      expect(isLatePickup('2026-10-27', new Date('2026-10-27T10:00:00+01:00'), rules13, { afternoon: true })).toBe(true);
+      // never late since issues/363: refused unless it joins a pending collection order
+      expect(isLatePickup('2026-10-27', new Date('2026-10-27T10:00:00+01:00'), rules13, { afternoon: true })).toBe(false);
     });
 
     it('a pickup on a morning route is late from 13 h the day before', () => {
@@ -203,11 +213,15 @@ describe('the price of a late order', () => {
 });
 
 describe('order controller: late flags', () => {
-  const NOW = new Date('2026-10-21T14:30:00+02:00');
+  // Wednesday, between the next-day limit (13 h) and the closing (14 h, issues/363)
+  const NOW = new Date('2026-10-21T13:30:00+02:00');
   let routes;
   let cityRoutes;
+  let holidays;
+  let incidences;
+  let collectionOrders;
 
-  function load({ permissions = ['orders'], stored = null, options = { next_day_limit_hour: 13 }, now = NOW } = {}) {
+  function load({ permissions = ['orders'], stored = null, options = { next_day_limit_hour: 13, late_surcharge: 15 }, now = NOW } = {}) {
     jest.resetModules();
     jest.useFakeTimers({ now, doNotFake: ['nextTick', 'setImmediate'] });
     const base = {
@@ -227,8 +241,15 @@ describe('order controller: late flags', () => {
             if (uid === 'api::city-route.city-route') return cityRoutes[where.route] || null;
             return stored;
           },
+          findMany: async () =>
+            uid === 'api::festive.festive' ? holidays : uid === 'api::order.order' ? collectionOrders : [],
+          create: async ({ data }) => {
+            if (uid === 'api::incidence.incidence') incidences.push(data);
+            return { id: 900 + incidences.length, ...data };
+          },
         }),
       },
+      log: { error: jest.fn(), warn: jest.fn() },
     };
     jest.doMock(src('services', 'me-settings'), () => ({
       getMe: async () => ({ orders_options: options }),
@@ -250,6 +271,9 @@ describe('order controller: late flags', () => {
   beforeEach(() => {
     routes = { 5: { id: 5, afternoon: false }, 6: { id: 6, afternoon: true } };
     cityRoutes = {};
+    holidays = [];
+    incidences = [];
+    collectionOrders = [];
   });
   afterEach(() => {
     jest.useRealTimers();
@@ -273,15 +297,28 @@ describe('order controller: late flags', () => {
     expect(ctx.request.body.data).toMatchObject({ late_order: false, late_surcharge: 0 });
   });
 
-  it("doesn't mark the office's orders: it checks the box by hand", async () => {
+  it("marks the office's new late orders too (issues/363), and it checks the box by hand", async () => {
     const { ctrl } = load({ permissions: ['orders_admin'] });
     const late = ctxFor(order({ estimated_delivery_date: '2026-10-22' }));
     await ctrl.create(late);
-    expect(late.request.body.data.late_order).toBeUndefined();
+    expect(late.request.body.data).toMatchObject({ late_order: true, late_surcharge: 15 });
+
+    const onTime = ctxFor(order());
+    await ctrl.create(onTime);
+    expect(onTime.request.body.data.late_order).toBeUndefined();
 
     const checked = ctxFor(order({ late_order: true }));
     await ctrl.create(checked);
-    expect(checked.request.body.data).toMatchObject({ late_order: true, late_surcharge: 25 });
+    expect(checked.request.body.data).toMatchObject({ late_order: true, late_surcharge: 15 });
+  });
+
+  it("doesn't judge the office's changes: it moves orders without a surcharge", async () => {
+    const stored = { id: 1, estimated_delivery_date: '2026-10-24', late_surcharge: 0 };
+    const { ctrl } = load({ permissions: ['orders_admin'], stored });
+    const ctx = ctxFor({ estimated_delivery_date: '2026-10-22' }, { state: { v3: { numericId: 1 } } });
+    await ctrl.update(ctx);
+    expect(ctx.request.body.data.late_order).toBeUndefined();
+    expect(incidences).toHaveLength(0);
   });
 
   it('unchecking «Recàrrec per incidència» takes the surcharge off', async () => {
@@ -289,13 +326,16 @@ describe('order controller: late flags', () => {
     const ctx = ctxFor({ late_order: false }, { state: { v3: { numericId: 1 } } });
     await ctrl.update(ctx);
     expect(ctx.request.body.data).toEqual({ late_order: false, late_surcharge: 0 });
+    expect(incidences).toHaveLength(0);
   });
 
-  it('an afternoon pickup today past 10 h is late, without surcharge', async () => {
+  it('an afternoon pickup today past 10 h that joins a pending collection order is not late (issues/363)', async () => {
+    collectionOrders = [{ id: 70, collection_pickup_date: '2026-10-21' }];
     const { ctrl } = load();
     const ctx = ctxFor(order({ collection_point: 8, collection_pickup_route: 6, collection_pickup_date: '2026-10-21' }));
     await ctrl.create(ctx);
-    expect(ctx.request.body.data).toMatchObject({ late_pickup: true, late_order: false, late_surcharge: 0 });
+    expect(ctx.request.body.data).toMatchObject({ late_pickup: false, late_order: false, late_surcharge: 0 });
+    expect(incidences).toHaveLength(0);
   });
 
   it('a morning pickup for tomorrow past the next-day limit is late; on a «Ruta de tarda» it is not', async () => {
@@ -356,14 +396,14 @@ describe('order controller: late flags', () => {
   });
 
   it('judges a pickup again only when its date moves', async () => {
-    const stored = { id: 1, estimated_delivery_date: '2026-10-24', collection_pickup_date: '2026-10-22', collection_pickup_route: { id: 5 }, collection_point: { id: 8 } };
+    const stored = { id: 1, estimated_delivery_date: '2026-10-24', collection_pickup_date: '2026-10-23', collection_pickup_route: { id: 5 }, collection_point: { id: 8 } };
     const same = load({ stored });
-    const keep = ctxFor({ collection_pickup_date: '2026-10-22', units: 3 }, { state: { v3: { numericId: 1 } } });
+    const keep = ctxFor({ collection_pickup_date: '2026-10-23', units: 3 }, { state: { v3: { numericId: 1 } } });
     await same.ctrl.update(keep);
     expect(keep.request.body.data.late_pickup).toBeUndefined();
 
     const moved = load({ stored });
-    const ctx = ctxFor({ collection_pickup_date: '2026-10-21' }, { state: { v3: { numericId: 1 } } });
+    const ctx = ctxFor({ collection_pickup_date: '2026-10-22' }, { state: { v3: { numericId: 1 } } });
     await moved.ctrl.update(ctx);
     expect(ctx.request.body.data.late_pickup).toBe(true);
   });

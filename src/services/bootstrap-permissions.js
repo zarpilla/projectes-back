@@ -132,6 +132,9 @@ async function importSeedPermissions() {
     'read-cache': ['stats', 'clear'],
     // «Còpia de seguretat»: last night's database dump (isAdmin on the routes)
     backup: ['latest', 'download'],
+    // the API keys of the integrations API, from Administració › Usuàries
+    // (isAdmin on the routes); the API itself is public, behind the api-key policy
+    integration: ['listApiKeys', 'createApiKey', 'revokeApiKey'],
     // «Desbloqueja» a received document whose «Modificable» is off (isAdmin on the route)
     'document-unlock': ['unlock'],
     // Comunitat energètica (api/energy; who may call them: app-access-rules)
@@ -272,7 +275,8 @@ async function importSeedPermissions() {
     // update: the time slot of a town in a route (issues/314)
     'city-route': ['find', 'findOne', 'create', 'update', 'delete', 'basic'],
     'form-submission': ['create', 'find', 'findOne'],
-    'route-festive': ['find', 'findOne', 'create', 'delete'],
+    // update: the reason and the substitute route of a closure (issues/355)
+    'route-festive': ['find', 'findOne', 'create', 'update', 'delete'],
     'project-phases': ['find', 'findOne', 'create', 'update', 'delete'],
     'project-original-phases': ['find', 'findOne', 'create', 'update', 'delete', 'findWithHours'],
     'estimated-hours': ['find', 'findOne', 'create', 'update', 'delete'],
@@ -312,7 +316,11 @@ async function importSeedPermissions() {
     // users-permissions plugin actions for authenticated users
     // (merged into the SAME call because updateRole REPLACES the role's set)
     // home/updateHome: the person's own Inici (services/user-home.js)
-    user: ['find', 'findOne', 'create', 'update', 'count', 'me', 'home', 'updateHome'],
+    // defaultPickup(s)/updateDefaultPickup: the member's default warehouse (issues/361)
+    user: [
+      'find', 'findOne', 'create', 'update', 'count', 'me', 'home', 'updateHome',
+      'defaultPickup', 'updateDefaultPickup', 'defaultPickups',
+    ],
     // POST /api/auth/logout revokes the refresh session (needs a Bearer token).
     auth: ['logout'],
     // v3 "userspermissions: getroles" -> the roles read action

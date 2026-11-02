@@ -13,8 +13,9 @@
  * only the row id, the city id, and the route's id and name. Selecting just
  * those gives 6ms and 0.049 MB.
  */
-// The town's own time slot (issues/314); the route's comes with the route.
-const BASIC_SELECT = ['id', 'time_from', 'time_to'];
+// The town's own time slots (issues/314, a second one optional); the route's
+// come with the route.
+const BASIC_SELECT = ['id', 'time_from', 'time_to', 'time_from_2', 'time_to_2'];
 
 const BASIC_POPULATE = {
   // Only the id is read off the city.

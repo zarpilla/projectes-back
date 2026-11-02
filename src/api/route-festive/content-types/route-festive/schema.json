@@ -18,6 +18,17 @@
     },
     "date": {
       "type": "date"
+    },
+    "reason": {
+      "type": "text"
+    },
+    "substitute_route": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::route.route"
+    },
+    "substitute_date": {
+      "type": "date"
     }
   }
 }
