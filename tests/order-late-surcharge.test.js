@@ -44,7 +44,8 @@ describe('late rules (services/late-order)', () => {
       nextDayLimitHour: 14,
       routeClosingHour: 14,
       pickupSameDayLimitHour: 10,
-      lateSurcharge: 15,
+      // 0 until the tenant sets it (the user's decision, 2026-11-02, issues/363)
+      lateSurcharge: 0,
       workingDays: weekdays,
       holidays: [],
     });
@@ -67,9 +68,11 @@ describe('late rules (services/late-order)', () => {
     expect(isLateDelivery('2026-10-23', at('20:00'), rules)).toBe(false);
   });
 
-  it('an afternoon pickup is late on its own day from 10 h', () => {
+  // since issues/363 (2026-11-02) an afternoon pickup is never late: from 10 h
+  // of its day it can only join a pending collection order, and is refused otherwise
+  it('an afternoon pickup is never late', () => {
     expect(isLatePickup('2026-10-21', at('09:59'), rules, { afternoon: true })).toBe(false);
-    expect(isLatePickup('2026-10-21', at('10:00'), rules, { afternoon: true })).toBe(true);
+    expect(isLatePickup('2026-10-21', at('10:00'), rules, { afternoon: true })).toBe(false);
     expect(isLatePickup('2026-10-22', at('20:00'), rules, { afternoon: true })).toBe(false);
   });
 
@@ -165,7 +168,8 @@ describe('late rules (services/late-order)', () => {
       // 25763, 25765–25768
       expect(isLatePickup('2026-10-27', mon('16:13'), rules13, { afternoon: true })).toBe(false);
       expect(isLatePickup('2026-10-27', new Date('2026-10-27T09:59:00+01:00'), rules13, { afternoon: true })).toBe(false);
-      expect(isLatePickup('2026-10-27', new Date('2026-10-27T10:00:00+01:00'), rules13, { afternoon: true })).toBe(true);
+      // never late since issues/363: refused unless it joins a pending collection order
+      expect(isLatePickup('2026-10-27', new Date('2026-10-27T10:00:00+01:00'), rules13, { afternoon: true })).toBe(false);
     });
 
     it('a pickup on a morning route is late from 13 h the day before', () => {
@@ -217,7 +221,7 @@ describe('order controller: late flags', () => {
   let incidences;
   let collectionOrders;
 
-  function load({ permissions = ['orders'], stored = null, options = { next_day_limit_hour: 13 }, now = NOW } = {}) {
+  function load({ permissions = ['orders'], stored = null, options = { next_day_limit_hour: 13, late_surcharge: 15 }, now = NOW } = {}) {
     jest.resetModules();
     jest.useFakeTimers({ now, doNotFake: ['nextTick', 'setImmediate'] });
     const base = {
@@ -325,13 +329,13 @@ describe('order controller: late flags', () => {
     expect(incidences).toHaveLength(0);
   });
 
-  it('an afternoon pickup today past 10 h is late, without surcharge', async () => {
-    // it joins the member's pickup already pending today (issues/363)
+  it('an afternoon pickup today past 10 h that joins a pending collection order is not late (issues/363)', async () => {
     collectionOrders = [{ id: 70, collection_pickup_date: '2026-10-21' }];
     const { ctrl } = load();
     const ctx = ctxFor(order({ collection_point: 8, collection_pickup_route: 6, collection_pickup_date: '2026-10-21' }));
     await ctrl.create(ctx);
-    expect(ctx.request.body.data).toMatchObject({ late_pickup: true, late_order: false, late_surcharge: 0 });
+    expect(ctx.request.body.data).toMatchObject({ late_pickup: false, late_order: false, late_surcharge: 0 });
+    expect(incidences).toHaveLength(0);
   });
 
   it('a morning pickup for tomorrow past the next-day limit is late; on a «Ruta de tarda» it is not', async () => {

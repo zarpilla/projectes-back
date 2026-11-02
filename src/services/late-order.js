@@ -19,14 +19,17 @@ const { currentTimeZone } = require('./time-zone');
  * and moved to the route's next day by the form, so it mixed with the orders
  * entered on time for next week. It is now accepted for the day asked, marked
  * late (`late_order`, red in the lists, a warning triangle on the delivery
- * note) and charged a surcharge (`late_surcharge` %, default 15 since issues/363) that the
+ * note) and charged a surcharge (`late_surcharge` %, 0 by default since issues/363) that the
  * office can cancel with «Recàrrec per incidència».
  *
  * A farm pickup (collection_pickup_date) is late:
- *   - on an afternoon route («Ruta de tarda», `route.afternoon`): entered on
- *     its own day at or after `pickup_same_day_limit_hour` (default 10),
- *   - on any other route: entered at or after its deadline (the next-day
- *     limit of the working day before), or on its own day.
+ *   - on a morning route: entered at or after its deadline (the next-day
+ *     limit of the working day before), or on its own day,
+ *   - never on an afternoon route («Ruta de tarda», `route.afternoon`): on
+ *     its own day from `pickup_same_day_limit_hour` (default 10) it can only
+ *     join a collection order already pending, and then it is no late pickup
+ *     (the user's decision, 2026-11-02, issues/363).
+ *     It used to be late from that hour.
  * It is marked `late_pickup` (red, also on its collection order) with no
  * surcharge. The afternoon routes used to be guessed from their time slot
  * (from 13 h); no route had one, so La Diligència's «(TARDA)» routes were
@@ -37,8 +40,8 @@ const { currentTimeZone } = require('./time-zone');
  * is closed for D: a member can't order for D any more (the API refuses it,
  * the form offers the next date a route of the town runs), and a morning
  * farm pickup on D is refused the same way. Between the next-day limit and
- * the closing hour the order is late: surcharge (`late_surcharge` %, flat, 15
- * by default) and an incidence. The office can still enter orders after the
+ * the closing hour the order is late: surcharge (`late_surcharge` %, flat, 0
+ * by default for now: the tenant sets it) and an incidence. The office can still enter orders after the
  * closing hour, with the surcharge too.
  *
  * The working day before skips the entity's holidays for everyone (Festius,
@@ -56,7 +59,7 @@ const { currentTimeZone } = require('./time-zone');
 const DEFAULT_NEXT_DAY_LIMIT_HOUR = 14;
 const DEFAULT_PICKUP_SAME_DAY_LIMIT_HOUR = 10;
 const DEFAULT_ROUTE_CLOSING_HOUR = 14;
-const DEFAULT_LATE_SURCHARGE = 15;
+const DEFAULT_LATE_SURCHARGE = 0;
 // moment's day(): 0 Sunday … 6 Saturday; the names of the route fields
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DEFAULT_WORKING_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
@@ -189,8 +192,8 @@ function isLatePickup(date, now, rules, { afternoon = false } = {}) {
   const current = wallClockOf(now, zoneOf(rules));
   const today = current.clone().startOf('day');
   if (day.isBefore(today, 'day')) return false; // refused elsewhere (issues/302)
-  if (day.isSame(today, 'day')) return afternoon ? current.hour() >= rules.pickupSameDayLimitHour : true;
-  if (afternoon) return false;
+  if (afternoon) return false; // see isAfternoonPickupCutoff (issues/363)
+  if (day.isSame(today, 'day')) return true;
   return !current.isBefore(deadlineOf(day, rules));
 }
 

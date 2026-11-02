@@ -253,7 +253,7 @@ describe('delivery date rules (issues/168)', () => {
       service: () => ({ create: jest.fn(async () => ({ id: 1 })) }),
     };
     jest.doMock(src('services', 'me-settings'), () => ({
-      getMe: async () => ({ orders_options: { next_day_limit_hour: 13 } }),
+      getMe: async () => ({ orders_options: { next_day_limit_hour: 13, late_surcharge: 15 } }),
       frontUrlOf: () => '',
     }));
     mockCoreController(base);

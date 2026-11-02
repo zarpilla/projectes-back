@@ -23,7 +23,7 @@
     },
     "late_surcharge": {
       "type": "decimal",
-      "default": 15
+      "default": 0
     },
     "late_order_message": {
       "type": "text"

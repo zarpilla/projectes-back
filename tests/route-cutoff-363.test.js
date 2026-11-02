@@ -84,7 +84,12 @@ describe('order controller: route closing (issues/363)', () => {
   let incidences;
   let collectionOrders;
 
-  function load({ permissions = ['orders'], stored = null, now, options = { next_day_limit_hour: 13 } }) {
+  function load({
+    permissions = ['orders'],
+    stored = null,
+    now,
+    options = { next_day_limit_hour: 13, late_surcharge: 15 },
+  }) {
     jest.resetModules();
     jest.useFakeTimers({ now, doNotFake: ['nextTick', 'setImmediate'] });
     const base = {
@@ -206,7 +211,7 @@ describe('order controller: route closing (issues/363)', () => {
     expect(answer).toMatch(/abans de les 14 h de dilluns 7\/12/);
   });
 
-  it("refuses a member's morning farm pickup past its closing; an afternoon one is only late", async () => {
+  it("refuses a member's morning farm pickup past its closing; an afternoon one that joins a pending -R is not late", async () => {
     const morning = load({ now: wed('15:00') });
     const ctx = ctxFor(
       order({
@@ -220,7 +225,7 @@ describe('order controller: route closing (issues/363)', () => {
     expect(morning.base.create).not.toHaveBeenCalled();
     expect(answer).toMatch(/la recollida de dijous 22\/10 ja és tancada/);
 
-    // an afternoon one today joins the member's pending pickup: only late
+    // an afternoon one today that joins the member's pending pickup: not late, no incidence
     collectionOrders = [{ id: 70, collection_pickup_date: '2026-10-21' }];
     const tarda = load({ now: wed('15:00') });
     const afternoon = ctxFor(
@@ -233,10 +238,24 @@ describe('order controller: route closing (issues/363)', () => {
     );
     await tarda.ctrl.create(afternoon);
     expect(tarda.base.create).toHaveBeenCalled();
-    expect(afternoon.request.body.data.late_pickup).toBe(true);
+    expect(afternoon.request.body.data.late_pickup).toBe(false);
+    expect(incidences).toHaveLength(0);
+
+    // a morning one between 13 and 14 h is late and opens an incidence
+    const late = load({ now: wed('13:30') });
+    await late.ctrl.create(
+      ctxFor(
+        order({
+          estimated_delivery_date: '2026-10-24',
+          collection_point: 8,
+          collection_pickup_route: 5,
+          collection_pickup_date: '2026-10-22',
+        }),
+      ),
+    );
     expect(incidences).toHaveLength(1);
     expect(incidences[0].description).toBe(
-      'Recollida informada tard: informada dimecres 21/10 a les 15:00 per a dimecres 21/10.',
+      'Recollida informada tard: informada dimecres 21/10 a les 13:30 per a dijous 22/10.',
     );
   });
 
