@@ -58,6 +58,22 @@
     },
     "uid_ical": {
       "type": "string"
+    },
+    "created_by_user_id": {
+      "type": "integer",
+      "private": true
+    },
+    "created_by_username": {
+      "type": "string",
+      "private": true
+    },
+    "updated_by_user_id": {
+      "type": "integer",
+      "private": true
+    },
+    "updated_by_username": {
+      "type": "string",
+      "private": true
     }
   }
 }

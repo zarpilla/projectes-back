@@ -10,6 +10,7 @@ const { relationId } = require('../../../../services/relation-input');
 
 module.exports = {
   async beforeCreate(event) {
+    stampAuthor(event.params.data, true);
     await calculatePrice(0, event.params.data);
   },
   async afterCreate(event) {
@@ -21,6 +22,7 @@ module.exports = {
     }
   },
   async beforeUpdate(event) {
+    stampAuthor(event.params.data, false);
     await calculatePrice(event.params.where.id, event.params.data);
     // Remember the project before the write, to refresh it too if the
     // activity moves to another one.
@@ -50,6 +52,36 @@ async function activityProjectId(id) {
     .query('api::activity.activity')
     .findOne({ where: { id }, select: ['id'], populate: { project: { select: ['id'] } } });
   return activity && activity.project ? activity.project.id : undefined;
+}
+
+/**
+ * Every activity is written as the logged-in app user (REST create/update,
+ * the move endpoint's direct db.update) or by the system with nobody behind
+ * it (crons, workers). Strapi's own created_by_id only names admin-panel
+ * users, and the change-log does not track activities, so nothing said who
+ * entered a dedication or touched it last. Stamp the requesting user on the
+ * row itself — private schema attributes, filled here server-side only, so
+ * clients can neither see nor forge them. Same user source as the change-log's
+ * currentUser: without one, nothing is stamped and an update keeps the
+ * previous stamp.
+ */
+function requestUser() {
+  const ctx = strapi.requestContext && strapi.requestContext.get();
+  return (ctx && ctx.state && ctx.state.user) || null;
+}
+
+function stampAuthor(data, isCreate) {
+  if (!data) return;
+  const user = requestUser();
+  if (!user) return;
+  const id = user.id || null;
+  const username = user.username || user.email || null;
+  data.updated_by_user_id = id;
+  data.updated_by_username = username;
+  if (isCreate) {
+    data.created_by_user_id = id;
+    data.created_by_username = username;
+  }
 }
 
 async function calculatePrice(id, data) {
