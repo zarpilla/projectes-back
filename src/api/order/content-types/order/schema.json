@@ -258,6 +258,9 @@
     "late_pickup": {
       "type": "boolean",
       "default": false
+    },
+    "route_redirected_from": {
+      "type": "string"
     }
   }
 }

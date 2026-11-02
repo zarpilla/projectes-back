@@ -1601,6 +1601,7 @@ export interface ApiOrderOrder extends Struct.CollectionTypeSchema {
     route: Schema.Attribute.Relation<'oneToOne', 'api::route.route'>;
     route_date: Schema.Attribute.Date;
     route_rate: Schema.Attribute.Relation<'oneToOne', 'api::route-rate.route-rate'>;
+    route_redirected_from: Schema.Attribute.String;
     status: Schema.Attribute.Enumeration<
       ['pending', 'deposited', 'processed', 'delivered', 'invoiced', 'cancelled', 'distributing', 'lastmile']
     >;
