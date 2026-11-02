@@ -50,12 +50,20 @@ describe('activity author stamp', () => {
 
   it('stamps only updated_by on update, leaving the original author', async () => {
     mockStrapi({ id: 3, username: 'Òscar' });
-    const data = { hours: 3, created_by_user_id: 15, created_by_username: 'Jordi' };
+    const data = { hours: 3 };
     await lifecycles.beforeUpdate({ params: { where: { id: 1 }, data } });
     expect(data.updated_by_user_id).toBe(3);
     expect(data.updated_by_username).toBe('Òscar');
-    expect(data.created_by_user_id).toBe(15);
-    expect(data.created_by_username).toBe('Jordi');
+    expect('created_by_user_id' in data).toBe(false);
+    expect('created_by_username' in data).toBe(false);
+  });
+
+  it('drops a created_by sent in an update payload (private is still writable)', async () => {
+    mockStrapi({ id: 3, username: 'Òscar' });
+    const data = { hours: 3, created_by_user_id: 1, created_by_username: 'Laura' };
+    await lifecycles.beforeUpdate({ params: { where: { id: 1 }, data } });
+    expect('created_by_user_id' in data).toBe(false);
+    expect('created_by_username' in data).toBe(false);
   });
 
   it('stamps nothing when no user is behind the write (cron, worker)', async () => {

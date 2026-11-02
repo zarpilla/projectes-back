@@ -74,6 +74,12 @@ function stampAuthor(data, isCreate) {
   if (!data) return;
   const user = requestUser();
   if (!user) return;
+  // "private" only hides attributes on output: the content API still accepts
+  // them as input, so a REST update could rewrite the original author.
+  if (!isCreate) {
+    delete data.created_by_user_id;
+    delete data.created_by_username;
+  }
   const id = user.id || null;
   const username = user.username || user.email || null;
   data.updated_by_user_id = id;
