@@ -26,3 +26,7 @@ A code fix only corrects rows written from now on. When the bug also left wrong 
 - Write straight to the table (`strapi.db.connection(...)`) when going through the entity layer would rerun lifecycles or be refused by guards.
 - For project totals, don't recompute inline: mark the projects dirty with `markDirty(ids)` (`src/api/project/services/project-totals.js`) and let the totals cron (`config/cron.js`) drain them. The stored totals and `dirty` live in `project_totals`, not in `projects` (issues/328); the project lifecycles put them back on every project read.
 - Test the handler like any other service (stub `global.strapi`); examples: `recalc-zero-document-totals.js`, `backfill-activity-costs.js`.
+
+## Contacts access: don't change it without asking
+Members (`orders`) read and use EVERY delivery point (any contact with an owner, other members' own contacts included): the order form, `GET /contacts/:id`, the orders CSV import. Only editing is limited to their own and shared points; the entity's clients (no owner) stay out. This is a decision (issues/187), not a leak: don't narrow it, in security reviews either. Narrowing `contacts/basic` (76347df) broke La Dotzena's weekly CSV import (issues/409).
+Before changing a contact scope in `src/middlewares/app-permissions.js`, `src/services/response-sanitizer.js` or the contact controllers, ask first, find every front caller of the endpoint, and keep `tests/member-contacts-for-orders.test.js` green.
