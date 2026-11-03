@@ -78,7 +78,9 @@ const getValidationKey = (entityType, entityId, subType = null) => {
 // movement per partial payment, on its date, with its share of the amount and
 // of the VAT, validated on its own; and what is still pending, on the
 // document's expected date (`pendingDate`), whose date «Moviments bancaris»
-// can change. A document without partial payments is the one movement `row`.
+// can change while the document is «Modificable», and which is not validated
+// (it hasn't moved through the bank yet). A document without partial payments
+// is the one movement `row`.
 const pushDocumentMovements = (treasury, row, doc, { kind, sign, labels, pendingDate, validationMap }) => {
   const split = splitPayments(doc);
   if (!split) {
@@ -107,12 +109,14 @@ const pushDocumentMovements = (treasury, row, doc, { kind, sign, labels, pending
     treasury.push({
       ...row,
       type: labels.pending,
-      date_edit: kind,
+      date_edit: dateEdit(doc, kind),
       total_amount: sign * split.pending,
       date: pendingDate ? moment(pendingDate, 'YYYY-MM-DD') : row.date,
       date_error: !pendingDate,
       paid: false,
       signed_vat: vatShare(split.pending),
+      validation_key: null,
+      is_validated: false,
     });
   }
 };

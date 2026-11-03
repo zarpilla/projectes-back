@@ -74,6 +74,9 @@ function applyPartialPayments(data, existing = null) {
 
   const total = round2(Number(data.total !== undefined ? data.total : existing && existing.total) || 0);
   const sum = sumPayments(list);
+  if (!total) {
+    throw new ApplicationError('Un document amb total 0 no pot tenir cobraments/pagaments parcials');
+  }
   if (list.some((p) => Math.sign(p.amount) !== Math.sign(total)) || Math.abs(sum) > Math.abs(total) + CENT) {
     throw new ApplicationError(
       `Els cobraments/pagaments parcials (${sum.toFixed(2)} €) no poden superar el total del document (${total.toFixed(2)} €)`,

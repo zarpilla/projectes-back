@@ -76,6 +76,12 @@ describe('applyPartialPayments', () => {
     applyPartialPayments(data);
     expect(data.paid).toBe(true);
   });
+
+  it('refuses payments on a document whose total is 0, saying so', () => {
+    expect(() => applyPartialPayments({ total: 0, partial_payments: [{ date: '2026-05-01', amount: 10 }] })).toThrow(
+      /total 0/,
+    );
+  });
 });
 
 describe('received-* document lifecycle', () => {
@@ -144,6 +150,8 @@ describe('Tresoreria', () => {
       'api::year.year': [{ id: 1, year, deductible_vat_pct: 100 }],
       'api::treasury-validation.treasury-validation': [
         { entity_type: 'emitted-invoices', entity_id: 1, sub_type: 'payment-p1' },
+        // validated as a whole before it was split: says nothing of what is pending
+        { entity_type: 'emitted-invoices', entity_id: 1, sub_type: null },
       ],
       'api::emitted-invoice.emitted-invoice': [
         {
@@ -164,6 +172,34 @@ describe('Tresoreria', () => {
         },
         { id: 2, code: 'F2', state: 'real', emitted: `${year}-02-02`, total: 121, total_vat: 21, projects: [] },
       ],
+      'api::received-income.received-income': [
+        {
+          id: 5,
+          code: 'I5',
+          emitted: `${year}-02-01`,
+          paybefore: `${year}-07-31`,
+          total: 1100,
+          total_vat: 100,
+          paid: false,
+          projects: [],
+          document_type: { id: 1, name: 'Subvenció' },
+          partial_payments: [{ id: 'g1', date: `${year}-03-15`, amount: 440 }],
+        },
+      ],
+      'api::received-expense.received-expense': [
+        {
+          id: 6,
+          code: 'D6',
+          emitted: `${year}-01-05`,
+          paybefore: `${year}-09-30`,
+          total: 242,
+          total_vat: 42,
+          paid: false,
+          projects: [],
+          document_type: { id: 2, name: 'Lloguer' },
+          partial_payments: [{ id: 'h1', date: `${year}-02-05`, amount: 121 }],
+        },
+      ],
       'api::received-invoice.received-invoice': [
         {
           id: 3,
@@ -179,6 +215,18 @@ describe('Tresoreria', () => {
             { id: 'q1', date: `${year}-01-31`, amount: 250 },
             { id: 'q2', date: `${year}-05-01`, amount: 250 },
           ],
+        },
+        {
+          id: 4,
+          code: 'R4',
+          emitted: `${year}-01-10`,
+          paybefore: `${year}-06-30`,
+          total: 400,
+          total_vat: 0,
+          paid: false,
+          updatable: false,
+          projects: [],
+          partial_payments: [{ id: 'r1', date: `${year}-02-10`, amount: 100 }],
         },
       ],
     });
@@ -203,6 +251,34 @@ describe('Tresoreria', () => {
     expect(rows.map((t) => t.signed_vat)).toEqual([105, expect.closeTo(52.93, 2), expect.closeTo(52.07, 2)]);
     // only the pending part can be moved to another date
     expect(rows.map((t) => t.date_edit)).toEqual([null, 'emitted-invoices', null]);
+  });
+
+  it('does not take the whole-document validation for the pending part', async () => {
+    const { treasury } = await forecast();
+    const pending = treasury.find((t) => t.concept === 'F1' && !t.paid);
+    expect([pending.validation_key, pending.is_validated]).toEqual([null, false]);
+  });
+
+  it('keeps the pending date fixed while the document is not «Modificable»', async () => {
+    const { treasury } = await forecast();
+    expect(treasury.filter((t) => t.concept === 'R4').map((t) => [t.type, t.total_amount, t.date_edit])).toEqual([
+      ['Factura pagada (parcial)', -100, null],
+      ['Factura rebuda (pendent)', -300, null],
+    ]);
+  });
+
+  it('splits other incomes and other expenses too, with their type and VAT share', async () => {
+    const { treasury } = await forecast();
+    const rows = (code) =>
+      treasury.filter((t) => t.concept === code).map((t) => [t.type, day(t), t.total_amount, t.signed_vat]);
+    expect(rows('I5')).toEqual([
+      ['Ingrés cobrat (parcial, Subvenció)', `${year}-03-15`, 440, 40],
+      ['Ingrés emès (pendent, Subvenció)', `${year}-07-31`, 660, 60],
+    ]);
+    expect(rows('D6')).toEqual([
+      ['Despesa pagada (parcial, Lloguer)', `${year}-02-05`, -121, -21],
+      ['Despesa rebuda (pendent, Lloguer)', `${year}-09-30`, -121, -21],
+    ]);
   });
 
   it('validates each partial collection on its own', async () => {

@@ -607,3 +607,45 @@ describe('the invoice PDF after a save', () => {
     error.mockRestore();
   });
 });
+
+// issues/412: an issued invoice collected in several goes. Its own lifecycle
+// (not the received-* one) derives «Cobrada» and its date from the entries.
+describe('collected in several goes', () => {
+  beforeEach(() => {
+    db.invoice = {
+      id: 1,
+      state: 'real',
+      code: '2026-0042',
+      number: 42,
+      serial: 3,
+      emitted: '2026-01-15',
+      lines: [{ quantity: 1, base: 1000, vat: 21 }],
+      total: 1210,
+    };
+  });
+
+  it('stays not collected until the entries reach the total', async () => {
+    const data = await update({ partial_payments: [{ date: '2026-02-01', amount: 605 }] });
+
+    expect(data).toMatchObject({ paid: false, paid_date: null });
+    expect(data.partial_payments).toEqual([{ id: expect.any(String), date: '2026-02-01', amount: 605 }]);
+  });
+
+  it('is collected on the date of the last entry once they add up to the total', async () => {
+    const data = await update({
+      paid: false,
+      partial_payments: [
+        { id: 'b', date: '2026-03-10', amount: 605 },
+        { id: 'a', date: '2026-02-01', amount: 605 },
+      ],
+    });
+
+    expect(data).toMatchObject({ paid: true, paid_date: '2026-03-10' });
+  });
+
+  it('refuses entries over the total', async () => {
+    await expect(update({ partial_payments: [{ date: '2026-02-01', amount: 1210.02 }] })).rejects.toThrow(
+      /no poden superar/,
+    );
+  });
+});
