@@ -236,6 +236,62 @@ describe('the record sent to AEAT', () => {
     // not subject by location rules, instead of exempt
     expect(tag(xml, 'CalificacionOperacion')).toBe('N2');
   });
+
+  // IVA › Models 303 i 390: the 0 % lines follow the invoice's vat_operation.
+  // verifactu-node-lib 1.0.1 puts an exempt code in OperacionExenta (1.0.0 put
+  // it in CalificacionOperacion, which AEAT's XSD refuses) and leaves no empty
+  // <CuotaRecargoEquivalencia/> on lines without VAT (invalid for the XSD).
+  const zeroLineInvoice = (vat_operation) =>
+    invoice(1, '2026-0042', {
+      lines: [
+        { quantity: 1, base: 100, vat: 21 },
+        { quantity: 1, base: 80, vat: 0 },
+      ],
+      total_base: 180,
+      total_vat: 21,
+      vat_operation,
+    });
+
+  it('sends an exempt invoice line (E1) in OperacionExenta', async () => {
+    db.chains[0].emitted_invoice = zeroLineInvoice('E1');
+    await send();
+    const xml = sentXml();
+
+    expect(tags(xml, 'CalificacionOperacion')).toEqual(['S1']);
+    expect(tags(xml, 'OperacionExenta')).toEqual(['E1']);
+    expect(tags(xml, 'ClaveRegimen')).toEqual(['01', '01']);
+    expect(tags(xml, 'BaseImponibleOimporteNoSujeto')).toEqual(['100.00', '80.00']);
+    expect(xml).not.toMatch(/<sum1:\w+\/>/);
+  });
+
+  it('sends an export (E2) with the export regime key', async () => {
+    db.chains[0].emitted_invoice = zeroLineInvoice('E2');
+    await send();
+    const xml = sentXml();
+
+    expect(tags(xml, 'OperacionExenta')).toEqual(['E2']);
+    expect(tags(xml, 'ClaveRegimen')).toEqual(['01', '02']);
+  });
+
+  it.each([['N1'], ['N2'], ['S2']])('sends a classified %s line in CalificacionOperacion', async (operation) => {
+    db.chains[0].emitted_invoice = zeroLineInvoice(operation);
+    await send();
+    const xml = sentXml();
+
+    expect(tags(xml, 'CalificacionOperacion')).toEqual(['S1', operation]);
+    expect(tags(xml, 'OperacionExenta')).toEqual([]);
+    expect(tags(xml, 'ClaveRegimen')).toEqual(['01', '01']);
+    expect(xml).not.toMatch(/<sum1:\w+\/>/);
+  });
+
+  it('keeps an unclassified 0 % line as before, without an empty surcharge node', async () => {
+    db.chains[0].emitted_invoice = zeroLineInvoice(null);
+    await send();
+    const xml = sentXml();
+
+    expect(tags(xml, 'CalificacionOperacion')).toEqual(['S1', 'N1']);
+    expect(xml).not.toContain('CuotaRecargoEquivalencia');
+  });
 });
 
 describe('the chain', () => {

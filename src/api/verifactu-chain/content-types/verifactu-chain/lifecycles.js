@@ -16,6 +16,19 @@ const axios = require('axios');
 const https = require('https');
 const path = require('path');
 const { createVerifactuInvoice } = require('verifactu-node-lib');
+
+/**
+ * A line at 0 %: as the invoice is classified at IVA › Models 303 i 390
+ * (`vat_operation`, VeriFactu's codes): exempt E1–E6 go in OperacionExenta
+ * (an export, E2, with the export regime key 02), not subject N1/N2 and
+ * reverse charge S2 in CalificacionOperacion. Unclassified, as before: not
+ * subject (N1), or by place of supply (N2) for a foreign client.
+ */
+const CLASSIFIED_ZERO_VAT = ['E1', 'E2', 'E5', 'N1', 'N2', 'S2'];
+function zeroVatLine(operation, notSpain) {
+  if (CLASSIFIED_ZERO_VAT.includes(operation)) return { vatOperation: operation, vatKey: operation === 'E2' ? '02' : '01' };
+  return notSpain ? { vatOperation: 'N2', vatKey: '02' } : { vatOperation: 'N1', vatKey: '01' };
+}
 const _ = require('lodash');
 const { relationId } = require('../../../../services/relation-input');
 const { chainStateFromResponse } = require('../../services/aeat-response');
@@ -135,14 +148,15 @@ const sendVerifactu = async () => {
             // Use the original line's VAT calculation method to maintain consistency
             const vatAmount = line.vat_amount || baseAmount * (line.vat ? line.vat / 100 : 0);
 
+            const zero = line.vat ? null : zeroVatLine(invoice.emitted_invoice.vat_operation, notSpain);
             return {
-              vatOperation: line.vat ? 'S1' : notSpain ? 'N2' : 'N1',
+              vatOperation: zero ? zero.vatOperation : 'S1',
               base: baseAmount,
               rate: line.vat || 0,
               //rate2: 0,
               amount: vatAmount,
               //amount2: 0,
-              vatKey: line.vat ? '01' : notSpain ? '02' : '01',
+              vatKey: zero ? zero.vatKey : '01',
             };
           });
 
