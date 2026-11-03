@@ -25,6 +25,7 @@ const { logChanges } = require('../../../../services/change-log');
 const { getMe } = require('../../../../services/me-settings');
 const { relationId } = require('../../../../services/relation-input');
 const { computeLineTotals } = require('../../../../services/document-lifecycle');
+const { applyPartialPayments } = require('../../../../services/partial-payments');
 // A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
 // so the rule that rejected the write never reaches the user. ApplicationError
 // answers 400 with the message, which the views already display.
@@ -58,6 +59,7 @@ module.exports = {
 
     await fillContactInfo(data);
     await calculateTotals(data);
+    applyPartialPayments(data);
   },
 
   async afterCreate(event) {
@@ -127,6 +129,8 @@ module.exports = {
     } else {
       delete data.user_real;
     }
+    // collected in several goes (issues/412)
+    applyPartialPayments(data, invoice);
 
     // issues/034: afterUpdate can't tell from the payload that the invoice has
     // just been issued (handleState has replaced its ESBORRANY code), so say it.

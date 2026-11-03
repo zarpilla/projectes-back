@@ -19,6 +19,8 @@
  *     bank_account from it (received-* documents)
  *   - withContactInfo: denormalize contact fields into contact_info
  *     (received-* documents)
+ *   - withPartialPayments: check `partial_payments` against the total and
+ *     derive paid / paid_date from it (issues/412)
  *   - skipTotalsOnInternal: skip totals recalc when the internal admin flag is
  *     set on update (received-* use the v3 `_internal` convention; in v5 the
  *     flag is `updatable_admin`-style passthrough data, kept as `_internal`)
@@ -30,9 +32,11 @@
  * @param {boolean} [opts.withPaymentMethod=false]
  * @param {boolean} [opts.withContactInfo=false]
  * @param {boolean} [opts.skipTotalsOnInternal=false]
+ * @param {boolean} [opts.withPartialPayments=false]
  */
 const { scheduleFromEntityProjects } = require('../api/project/services/totalsRefreshScheduler');
 const { relationId } = require('./relation-input');
+const { applyPartialPayments } = require('./partial-payments');
 // A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
 // so the rule that rejected the write never reaches the user. ApplicationError
 // answers 400 with the message, which the views already display.
@@ -45,6 +49,7 @@ function createDocumentLifecycles({
   withPaymentMethod = false,
   withContactInfo = false,
   skipTotalsOnInternal = false,
+  withPartialPayments = false,
 }) {
   return {
     async beforeCreate(event) {
@@ -52,6 +57,7 @@ function createDocumentLifecycles({
       if (withPaymentMethod) await applyPaymentMethod(data, null);
       if (withContactInfo) await fillContactInfo(data);
       await calculateTotals(data);
+      if (withPartialPayments) applyPartialPayments(data);
     },
     async afterCreate(event) {
       scheduleFromEntityProjects(event.result);
@@ -72,6 +78,7 @@ function createDocumentLifecycles({
         data.updatable_admin = false;
         await calculateTotals(data, true);
       }
+      if (withPartialPayments) applyPartialPayments(data, existing);
     },
     async afterUpdate(event) {
       scheduleFromEntityProjects(event.result);
