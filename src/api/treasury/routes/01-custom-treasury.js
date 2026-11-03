@@ -35,6 +35,11 @@ module.exports = {
     },
     {
       method: 'POST',
+      path: '/treasuries/vat-models/classify',
+      handler: 'treasury.vatModelsClassify',
+    },
+    {
+      method: 'POST',
       path: '/treasuries/movement-dates',
       handler: 'treasury.updateMovementDates',
     },

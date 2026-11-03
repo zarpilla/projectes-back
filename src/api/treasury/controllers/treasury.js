@@ -33,6 +33,7 @@ const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { groupPayrollRows } = require('../services/payroll-groups');
 const { irpfSummary } = require('../services/irpf-summary');
 const { vatModels } = require('../services/vat-models');
+const { classifyDocuments, VatClassifyError } = require('../services/vat-classify');
 const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../services/vat-forecast');
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
 const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
@@ -1415,26 +1416,55 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
   },
 
   /**
-   * GET /api/treasuries/vat-models?year=YYYY — Informes › Models 303 i 390
-   * (Beta): the boxes of the VAT return per quarter and for the year.
+   * GET /api/treasuries/vat-models?year=YYYY — IVA › Models 303 i 390 (Beta):
+   * the boxes of the VAT return per quarter and for the year.
    */
   async vatModels(ctx) {
     const year = parseInt(ctx.query.year, 10) || moment().year();
     const where = { emitted: { $gte: `${year}-01-01`, $lte: `${year}-12-31` } };
     const select = ['id', 'code', 'emitted', 'total_base', 'total_vat'];
     const contact = { select: ['id', 'name', 'nif', 'country'] };
-    const [emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years] = await Promise.all([
+    // other years' classified documents, for the proposals (same contact)
+    const classified = (uid, field) =>
+      strapi.db.query(uid).findMany({
+        select: ['id', 'emitted', field],
+        where: { [field]: { $notNull: true }, $not: where },
+        populate: { contact: { select: ['id'] } },
+      });
+    const [emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years, oldEmitted, oldIncomes, oldReceived] = await Promise.all([
       strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
-        select: [...select, 'state'],
+        select: [...select, 'state', 'vat_operation'],
         where,
         populate: { lines: true, contact, serial: { select: ['id', 'rectificative'] } },
       }),
-      strapi.db.query('api::received-income.received-income').findMany({ select, where, populate: { lines: true, contact } }),
-      strapi.db.query('api::received-invoice.received-invoice').findMany({ select, where, populate: { lines: true, contact } }),
+      strapi.db.query('api::received-income.received-income').findMany({
+        select: [...select, 'vat_operation'],
+        where,
+        populate: { lines: true, contact },
+      }),
+      strapi.db.query('api::received-invoice.received-invoice').findMany({
+        select: [...select, 'reverse_charge', 'reverse_charge_rate'],
+        where,
+        populate: { lines: { populate: { expense_type: { select: ['id', 'capital_goods'] } } }, contact },
+      }),
       strapi.db.query('api::received-expense.received-expense').findMany({ select, where }),
       strapi.db.query('api::year.year').findMany({ select: ['id', 'year', 'deductible_vat_pct'] }),
+      classified('api::emitted-invoice.emitted-invoice', 'vat_operation'),
+      classified('api::received-income.received-income', 'vat_operation'),
+      classified('api::received-invoice.received-invoice', 'reverse_charge'),
     ]);
-    ctx.body = vatModels({ emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years }, year);
+    const history = { issued: [...oldEmitted, ...oldIncomes], received: oldReceived };
+    ctx.body = vatModels({ emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years, history }, year);
+  },
+
+  // POST /treasuries/vat-models/classify { items: [{ kind, id, value, rate? }] }
+  async vatModelsClassify(ctx) {
+    try {
+      ctx.body = await classifyDocuments((ctx.request.body || {}).items);
+    } catch (e) {
+      if (e instanceof VatClassifyError) return ctx.badRequest(e.message);
+      throw e;
+    }
   },
 
   async invoicingForecast(ctx) {

@@ -124,3 +124,97 @@ describe('the document totals win over its lines by a few cents (issues/194)', (
     expect(r.quarters[0].boxes).toMatchObject({ '07': 30.02, '09': 6.32, '04': 5, '06': 0.5 });
   });
 });
+
+describe('phase 2: classified 0 % lines, reverse charge and capital goods', () => {
+  const ie = { id: 7, name: 'Google', nif: 'IE6388047V', country: null };
+  const us = { id: 8, name: 'Zoom', nif: '', country: 'ESTATS UNITS' };
+  const data = {
+    years: [{ year: 2026, deductible_vat_pct: 80 }],
+    emittedInvoices: [
+      doc(1, '2026-01-10', [line(1000, 21)]),
+      doc(2, '2026-01-11', [line(500, 0)], { vat_operation: 'E1' }), // exempt: 390 box 83
+      doc(3, '2026-01-12', [line(300, 0)], { vat_operation: 'N2', contact: ie }), // 120
+      doc(4, '2026-01-13', [line(200, 0)], { vat_operation: 'E5' }), // 59
+      doc(5, '2026-01-14', [line(100, 0)], { vat_operation: 'E2' }), // 60
+      doc(6, '2026-01-15', [line(50, 0)], { vat_operation: 'S2' }), // 122
+      doc(9, '2026-01-16', [line(40, 0)], { vat_operation: 'N1' }), // outside the return
+      doc(10, '2026-02-01', [line(70, 0)], { contact: ie }), // unclassified: proposal from the same contact
+      doc(11, '2026-02-02', [line(60, 0)], { contact: { id: 9, name: 'Local', nif: 'B1', country: null } }), // no proposal
+    ],
+    receivedInvoices: [
+      doc(20, '2026-01-05', [line(100, 0)], { contact: ie, reverse_charge: 'intracom', reverse_charge_rate: 21 }),
+      doc(21, '2026-01-06', [line(200, 0)], { contact: us, reverse_charge: 'isp' }), // rate 21 by default
+      doc(22, '2026-01-07', [line(1000, 21, { expense_type: { id: 1, capital_goods: true } }), line(100, 21)]),
+      doc(23, '2026-01-08', [line(30, 0)], { contact: ie, reverse_charge: 'none' }),
+      doc(24, '2026-02-08', [line(40, 0)], { contact: us }), // unclassified: same contact's isp
+      doc(25, '2026-02-09', [line(45, 0)], { contact: { id: 10, name: 'Mailchimp', nif: '', country: 'Irlanda' } }),
+    ],
+  };
+  const r = vatModels(data, 2026);
+  const t1 = r.quarters[0].boxes;
+  const row = (kind, id) => r.rows.find((x) => x.kind === kind && x.id === id);
+
+  it('puts the classified issued 0 % lines in the information boxes', () => {
+    expect(t1).toMatchObject({ '120': 300, '59': 200, '60': 100, '122': 50 });
+    expect(row('emitted-invoices', 2)).toMatchObject({ not_in_return: true, annual_box: '83' });
+    expect(row('emitted-invoices', 9)).toMatchObject({ not_in_return: true, annual_box: null });
+  });
+
+  it('self-assesses reverse charges: charged and deducted after the prorrata', () => {
+    expect(t1).toMatchObject({ '10': 100, '11': 21, '36': 100, '37': 16.8 }); // intra-EU
+    expect(t1).toMatchObject({ '12': 200, '13': 42 }); // other reverse charge
+    // 28/29: the isp purchase and the 100 € line; 30/31: the capital goods line
+    expect(t1).toMatchObject({ '28': 300, '29': round(42 * 0.8 + 21 * 0.8), '30': 1000, '31': 168 });
+    expect(t1['27']).toBe(210 + 21 + 42);
+    expect(row('received-invoices', 23)).toMatchObject({ not_in_return: true });
+  });
+
+  it('proposes the same contact’s classification, or one from its country', () => {
+    expect(row('emitted-invoices', 10)).toMatchObject({ issue: 'issued-zero', proposal: 'N2' });
+    expect(row('emitted-invoices', 11)).toMatchObject({ issue: 'issued-zero', proposal: null });
+    expect(row('received-invoices', 24)).toMatchObject({ issue: 'received-foreign-zero', proposal: 'isp' });
+    expect(row('received-invoices', 25)).toMatchObject({ issue: 'received-foreign-zero', proposal: 'intracom' });
+    const r2 = vatModels({ ...data, history: { issued: [{ id: 99, emitted: '2025-05-01', vat_operation: 'E1', contact: { id: 9 } }] } }, 2026);
+    expect(r2.rows.find((x) => x.kind === 'emitted-invoices' && x.id === 11).proposal).toBe('E1');
+  });
+
+  it('gives the 390 volume of operations and an estimate of the final prorrata', () => {
+    expect(r.annual).toMatchObject({ '80': 1000, '83': 500, '84': 300, '93': 200, '94': 100, '125': 50, '88': 2150 });
+    // with a right to deduct: 1650 of 2150 → 77 % (rounded up)
+    expect(r.prorrata.provisional).toBe(80);
+    expect(r.prorrata.definitive).toBe(77);
+    // VAT paid: 21 + 42 + 210 + 21 = 294 → × (77 − 80) %
+    expect(r.prorrata.regularisation).toBe(-8.82);
+  });
+});
+
+function round(v) {
+  return Math.round(v * 100) / 100;
+}
+
+describe('classify writes', () => {
+  const { classifyWrites } = require('../src/api/treasury/services/vat-classify');
+
+  it('checks kinds and values, and sets the reverse charge rate', () => {
+    expect(classifyWrites([
+      { kind: 'emitted-invoices', id: 1, value: 'E1' },
+      { kind: 'received-incomes', id: 2, value: null },
+      { kind: 'received-invoices', id: 3, value: 'intracom' },
+      { kind: 'received-invoices', id: 4, value: 'isp', rate: 10 },
+      { kind: 'received-invoices', id: 5, value: 'none' },
+    ])).toEqual({
+      'emitted-invoices': [{ id: 1, data: { vat_operation: 'E1' } }],
+      'received-incomes': [{ id: 2, data: { vat_operation: null } }],
+      'received-invoices': [
+        { id: 3, data: { reverse_charge: 'intracom', reverse_charge_rate: 21 } },
+        { id: 4, data: { reverse_charge: 'isp', reverse_charge_rate: 10 } },
+        { id: 5, data: { reverse_charge: 'none' } },
+      ],
+    });
+    expect(() => classifyWrites([])).toThrow();
+    expect(() => classifyWrites([{ kind: 'received-expenses', id: 1, value: 'E1' }])).toThrow();
+    expect(() => classifyWrites([{ kind: 'emitted-invoices', id: 1, value: 'intracom' }])).toThrow();
+    expect(() => classifyWrites([{ kind: 'received-invoices', id: 1, value: 'isp', rate: 150 }])).toThrow();
+    expect(() => classifyWrites([{ kind: 'emitted-invoices', id: 'x', value: 'E1' }])).toThrow();
+  });
+});

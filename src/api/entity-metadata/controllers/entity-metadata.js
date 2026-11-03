@@ -130,6 +130,8 @@ const ENTITY_FIELD_TRANSLATIONS = {
   'route-pickup-notice': { pickup: 'Recollida (magatzem)', message: 'Avís' },
   'vat-type': { value: '% IVA' },
   product: { base: 'Preu base', vat: '% IVA' },
+  // Models 303 i 390: lines of these types go to boxes 30/31 (or 38/39)
+  'expense-type': { capital_goods: "Béns d'inversió" },
 };
 
 // Catalan names of enumeration values (the form and the list show these).
@@ -139,6 +141,9 @@ const ENUM_LABELS = {
 
 // Help under a field of the admin form.
 const FIELD_HELP = {
+  'expense-type': {
+    capital_goods: "Marcat: l'IVA de les factures rebudes d'aquest tipus va a les caselles de béns d'inversió del model 303 (30/31).",
+  },
   'festive-type': {
     personal: "Marcat: cada persona en té els seus dies (vacances, lliure elecció). Sense marcar: festius per a totes (estatals, autonòmics).",
     max: "Dies a l'any que en té cada persona. Es pot canviar per a una persona a «Festius d'usuari».",

@@ -10,34 +10,50 @@ const { vatPaymentDate } = require('./vat-forecast');
  *
  * What counts (decided 2026-11-03):
  * - Issued invoices (not drafts) and incomes, by emission date: VAT charged.
- *   Lines at 4, 10 and 21 % go to their rate's boxes, 0 % to 150–152. An
- *   invoice of a rectifying series goes to 14/15 (modificació de bases).
+ *   Lines at 4, 10 and 21 % go to their rate's boxes. An invoice of a
+ *   rectifying series goes to 14/15 (modificació de bases).
  * - Received invoices, by emission date: VAT paid in domestic operations
- *   (28/29), the quota after the year's «% IVA deduïble» (prorrata; an empty
- *   year is 100 %, issues/338). The base is the whole base.
+ *   (28/29, or 30/31 for lines of an expense type of capital goods), the quota
+ *   after the year's «% IVA deduïble» (prorrata; an empty year is 100 %,
+ *   issues/338). The base is the whole base.
  * - Expenses (tiquets, dietes…) do not count: listed apart.
  * - Cash accounting, equivalence surcharge, REAGP and OSS are not supported:
  *   the page says so.
  *
- * Lines at 0 % are not classified yet (exempt, not subject, intra-EU,
- * export…): they are listed as warnings with the contact's country, and so
- * are 0 % received invoices from abroad (possible reverse charge, 10/11 and
- * 36/37) and rates the return has no box for.
+ * The lines at 0 % follow their document's classification (phase 2):
+ * - issued `vat_operation`, Verifactu's codes: E1 exempt (art. 20, annual 83),
+ *   E2 export (60, annual 94), E5 intra-EU supply (59, annual 93), N1 not
+ *   subject (outside the return), N2 not subject by place of supply (120,
+ *   annual 84), S2 reverse charge (122, annual 125);
+ * - received `reverse_charge`: intracom = self-assessed intra-EU acquisition
+ *   (10/11, deducted in 36/37 or 38/39), isp = other reverse charge (12/13,
+ *   deducted in 28/29 or 30/31), at `reverse_charge_rate` (21 % by default);
+ *   none = reviewed, nothing to self-assess.
+ * Unclassified ones are listed for review with a proposal: what the same
+ * contact's last classified document had, or one from its country.
  *
  * Each line's base and VAT are rounded to cents, as the documents compute them
  * (front domain/documentTotals.js), and the cents a document's stored totals
- * differ by go to its main rate (documentRates).
+ * differ by go to its main group (documentGroups).
  */
 
 // issued: rate → [base, tipus, quota]
 const RATE_BOXES = {
-  0: ['150', '151', '152'],
   4: ['01', '02', '03'],
   10: ['04', '05', '06'],
   21: ['07', '08', '09'],
 };
 
-const ISSUED_KINDS = ['emitted-invoices', 'received-incomes'];
+// issued 0 % lines by classification: the 303 box (information) and the 390's
+const OPERATIONS = {
+  E1: { box: null, annual: '83' },
+  E2: { box: '60', annual: '94' },
+  E5: { box: '59', annual: '93' },
+  N1: { box: null, annual: null },
+  N2: { box: '120', annual: '84' },
+  S2: { box: '122', annual: '125' },
+};
+const REVERSE_CHARGES = ['none', 'intracom', 'isp'];
 
 // compared without accents nor case (contacts' country is free text)
 const plain = (text) => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
@@ -92,28 +108,32 @@ function contactArea(contact) {
 
 const lineBase = (l) => round2((Number(l.quantity) || 0) * (Number(l.base) || 0) * (1 - (Number(l.discount) || 0) / 100));
 const lineVat = (l) => round2((lineBase(l) * (Number(l.vat) || 0)) / 100);
+const isCapital = (l) => !!(l.expense_type && l.expense_type.capital_goods);
 
-// a document's lines per VAT rate: [{ rate, base, vat }]
-function byRate(lines) {
+// a document's lines per VAT rate (and, received, capital goods or not):
+// [{ rate, capital, base, vat }]
+function byRate(lines, withCapital = false) {
   const groups = new Map();
   for (const l of lines || []) {
     const rate = Number(l.vat) || 0;
-    const g = groups.get(rate) || { rate, base: 0, vat: 0 };
+    const capital = withCapital && isCapital(l);
+    const key = `${rate}:${capital}`;
+    const g = groups.get(key) || { rate, capital, base: 0, vat: 0 };
     g.base = round2(g.base + lineBase(l));
     g.vat = round2(g.vat + lineVat(l));
-    groups.set(rate, g);
+    groups.set(key, g);
   }
   return [...groups.values()].filter((g) => g.base || g.vat);
 }
 
 /**
- * The document's rates, matching its stored totals: when the lines add up to
+ * The document's groups, matching its stored totals: when the lines add up to
  * a few cents more or less than total_base / total_vat (lines with 4-decimal
- * prices, issues/194), the difference goes to the rate with the largest base,
- * so the return adds up what the invoices say.
+ * prices, issues/194), the difference goes to the group with the largest
+ * base, so the return adds up what the invoices say.
  */
-function documentRates(doc) {
-  const groups = byRate(doc.lines);
+function documentGroups(doc, withCapital = false) {
+  const groups = byRate(doc.lines, withCapital);
   if (!groups.length) return groups;
   const main = groups.reduce((a, g) => (Math.abs(g.base) > Math.abs(a.base) ? g : a), groups[0]);
   for (const [field, total] of [['base', doc.total_base], ['vat', doc.total_vat]]) {
@@ -138,6 +158,7 @@ function docInfo(doc, kind) {
     kind,
     id: doc.id,
     code: doc.code || '',
+    contact_id: doc.contact && doc.contact.id ? doc.contact.id : null,
     contact: doc.contact && doc.contact.name ? doc.contact.name : '',
     nif: doc.contact && doc.contact.nif ? doc.contact.nif : '',
     country: doc.contact && doc.contact.country ? doc.contact.country : '',
@@ -149,48 +170,102 @@ function docInfo(doc, kind) {
   };
 }
 
+const issuedProposal = (area) => (area === 'ES' ? null : 'N2');
+const receivedProposal = (area) => (area === 'EU' ? 'intracom' : area === 'NONEU' ? 'isp' : null);
+
+/**
+ * What to propose for an unclassified document: the classification of the
+ * same contact's latest classified document on the same side, or one from its
+ * country (services abroad: not subject by place of supply; purchases: an
+ * intra-EU acquisition from the EU, a reverse charge from outside).
+ */
+function proposals(docs, field, byArea) {
+  const latest = new Map();
+  for (const d of [...docs].sort((a, b) => String(a.emitted).localeCompare(String(b.emitted)))) {
+    if (d[field] && d.contact && d.contact.id) latest.set(d.contact.id, d[field]);
+  }
+  return (doc) => (doc.contact && latest.get(doc.contact.id)) || byArea(contactArea(doc.contact));
+}
+
 /**
  * The rows: one per document and VAT rate, with the boxes it goes to.
- * `issue` marks the rows that need a decision (they are in no box).
+ * `issue` marks the rows that need a decision (they are in no box);
+ * `classify` says which field classifies the row, with its value.
+ * `history` (optional): earlier classified documents, for the proposals.
  */
-function documentRows({ emittedInvoices = [], receivedIncomes = [], receivedInvoices = [] }, years) {
+function documentRows({ emittedInvoices = [], receivedIncomes = [], receivedInvoices = [], history = {} }, years) {
   const rows = [];
-  const issued = [
+  const issuedDocs = [
     ...emittedInvoices.filter((d) => d.state !== 'draft').map((d) => ['emitted-invoices', d]),
     ...receivedIncomes.map((d) => ['received-incomes', d]),
   ];
-  for (const [kind, doc] of issued) {
+  const proposeIssued = proposals(
+    [...issuedDocs.map(([, d]) => d), ...(history.issued || [])],
+    'vat_operation',
+    issuedProposal,
+  );
+  for (const [kind, doc] of issuedDocs) {
     if (!doc.emitted) continue;
     const info = docInfo(doc, kind);
     const rectificative = !!(doc.serial && doc.serial.rectificative);
-    for (const g of documentRates(doc)) {
+    for (const g of documentGroups(doc)) {
       const row = { ...info, key: `${kind}:${doc.id}:${g.rate}`, side: 'issued', rate: g.rate, base: g.base, vat: g.vat, rectificative };
-      if (rectificative) Object.assign(row, { base_box: '14', vat_box: '15' });
-      else if (g.rate === 0) Object.assign(row, { issue: 'issued-zero' });
-      else if (RATE_BOXES[g.rate]) Object.assign(row, { base_box: RATE_BOXES[g.rate][0], vat_box: RATE_BOXES[g.rate][2] });
+      if (rectificative && g.rate) Object.assign(row, { base_box: '14', vat_box: '15' });
+      else if (g.rate === 0) {
+        const op = OPERATIONS[doc.vat_operation] ? doc.vat_operation : null;
+        Object.assign(row, { classify: { field: 'vat_operation', value: op } });
+        if (!op) Object.assign(row, { issue: 'issued-zero', proposal: proposeIssued(doc) });
+        else if (OPERATIONS[op].box) Object.assign(row, { info_box: OPERATIONS[op].box });
+        else Object.assign(row, { not_in_return: true });
+        if (op) row.annual_box = OPERATIONS[op].annual;
+      } else if (RATE_BOXES[g.rate]) Object.assign(row, { base_box: RATE_BOXES[g.rate][0], vat_box: RATE_BOXES[g.rate][2] });
       else Object.assign(row, { issue: 'unknown-rate' });
       rows.push(row);
     }
   }
+
+  const proposeReceived = proposals([...receivedInvoices, ...(history.received || [])], 'reverse_charge', receivedProposal);
   for (const doc of receivedInvoices) {
     if (!doc.emitted) continue;
     const info = docInfo(doc, 'received-invoices');
     const pct = deductiblePct(years, info.year);
-    for (const g of documentRates(doc)) {
+    for (const g of documentGroups(doc, true)) {
       const row = {
         ...info,
-        key: `received-invoices:${doc.id}:${g.rate}`,
+        key: `received-invoices:${doc.id}:${g.rate}:${g.capital ? 'k' : 'c'}`,
         side: 'received',
         rate: g.rate,
+        capital: g.capital,
         base: g.base,
         vat: g.vat,
         deductible_pct: pct,
         deductible_vat: round2((g.vat * pct) / 100),
       };
-      if (g.rate > 0) Object.assign(row, { base_box: '28', vat_box: '29' });
+      if (g.rate > 0) {
+        Object.assign(row, g.capital ? { base_box: '30', vat_box: '31' } : { base_box: '28', vat_box: '29' });
+        rows.push(row);
+        continue;
+      }
+      const rc = REVERSE_CHARGES.includes(doc.reverse_charge) ? doc.reverse_charge : null;
+      row.classify = { field: 'reverse_charge', value: rc };
+      if (rc === 'intracom' || rc === 'isp') {
+        // self-assessed: charged and deducted at the same time
+        const rate = doc.reverse_charge_rate === null || doc.reverse_charge_rate === undefined || doc.reverse_charge_rate === ''
+          ? 21
+          : Number(doc.reverse_charge_rate);
+        const vat = round2((g.base * rate) / 100);
+        Object.assign(row, {
+          self_rate: rate,
+          self_vat: vat,
+          deductible_vat: round2((vat * pct) / 100),
+          accrued_boxes: rc === 'intracom' ? ['10', '11'] : ['12', '13'],
+        });
+        if (rc === 'intracom') Object.assign(row, g.capital ? { base_box: '38', vat_box: '39' } : { base_box: '36', vat_box: '37' });
+        else Object.assign(row, g.capital ? { base_box: '30', vat_box: '31' } : { base_box: '28', vat_box: '29' });
+      } else if (rc === 'none') row.not_in_return = true;
       // a 0 % purchase from abroad may be a reverse charge the entity has to self-assess
-      else if (info.area !== 'ES') Object.assign(row, { issue: 'received-foreign-zero' });
-      else Object.assign(row, { not_in_return: true });
+      else if (info.area !== 'ES') Object.assign(row, { issue: 'received-foreign-zero', proposal: proposeReceived(doc) });
+      else row.not_in_return = true;
       rows.push(row);
     }
   }
@@ -213,6 +288,11 @@ function emptyBoxes() {
 function periodBoxes(rows, compensate) {
   const b = emptyBoxes();
   for (const r of rows) {
+    if (r.accrued_boxes) {
+      b[r.accrued_boxes[0]] += r.base;
+      b[r.accrued_boxes[1]] += r.self_vat;
+    }
+    if (r.info_box) b[r.info_box] += r.base;
     if (!r.base_box) continue;
     b[r.base_box] += r.base;
     b[r.vat_box] += r.side === 'received' ? r.deductible_vat : r.vat;
@@ -238,13 +318,39 @@ function periodBoxes(rows, compensate) {
 }
 
 const ISSUE_TEXT = {
-  'issued-zero': 'Línies emeses al 0 % sense classificar: poden ser exemptes, no subjectes, entregues intracomunitàries (59), exportacions (60) o no subjectes per localització (120). No són a cap casella.',
-  'unknown-rate': 'Línies emeses a un tipus que el 303 no té (només 0, 4, 10 i 21 %). No són a cap casella.',
-  'received-foreign-zero': "Factures rebudes de fora d'Espanya al 0 %: si és una compra intracomunitària o un servei de fora, cal autoliquidar l'IVA (caselles 10/11 i 36/37, o 12/13 i 28/29). No s'hi han posat.",
+  'issued-zero': 'Línies emeses al 0 % sense classificar: poden ser exemptes, no subjectes, entregues intracomunitàries (59), exportacions (60), no subjectes per localització (120) o amb inversió del subjecte passiu (122). Fins que no es classifiquen no són a cap casella.',
+  'unknown-rate': 'Línies emeses a un tipus que el 303 no té (només 4, 10 i 21 %). No són a cap casella.',
+  'received-foreign-zero': "Factures rebudes de fora d'Espanya al 0 %: si és una compra intracomunitària o un servei de fora, cal autoliquidar l'IVA (caselles 10/11 i 36/37, o 12/13 i 28/29). Fins que no es classifiquen no són a cap casella.",
 };
 
 /**
- * @param {object} data { emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years }
+ * The year's 390 figures from its rows: the volume of operations by kind and
+ * an estimate of the final prorrata (operations with a right to deduct over
+ * all of them, rounded up), with the box 44 regularisation it would bring.
+ * Information only: the gestoria decides.
+ */
+function annualFigures(rows, annual, pct) {
+  const sum = (box) => round2(rows.filter((r) => r.annual_box === box).reduce((s, r) => s + r.base, 0));
+  const figures = { '83': sum('83'), '84': sum('84'), '93': sum('93'), '94': sum('94'), '125': sum('125') };
+  figures['80'] = round2(['150', '01', '04', '07', '14'].reduce((s, k) => s + annual[k], 0));
+  figures['88'] = round2(figures['80'] + figures['83'] + figures['84'] + figures['93'] + figures['94'] + figures['125']);
+  const withRight = figures['88'] - figures['83'];
+  let prorrata = null;
+  if (figures['88'] > 0 && figures['83'] > 0) {
+    const definitive = Math.min(100, Math.ceil((withRight / figures['88']) * 100));
+    // the VAT paid before the provisional prorrata, applied again with the final one
+    const paid = rows.filter((r) => r.side === 'received' && r.base_box).reduce((s, r) => s + (r.self_vat !== undefined ? r.self_vat : r.vat), 0);
+    prorrata = {
+      provisional: pct,
+      definitive,
+      regularisation: round2((paid * (definitive - pct)) / 100),
+    };
+  }
+  return { figures, prorrata };
+}
+
+/**
+ * @param {object} data { emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years, history }
  * @param {number} year
  */
 function vatModels(data, year) {
@@ -273,10 +379,10 @@ function vatModels(data, year) {
   Object.assign(annual, { '151': 0, '02': 4, '05': 10, '08': 21, '65': 100, '110': 0, '78': 0, '87': 0 });
   annual['69'] = annual['66'];
   annual['71'] = annual['66'];
-  // operacions en règim general (80) and what can't be classified yet
   const unclassified = rows.filter((r) => r.issue === 'issued-zero' || r.issue === 'unknown-rate');
-  annual['80'] = round2(['150', '01', '04', '07', '14'].reduce((s, k) => s + annual[k], 0));
   annual.unclassified_base = round2(unclassified.reduce((s, r) => s + r.base, 0));
+  const { figures, prorrata } = annualFigures(rows, annual, pct);
+  Object.assign(annual, figures);
 
   const issues = Object.keys(ISSUE_TEXT)
     .map((code) => {
@@ -312,7 +418,7 @@ function vatModels(data, year) {
   if (pct < 100) {
     notes.push({
       code: 'prorrata',
-      text: `L'IVA suportat es dedueix al ${pct} % (prorrata de l'any, Configuració › Anys). La regularització amb la prorrata definitiva del 4T (casella 44) no es calcula.`,
+      text: `L'IVA suportat es dedueix al ${pct} % (prorrata de l'any, Configuració › Anys). La regularització amb la prorrata definitiva del 4T (casella 44) no es posa al model: a «Any (390)» se n'hi mostra una estimació.`,
     });
   }
   notes.push({
@@ -321,7 +427,7 @@ function vatModels(data, year) {
   });
   notes.push({
     code: 'unsupported',
-    text: "No es contemplen el criteri de caixa, el recàrrec d'equivalència, el règim d'agricultura (REAGP) ni la finestreta única (OSS).",
+    text: "No es contemplen el criteri de caixa, el recàrrec d'equivalència, el règim d'agricultura (REAGP), la finestreta única (OSS), les importacions ni les rectificacions de factures rebudes (40/41).",
   });
 
   return {
@@ -329,10 +435,11 @@ function vatModels(data, year) {
     deductible_pct: pct,
     quarters,
     annual,
+    prorrata,
     issues,
     notes,
     rows,
   };
 }
 
-module.exports = { vatModels, contactArea, documentRows, periodBoxes, deductiblePct };
+module.exports = { vatModels, contactArea, documentRows, periodBoxes, deductiblePct, OPERATIONS, REVERSE_CHARGES };

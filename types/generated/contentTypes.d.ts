@@ -933,6 +933,7 @@ export interface ApiEmittedInvoiceEmittedInvoice extends Struct.CollectionTypeSc
     user_draft: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
     user_last: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
     user_real: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
+    vat_operation: Schema.Attribute.Enumeration<['E1', 'E2', 'E5', 'N1', 'N2', 'S2']>;
     vat_paid_date: Schema.Attribute.DateTime;
     verifactu: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
   };
@@ -1071,6 +1072,7 @@ export interface ApiExpenseTypeExpenseType extends Struct.CollectionTypeSchema {
     draftAndPublish: false;
   };
   attributes: {
+    capital_goods: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -2347,6 +2349,7 @@ export interface ApiReceivedIncomeReceivedIncome extends Struct.CollectionTypeSc
     updatable_admin: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    vat_operation: Schema.Attribute.Enumeration<['E1', 'E2', 'E5', 'N1', 'N2', 'S2']>;
     vat_paid_date: Schema.Attribute.DateTime;
   };
 }
@@ -2388,6 +2391,8 @@ export interface ApiReceivedInvoiceReceivedInvoice extends Struct.CollectionType
     project: Schema.Attribute.Relation<'manyToOne', 'api::project.project'>;
     projects: Schema.Attribute.Relation<'manyToMany', 'api::project.project'>;
     publishedAt: Schema.Attribute.DateTime;
+    reverse_charge: Schema.Attribute.Enumeration<['none', 'intracom', 'isp']>;
+    reverse_charge_rate: Schema.Attribute.Decimal & Schema.Attribute.DefaultTo<21>;
     sent: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     sent_date: Schema.Attribute.Date;
     serial: Schema.Attribute.Relation<'oneToOne', 'api::serie.serie'>;

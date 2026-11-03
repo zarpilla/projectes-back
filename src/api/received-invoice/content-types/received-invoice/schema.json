@@ -130,6 +130,18 @@
     },
     "document_concept": {
       "type": "string"
+    },
+    "reverse_charge": {
+      "type": "enumeration",
+      "enum": [
+        "none",
+        "intracom",
+        "isp"
+      ]
+    },
+    "reverse_charge_rate": {
+      "type": "decimal",
+      "default": 21
     }
   }
 }
