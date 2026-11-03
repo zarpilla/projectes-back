@@ -29,8 +29,7 @@
       "required": true
     },
     "sub_type": {
-      "type": "enumeration",
-      "enum": ["irpf", "ss", "other"]
+      "type": "string"
     },
     "validated_by": {
       "type": "relation",

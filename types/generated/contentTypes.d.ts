@@ -426,6 +426,8 @@ export interface ApiActivityActivity extends Struct.CollectionTypeSchema {
   attributes: {
     activity_type: Schema.Attribute.Relation<'oneToOne', 'api::activity-type.activity-type'>;
     cost_by_hour: Schema.Attribute.Decimal;
+    created_by_user_id: Schema.Attribute.Integer & Schema.Attribute.Private;
+    created_by_username: Schema.Attribute.String & Schema.Attribute.Private;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     date: Schema.Attribute.Date;
@@ -441,6 +443,8 @@ export interface ApiActivityActivity extends Struct.CollectionTypeSchema {
     publishedAt: Schema.Attribute.DateTime;
     task: Schema.Attribute.Relation<'oneToOne', 'api::task.task'>;
     uid_ical: Schema.Attribute.String;
+    updated_by_user_id: Schema.Attribute.Integer & Schema.Attribute.Private;
+    updated_by_username: Schema.Attribute.String & Schema.Attribute.Private;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     users_permissions_user: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
@@ -491,8 +495,8 @@ export interface ApiCityRouteCityRoute extends Struct.CollectionTypeSchema {
     publishedAt: Schema.Attribute.DateTime;
     route: Schema.Attribute.Relation<'oneToOne', 'api::route.route'>;
     time_from: Schema.Attribute.Time;
-    time_to: Schema.Attribute.Time;
     time_from_2: Schema.Attribute.Time;
+    time_to: Schema.Attribute.Time;
     time_to_2: Schema.Attribute.Time;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
@@ -902,6 +906,7 @@ export interface ApiEmittedInvoiceEmittedInvoice extends Struct.CollectionTypeSc
     number: Schema.Attribute.Integer;
     paid: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     paid_date: Schema.Attribute.Date;
+    partial_payments: Schema.Attribute.JSON;
     paybefore: Schema.Attribute.Date;
     payment_method: Schema.Attribute.Relation<'oneToOne', 'api::payment-method.payment-method'>;
     pdf: Schema.Attribute.String;
@@ -1847,6 +1852,7 @@ export interface ApiPivotTableViewPivotTableView extends Struct.CollectionTypeSc
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::pivot-table-view.pivot-table-view'> &
       Schema.Attribute.Private;
     name: Schema.Attribute.String;
+    owner_user: Schema.Attribute.Integer;
     publishedAt: Schema.Attribute.DateTime;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
@@ -2228,6 +2234,7 @@ export interface ApiReceivedExpenseReceivedExpense extends Struct.CollectionType
     number: Schema.Attribute.Integer;
     paid: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     paid_date: Schema.Attribute.Date;
+    partial_payments: Schema.Attribute.JSON;
     paybefore: Schema.Attribute.Date;
     payment_method: Schema.Attribute.Relation<'oneToOne', 'api::payment-method.payment-method'>;
     project: Schema.Attribute.Relation<'manyToOne', 'api::project.project'>;
@@ -2323,6 +2330,7 @@ export interface ApiReceivedIncomeReceivedIncome extends Struct.CollectionTypeSc
     number: Schema.Attribute.Integer;
     paid: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     paid_date: Schema.Attribute.Date;
+    partial_payments: Schema.Attribute.JSON;
     paybefore: Schema.Attribute.Date;
     payment_method: Schema.Attribute.Relation<'oneToOne', 'api::payment-method.payment-method'>;
     project: Schema.Attribute.Relation<'manyToOne', 'api::project.project'>;
@@ -2374,6 +2382,7 @@ export interface ApiReceivedInvoiceReceivedInvoice extends Struct.CollectionType
     number: Schema.Attribute.Integer;
     paid: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     paid_date: Schema.Attribute.Date;
+    partial_payments: Schema.Attribute.JSON;
     paybefore: Schema.Attribute.Date;
     payment_method: Schema.Attribute.Relation<'oneToOne', 'api::payment-method.payment-method'>;
     project: Schema.Attribute.Relation<'manyToOne', 'api::project.project'>;
@@ -2542,8 +2551,8 @@ export interface ApiRouteRoute extends Struct.CollectionTypeSchema {
     sunday: Schema.Attribute.Boolean;
     thursday: Schema.Attribute.Boolean;
     time_from: Schema.Attribute.Time;
-    time_to: Schema.Attribute.Time;
     time_from_2: Schema.Attribute.Time;
+    time_to: Schema.Attribute.Time;
     time_to_2: Schema.Attribute.Time;
     transfer_pickup: Schema.Attribute.Relation<'oneToOne', 'api::pickup.pickup'>;
     tuesday: Schema.Attribute.Boolean;
@@ -2923,7 +2932,7 @@ export interface ApiTreasuryValidationTreasuryValidation extends Struct.Collecti
       Schema.Attribute.Private;
     notes: Schema.Attribute.Text;
     publishedAt: Schema.Attribute.DateTime;
-    sub_type: Schema.Attribute.Enumeration<['irpf', 'ss', 'other']>;
+    sub_type: Schema.Attribute.String;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     validated_by: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
@@ -3563,6 +3572,7 @@ export interface PluginUsersPermissionsUser extends Struct.CollectionTypeSchema 
     permissions: Schema.Attribute.Component<'permissions.application-permission', true>;
     provider: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
+    reset_password_requested_at: Schema.Attribute.DateTime & Schema.Attribute.Private;
     resetPasswordToken: Schema.Attribute.String & Schema.Attribute.Private;
     role: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.role'>;
     tasks: Schema.Attribute.Relation<'manyToMany', 'api::task.task'>;

@@ -52,6 +52,9 @@
     "paid_date": {
       "type": "date"
     },
+    "partial_payments": {
+      "type": "json"
+    },
     "sent": {
       "type": "boolean",
       "default": false

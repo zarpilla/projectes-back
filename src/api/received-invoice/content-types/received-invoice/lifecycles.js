@@ -14,4 +14,5 @@ module.exports = createDocumentLifecycles({
   withPaymentMethod: true,
   withContactInfo: true,
   skipTotalsOnInternal: true,
+  withPartialPayments: true,
 });

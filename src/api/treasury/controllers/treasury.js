@@ -36,6 +36,7 @@ const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../serv
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
 const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
 const { updateMovementDates, MovementDateError } = require('../services/movement-dates');
+const { splitPayments } = require('../../../services/partial-payments');
 
 // The deductible part of a document's supported VAT: its year's «% IVA
 // deduïble»; a year without one is 100 % (it was 0 %, issues/338), as in the
@@ -71,6 +72,53 @@ const getValidationKey = (entityType, entityId, subType = null) => {
     return `${entityType}:${entityId}:${subType}`;
   }
   return `${entityType}:${entityId}`;
+};
+
+// A document collected or paid in several goes (issues/412): one executed
+// movement per partial payment, on its date, with its share of the amount and
+// of the VAT, validated on its own; and what is still pending, on the
+// document's expected date (`pendingDate`), whose date «Moviments bancaris»
+// can change while the document is «Modificable», and which is not validated
+// (it hasn't moved through the bank yet). A document without partial payments
+// is the one movement `row`.
+const pushDocumentMovements = (treasury, row, doc, { kind, sign, labels, pendingDate, validationMap }) => {
+  const split = splitPayments(doc);
+  if (!split) {
+    treasury.push(row);
+    return;
+  }
+  const total = Number(doc.total) || 0;
+  const vatShare = (amount) => (total ? (row.signed_vat * amount) / total : 0);
+  for (const payment of split.payments) {
+    const validationKey = getValidationKey(kind, doc.id, `payment-${payment.id}`);
+    treasury.push({
+      ...row,
+      type: labels.partial,
+      date_edit: null,
+      total_amount: sign * payment.amount,
+      date: moment(payment.date, 'YYYY-MM-DD'),
+      date_error: false,
+      paid: true,
+      signed_vat: vatShare(payment.amount),
+      partial_payment_id: payment.id,
+      validation_key: validationKey,
+      is_validated: validationMap[validationKey] || false,
+    });
+  }
+  if (split.pending) {
+    treasury.push({
+      ...row,
+      type: labels.pending,
+      date_edit: dateEdit(doc, kind),
+      total_amount: sign * split.pending,
+      date: pendingDate ? moment(pendingDate, 'YYYY-MM-DD') : row.date,
+      date_error: !pendingDate,
+      paid: false,
+      signed_vat: vatShare(split.pending),
+      validation_key: null,
+      is_validated: false,
+    });
+  }
 };
 
 // running balances per account and in total
@@ -671,7 +719,13 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         is_validated: validationMap[validationKey] || false,
       };
 
-      treasury.push(income);
+      pushDocumentMovements(treasury, income, i, {
+        kind: 'emitted-invoices',
+        sign: 1,
+        labels: { partial: 'Factura cobrada (parcial)', pending: 'Factura emesa (pendent)' },
+        pendingDate: i.estimated_payment || i.paybefore || i.emitted,
+        validationMap,
+      });
       // a draft is not an invoice yet: its VAT isn't due (issues/339); it stays
       // in Tresoreria above as expected income
       if (i.total_vat && i.state !== 'draft') {
@@ -740,7 +794,16 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         validation_key: validationKey,
         is_validated: validationMap[validationKey] || false,
       };
-      treasury.push(income);
+      pushDocumentMovements(treasury, income, i, {
+        kind: 'received-incomes',
+        sign: 1,
+        labels: {
+          partial: `Ingrés cobrat (parcial, ${i.document_type.name})`,
+          pending: `Ingrés emès (pendent, ${i.document_type.name})`,
+        },
+        pendingDate: i.estimated_payment || i.paybefore || i.emitted,
+        validationMap,
+      });
       if (i.total_vat) {
         if (!i.vat_paid_date) {
           vat.received += i.total_vat;
@@ -806,7 +869,13 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         validation_key: validationKey,
         is_validated: validationMap[validationKey] || false,
       };
-      treasury.push(expense);
+      pushDocumentMovements(treasury, expense, e, {
+        kind: 'received-invoices',
+        sign: -1,
+        labels: { partial: 'Factura pagada (parcial)', pending: 'Factura rebuda (pendent)' },
+        pendingDate: e.paybefore || e.emitted,
+        validationMap,
+      });
       if (e.total_irpf) {
         const irpfValidationKey = getValidationKey('received-invoices', e.id, 'irpf');
         const expense2 = {
@@ -904,7 +973,16 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         validation_key: validationKey,
         is_validated: validationMap[validationKey] || false,
       };
-      treasury.push(expense);
+      pushDocumentMovements(treasury, expense, e, {
+        kind: 'received-expenses',
+        sign: -1,
+        labels: {
+          partial: `Despesa pagada (parcial, ${e.document_type.name})`,
+          pending: `Despesa rebuda (pendent, ${e.document_type.name})`,
+        },
+        pendingDate: e.paybefore || e.emitted,
+        validationMap,
+      });
       if (e.total_irpf) {
         const irpfValidationKey = getValidationKey('received-expenses', e.id, 'irpf');
         const expense2 = {

@@ -28,22 +28,22 @@ const DOCUMENTS = {
   'emitted-invoices': {
     uid: 'api::emitted-invoice.emitted-invoice',
     relation: 'projects',
-    select: ['id', 'code', 'emitted', 'paybefore', 'total_base', 'total', 'paid', 'paid_date', 'state', 'concept'],
+    select: ['id', 'code', 'emitted', 'paybefore', 'total_base', 'total', 'paid', 'paid_date', 'partial_payments', 'state', 'concept'],
   },
   'received-incomes': {
     uid: 'api::received-income.received-income',
     relation: 'projects',
-    select: ['id', 'code', 'emitted', 'paybefore', 'total_base', 'total', 'paid', 'paid_date'],
+    select: ['id', 'code', 'emitted', 'paybefore', 'total_base', 'total', 'paid', 'paid_date', 'partial_payments'],
   },
   'received-invoices': {
     uid: 'api::received-invoice.received-invoice',
     relation: 'projects',
-    select: ['id', 'code', 'emitted', 'paybefore', 'total_base', 'total', 'paid', 'paid_date'],
+    select: ['id', 'code', 'emitted', 'paybefore', 'total_base', 'total', 'paid', 'paid_date', 'partial_payments'],
   },
   'received-expenses': {
     uid: 'api::received-expense.received-expense',
     relation: 'projects',
-    select: ['id', 'code', 'emitted', 'paybefore', 'total_base', 'total', 'paid', 'paid_date'],
+    select: ['id', 'code', 'emitted', 'paybefore', 'total_base', 'total', 'paid', 'paid_date', 'partial_payments'],
   },
 };
 

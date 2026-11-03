@@ -7,6 +7,12 @@
  */
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { isPaymentSubType } = require('../../../services/partial-payments');
+
+// irpf / ss / other, or one partial payment of a document, `payment-<id>`
+// (issues/412: was an enumeration of the first three)
+const SUB_TYPES = ['irpf', 'ss', 'other'];
+const validSubType = (subType) => !subType || SUB_TYPES.includes(subType) || isPaymentSubType(subType);
 
 module.exports = createCoreController('api::treasury-validation.treasury-validation', ({ strapi }) => ({
   // v3 query-param compatibility (P9): translate _limit/_start/_sort/_q/_where
@@ -30,6 +36,9 @@ module.exports = createCoreController('api::treasury-validation.treasury-validat
 
     if (!entity_type || !entity_id) {
       return ctx.badRequest('entity_type and entity_id are required');
+    }
+    if (!validSubType(sub_type)) {
+      return ctx.badRequest('invalid sub_type');
     }
 
     const where = { entity_type, entity_id: parseInt(entity_id) };
