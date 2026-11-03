@@ -29,6 +29,11 @@ module.exports = {
       handler: 'treasury.irpf',
     },
     {
+      method: 'GET',
+      path: '/treasuries/vat-models',
+      handler: 'treasury.vatModels',
+    },
+    {
       method: 'POST',
       path: '/treasuries/movement-dates',
       handler: 'treasury.updateMovementDates',

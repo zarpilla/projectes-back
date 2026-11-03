@@ -32,6 +32,7 @@ const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/p
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { groupPayrollRows } = require('../services/payroll-groups');
 const { irpfSummary } = require('../services/irpf-summary');
+const { vatModels } = require('../services/vat-models');
 const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../services/vat-forecast');
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
 const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
@@ -1411,6 +1412,29 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       }),
     ]);
     ctx.body = irpfSummary({ receivedInvoices, receivedExpenses, payrolls }, year, moment().format('YYYY-MM-DD'));
+  },
+
+  /**
+   * GET /api/treasuries/vat-models?year=YYYY — Informes › Models 303 i 390
+   * (Beta): the boxes of the VAT return per quarter and for the year.
+   */
+  async vatModels(ctx) {
+    const year = parseInt(ctx.query.year, 10) || moment().year();
+    const where = { emitted: { $gte: `${year}-01-01`, $lte: `${year}-12-31` } };
+    const select = ['id', 'code', 'emitted', 'total_base', 'total_vat'];
+    const contact = { select: ['id', 'name', 'nif', 'country'] };
+    const [emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years] = await Promise.all([
+      strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
+        select: [...select, 'state'],
+        where,
+        populate: { lines: true, contact, serial: { select: ['id', 'rectificative'] } },
+      }),
+      strapi.db.query('api::received-income.received-income').findMany({ select, where, populate: { lines: true, contact } }),
+      strapi.db.query('api::received-invoice.received-invoice').findMany({ select, where, populate: { lines: true, contact } }),
+      strapi.db.query('api::received-expense.received-expense').findMany({ select, where }),
+      strapi.db.query('api::year.year').findMany({ select: ['id', 'year', 'deductible_vat_pct'] }),
+    ]);
+    ctx.body = vatModels({ emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years }, year);
   },
 
   async invoicingForecast(ctx) {
