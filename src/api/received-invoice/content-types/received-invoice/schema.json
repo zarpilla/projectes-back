@@ -151,7 +151,8 @@
         "none",
         "reagp",
         "foreign_vat",
-        "wrong_vat"
+        "wrong_vat",
+        "not_deductible"
       ]
     }
   }

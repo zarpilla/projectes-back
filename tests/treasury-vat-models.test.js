@@ -622,3 +622,40 @@ describe('received lines outside VAT (not_vat)', () => {
     });
   });
 });
+
+/**
+ * 2026-11-04, webcoop: Spanish VAT paid while the entity was not registered
+ * for VAT (the self-employed person was «de baixa» at Hisenda in 1T and 2T
+ * 2026) is not deductible. Those quarters are not filed, so their VAT must not
+ * be left «to compensate» either: box 78 of the first filed quarter would carry
+ * it. vat_special = 'not_deductible' keeps such a received invoice out of the
+ * return, whatever the year's deductible %.
+ */
+describe('received VAT classified as not deductible', () => {
+  const data = {
+    years: [{ year: 2026, deductible_vat_pct: 100 }],
+    emittedInvoices: [doc(1, '2026-07-14', [line(2161.6, 21)])],
+    receivedInvoices: [
+      doc(10, '2026-01-20', [line(17, 21)], { vat_special: 'not_deductible' }),
+      doc(11, '2026-04-06', [line(17, 21)], { vat_special: 'not_deductible' }),
+      doc(12, '2026-07-09', [line(17, 21)], { vat_special: 'none' }),
+    ],
+  };
+  const r = vatModels(data, 2026);
+  const row = (id) => r.rows.find((x) => x.kind === 'received-invoices' && x.id === id);
+  const q = (n) => r.quarters[n - 1].boxes;
+
+  it('keeps it out of the return, with nothing to compensate later', () => {
+    expect(row(10)).toMatchObject({ not_in_return: true, classify: { field: 'vat_special', value: 'not_deductible' } });
+    expect(row(10).issue).toBeUndefined();
+    expect(q(1)).toMatchObject({ '28': 0, '29': 0, '71': 0 });
+    expect(q(2)).toMatchObject({ '28': 0, '29': 0, '71': 0 });
+    expect(q(3)).toMatchObject({ '28': 17, '29': 3.57, '78': 0, '71': round(453.94 - 3.57) });
+    expect(r.model390.boxes['48'] || 0).toBe(17);
+  });
+
+  it('is one of the classifications of the lines with VAT', () => {
+    const { VAT_SPECIALS } = require('../src/api/treasury/services/vat-models');
+    expect(VAT_SPECIALS).toContain('not_deductible');
+  });
+});

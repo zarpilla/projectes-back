@@ -73,8 +73,10 @@ const INTRACOM = ['intracom', 'intracom_goods'];
 // deductible (art. 94.Tres, CJEU C-35/05 Reemtsma; the entity claims it back
 // from the provider), and the base is self-assessed: 10/11 + 36/37 from the EU
 // (also in the model 349), 12/13 + 28/29 from elsewhere. The gestoria's answer
-// for webcoop, 2026-11-04.
-const VAT_SPECIALS = ['none', 'reagp', 'foreign_vat', 'wrong_vat'];
+// for webcoop, 2026-11-04. not_deductible = Spanish VAT the entity may not
+// deduct (paid while not registered for VAT — webcoop 1T/2T 2026 —, or not for
+// the activity): out of the return, so nothing is left to compensate either.
+const VAT_SPECIALS = ['none', 'reagp', 'foreign_vat', 'wrong_vat', 'not_deductible'];
 const REAGP_RATES = [12, 10.5];
 const SPANISH_RATES = [2, 4, 5, 7.5, 10, 21];
 
@@ -295,7 +297,7 @@ function documentRows({ emittedInvoices = [], receivedIncomes = [], receivedInvo
         // the agrarian compensation and foreign VAT are classified; the rest as before
         if (special || proposal) row.classify = { field: 'vat_special', value: special };
         if (special === 'reagp') Object.assign(row, { vat_box: '42', reagp: true });
-        else if (special === 'foreign_vat') row.not_in_return = true;
+        else if (special === 'foreign_vat' || special === 'not_deductible') row.not_in_return = true;
         // the VAT on the invoice is not deducted; the base is self-assessed at its rate
         else if (special === 'wrong_vat') Object.assign(row, selfAssessed(info.area === 'EU' ? 'intracom' : 'isp', g.base, g.rate, g.capital, pct));
         else if (!special && proposal) Object.assign(row, { issue: proposal === 'reagp' ? 'received-reagp' : 'received-foreign-vat', proposal });
