@@ -318,6 +318,8 @@ function documentRows({ emittedInvoices = [], receivedIncomes = [], receivedInvo
       else if (rc === 'none') Object.assign(row, { not_in_return: true }, info.area === 'ES' ? { annual_box: '230' } : {});
       // a 0 % purchase from abroad may be a reverse charge the entity has to self-assess
       else if (info.area !== 'ES') Object.assign(row, { issue: 'received-foreign-zero', proposal: proposeReceived(doc) });
+      // the same contact's last one was outside VAT (the monthly self-employed quota): propose it again
+      else if (proposeReceived(doc) === 'not_vat') Object.assign(row, { issue: 'received-not-vat', proposal: 'not_vat' });
       else Object.assign(row, { not_in_return: true, annual_box: '230' });
       rows.push(row);
     }
@@ -377,6 +379,7 @@ const ISSUE_TEXT = {
   'unknown-rate': 'Línies emeses a un tipus que el 303 no té (només 4, 10 i 21 %). No són a cap casella.',
   'received-reagp': "Factures rebudes al 12 % o al 10,5 %: si són d'un pagès en el règim especial agrari (REAGP), és la compensació a tant alçat, que es dedueix a la casella 42. Fins que no es classifiquen no són a cap casella.",
   'received-foreign-vat': "Factures rebudes de fora d'Espanya amb IVA: l'IVA d'un altre país no es dedueix al 303 (es recupera amb el model 360). Si un proveïdor sense establiment a Espanya (Anthropic, Zoom, Canva…) cobra IVA espanyol per un servei, l'IVA està mal repercutit: no es dedueix, la base s'autoliquida (10/11 i 36/37 si és de la UE, que també van al model 349; 12/13 i 28/29 si és de fora) i l'IVA cobrat es reclama al proveïdor amb una factura rectificativa. Si el proveïdor ven des d'Espanya amb NIF espanyol (p. ex. Amazon EU), és IVA espanyol deduïble. Fins que no es classifiquen no són a cap casella.",
+  'received-not-vat': "Factures rebudes al 0 % d'un contacte que la darrera vegada es va classificar fora de l'IVA (p. ex. la quota d'autònoms): es proposa el mateix. Fins que no es classifiquen no són a cap casella.",
   'received-foreign-zero': "Factures rebudes de fora d'Espanya al 0 %: si és una compra intracomunitària o un servei de fora, cal autoliquidar l'IVA (caselles 10/11 i 36/37, o 12/13 i 28/29). Fins que no es classifiquen no són a cap casella.",
 };
 
@@ -489,22 +492,26 @@ function changesSince(filed, boxes, rows, withDocuments = true) {
  * The 390 is built from the documents as they are now; it has to add up the
  * 303s that were filed. When a quarter's documents changed after filing it
  * (an invoice entered late, an amount corrected), the 390 no longer matches:
- * say which quarters and boxes, and the result the 303s filed (sum of 46)
- * against the 390's (84). Null when no quarter is marked as filed.
+ * say which quarters and boxes, the quarters past their term not marked as
+ * filed, and the result the 303s filed (sum of 46) against the 390's (84).
+ * Null when no quarter is marked as filed. `today` (YYYY-MM-DD): data.today
+ * in tests.
  */
-function checkAgainstFiled(quarters, model390) {
+function checkAgainstFiled(quarters, model390, today) {
   const filed = quarters.filter((q) => q.filed && q.filed.boxes);
   if (!filed.length) return null;
   const changed = filed
     .filter((q) => q.changes && q.changes.boxes.length)
     .map((q) => ({ quarter: q.quarter, period: q.period, boxes: q.changes.boxes }));
-  const unfiled = quarters.filter((q) => !q.filed).map((q) => q.period);
+  // a quarter still within its term is not missing yet (the 4T until 30 January)
+  const unfiled = quarters.filter((q) => !q.filed && q.deadline < today).map((q) => q.period);
   const filedResult = filed.length === quarters.length
     ? round2(filed.reduce((s, q) => s + (Number(q.filed.boxes['46']) || 0), 0))
     : null;
   const result = model390.boxes['84'];
-  if (!changed.length && !unfiled.length && filedResult === result) return { ok: true, changed: [], unfiled: [], filed_result: filedResult, result };
-  return { ok: false, changed, unfiled, filed_result: filedResult, result };
+  // with quarters still to file there is no result to compare yet
+  const ok = !changed.length && !unfiled.length && (filedResult === null || filedResult === result);
+  return { ok, changed, unfiled, filed_result: filedResult, result };
 }
 
 // --- 390 -------------------------------------------------------------------
@@ -653,7 +660,7 @@ function vatModels(data, year) {
   Object.assign(annual, figures);
   const model390 = boxes390({ rows, annual, quarters, startCarry, pct, finalPct, prorrata, regularisation, returns, year });
   const filed390 = returns.find((r) => r.model === '390' && Number(r.year) === year) || null;
-  const check390 = checkAgainstFiled(quarters, model390);
+  const check390 = checkAgainstFiled(quarters, model390, data.today || moment().format('YYYY-MM-DD'));
 
   const issues = Object.keys(ISSUE_TEXT)
     .map((code) => {

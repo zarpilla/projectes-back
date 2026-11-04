@@ -515,6 +515,7 @@ describe('the 390 against the 303s filed', () => {
     ],
     receivedInvoices: [doc(10, '2025-10-02', [line(17, 21)])],
     returns: [],
+    today: '2026-11-04',
   });
   // every quarter marked as filed with what the documents said then
   const fileAll = (data) => {
@@ -558,6 +559,23 @@ describe('the 390 against the 303s filed', () => {
     const r = vatModels(d, 2025);
     expect(r.check390).toMatchObject({ ok: false, unfiled: ['2T'], filed_result: null });
   });
+
+  // validation of 2026-11-04: in the middle of the year the quarters still to
+  // come were listed as not filed, and the year said the 390 did not add up
+  it('does not count a quarter still within its term as missing', () => {
+    const d = base();
+    for (const x of d.emittedInvoices) x.emitted = x.emitted.replace('2025', '2026');
+    d.years = [{ year: 2026, deductible_vat_pct: 100 }];
+    d.receivedInvoices = [];
+    const r0 = vatModels(d, 2026);
+    d.returns = r0.quarters.slice(0, 3).map((q) => ({ id: q.quarter, model: '303', year: 2026, period: q.period, declaration_type: 'I', boxes: { ...q.boxes } }));
+    // 4 November: the 4T is due on 30 January
+    expect(vatModels(d, 2026).check390).toMatchObject({ ok: true, changed: [], unfiled: [], filed_result: null });
+    // 25 October with the 3T not filed: its term (20 October) is over
+    d.returns = d.returns.slice(0, 2);
+    expect(vatModels({ ...d, today: '2026-10-25' }, 2026).check390).toMatchObject({ ok: false, unfiled: ['3T'] });
+    expect(vatModels({ ...d, today: '2026-10-20' }, 2026).check390).toMatchObject({ ok: true, unfiled: [] });
+  });
 });
 
 // 2026-11-04: the self-employed quota, entered as a received invoice at 0 %,
@@ -568,7 +586,7 @@ describe('received lines outside VAT (not_vat)', () => {
     years: [{ year: 2025, deductible_vat_pct: 100 }],
     receivedInvoices: [
       doc(1, '2025-01-31', [line(624, 0)], { contact: ss, reverse_charge: 'not_vat' }),
-      doc(2, '2025-02-28', [line(624, 0)], { contact: ss }), // not classified yet: an exempt purchase
+      doc(2, '2025-02-28', [line(624, 0)], { contact: { ...ss, id: 52, name: 'Assegurança' } }), // not classified yet: an exempt purchase
       doc(3, '2025-03-10', [line(40, 0)], { reverse_charge: 'none' }), // insurance: exempt
     ],
   }, 2025);
@@ -580,6 +598,21 @@ describe('received lines outside VAT (not_vat)', () => {
     expect(row(2)).toMatchObject({ annual_box: '230' });
     expect(row(3)).toMatchObject({ annual_box: '230' });
     expect(r.model390.boxes['230']).toBe(664);
+  });
+
+  it('proposes it again for the same contact, out of the 230 until classified', () => {
+    const r2 = vatModels({
+      years: [{ year: 2025, deductible_vat_pct: 100 }],
+      receivedInvoices: [
+        doc(1, '2025-01-31', [line(624, 0)], { contact: ss, reverse_charge: 'not_vat' }),
+        doc(2, '2025-02-28', [line(624, 0)], { contact: ss }),
+      ],
+      history: { received: [] },
+    }, 2025);
+    expect(r2.rows.find((x) => x.id === 2)).toMatchObject({ issue: 'received-not-vat', proposal: 'not_vat' });
+    expect(r2.rows.find((x) => x.id === 2).annual_box).toBeUndefined();
+    expect(r2.model390.boxes['230']).toBe(0);
+    expect(r2.issues.map((i) => i.code)).toEqual(['received-not-vat']);
   });
 
   it('is classified without a self-assessed rate', () => {
