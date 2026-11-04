@@ -235,6 +235,9 @@ describe('the record sent to AEAT', () => {
     expect(tag(xml, 'ID')).toBe('FR12345678901');
     // not subject by location rules, instead of exempt
     expect(tag(xml, 'CalificacionOperacion')).toBe('N2');
+    // the general regime key, as a classified N2: 02 is for exports
+    // (validation of model-303, 2026-11-04)
+    expect(tag(xml, 'ClaveRegimen')).toBe('01');
   });
 
   // IVA › Models 303 i 390: the 0 % lines follow the invoice's vat_operation.

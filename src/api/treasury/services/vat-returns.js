@@ -76,6 +76,19 @@ function checkPeriod(model, year, period) {
   if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new VatReturnError(`Any no vàlid: ${year}`);
 }
 
+// the types a result allows, as the front offers them (domain/vatModels.js declarationTypesFor)
+const TYPES_FOR = { positive: ['I', 'U'], negative: ['C'], zero: ['N'] };
+const RESULT_TEXT = { positive: 'a ingressar', negative: 'a compensar o retornar', zero: 'zero' };
+
+/** A 303 filed as «a ingressar» with a negative result (and so on) is refused. */
+function checkDeclarationType(type, result, period) {
+  const sign = result > 0 ? 'positive' : result < 0 ? 'negative' : 'zero';
+  const allowed = sign === 'negative' && period === '4T' ? ['C', 'D'] : TYPES_FOR[sign];
+  if (!allowed.includes(type)) {
+    throw new VatReturnError(`El resultat (${result} €) és ${RESULT_TEXT[sign]}: el tipus de declaració ha de ser ${allowed.join(' o ')}.`);
+  }
+}
+
 /** What a filed return keeps: its boxes, its documents and its result, as they are now. */
 function snapshotOf(result, model, period) {
   if (model === '390') {
@@ -105,6 +118,7 @@ async function fileReturn(p, user) {
   const data = await loadVatModelsData(year);
   data.returns = data.returns.filter((r) => !(r.model === model && Number(r.year) === year && r.period === period));
   const snapshot = snapshotOf(vatModels(data, year), model, period);
+  if (model === '303') checkDeclarationType(declarationType, snapshot.result, period);
   const row = {
     model,
     year,

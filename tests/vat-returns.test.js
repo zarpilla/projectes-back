@@ -100,7 +100,7 @@ describe('marking a return as filed', () => {
 
   it('carries the filed quarter into the next one', async () => {
     const calls = stubStrapi({ returns: [{ id: 3, model: '303', year: 2026, period: '1T', declaration_type: 'C', boxes: { '71': -300, '87': 0 } }] });
-    await svc.fileReturn({ model: '303', year: 2026, period: '2T', declaration_type: 'I', filed_date: '2026-07-20' }, null);
+    await svc.fileReturn({ model: '303', year: 2026, period: '2T', declaration_type: 'N', filed_date: '2026-07-20' }, null);
     const { data } = calls.create[0];
     // T2: 105 charged, 300 pending from the filed T1 → 105 applied, 195 left
     expect(data.boxes['110']).toBe(300);
@@ -136,9 +136,38 @@ describe('marking a return as filed', () => {
   });
 
   it('allows the refund in the 4T', async () => {
-    const calls = stubStrapi();
-    await svc.fileReturn({ model: '303', year: 2026, period: '4T', declaration_type: 'D', filed_date: '2027-01-30' }, { id: 5 });
-    expect(calls.create[0].data.declaration_type).toBe('D');
+    DOCS[RECEIVED].push(doc(11, '2026-11-10', [line(100, 21)]));
+    try {
+      const calls = stubStrapi();
+      await svc.fileReturn({ model: '303', year: 2026, period: '4T', declaration_type: 'D', filed_date: '2027-01-30' }, { id: 5 });
+      expect(calls.create[0].data).toMatchObject({ declaration_type: 'D', result: -21 });
+    } finally {
+      DOCS[RECEIVED].pop();
+    }
+  });
+
+  const T1_NOTHING = { id: 3, model: '303', year: 2026, period: '1T', declaration_type: 'N', boxes: { '71': 0, '87': 0 } };
+
+  // validation of model-303 (2026-11-04): the API took any type, e.g. «a
+  // compensar» for a quarter to pay
+  it.each([
+    ['1T', 'I'], ['1T', 'U'], ['1T', 'N'], // −210
+    ['2T', 'C'], ['2T', 'N'], // +105 (the filed T1 left nothing to compensate)
+    ['3T', 'I'], ['3T', 'C'], // 0
+  ])('refuses the %s filed as %s, which its result does not allow', async (period, type) => {
+    const calls = stubStrapi({ returns: [T1_NOTHING] });
+    await expect(svc.fileReturn({ model: '303', year: 2026, period, declaration_type: type, filed_date: '2026-10-20' }, { id: 5 }))
+      .rejects.toThrow(/el tipus de declaració ha de ser/);
+    expect(calls.create).toEqual([]);
+  });
+
+  it('takes the types its result allows', async () => {
+    for (const [period, type] of [['1T', 'C'], ['2T', 'I'], ['2T', 'U'], ['3T', 'N']]) {
+      const calls = stubStrapi({ returns: [T1_NOTHING] });
+      await svc.fileReturn({ model: '303', year: 2026, period, declaration_type: type, filed_date: '2026-10-20' }, { id: 5 });
+      // the 1T is filed again over T1_NOTHING
+      expect([...calls.create, ...calls.update][0].data.declaration_type).toBe(type);
+    }
   });
 
   it('unmarks a filed return', async () => {
