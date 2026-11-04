@@ -5,6 +5,14 @@ const moment = require('moment');
 const _ = require('lodash');
 const { buildEstimatedForecastByYear, lineVatPct } = require('../../project/services/projectFinancials');
 const zeroPad = (num, places) => String(num).padStart(places, '0');
+// The document type in a forecast label: « (Rebut)», or «, Rebut» inside the
+// partial/pending brackets. Documents may have none (the Quipu import left 103
+// received expenses of webcoop untyped): then the label goes without it.
+const typeSuffix = (doc, sep = ' (') => {
+  const name = doc && doc.document_type && doc.document_type.name;
+  if (!name) return '';
+  return sep === ' (' ? ` (${name})` : `${sep}${name}`;
+};
 // "Nòmina 2026-03-anna". A payroll can point at a user who was deleted (v3 let
 // them be deleted; issues/050): populate gives null and the forecast answered
 // 500 for the whole tenant. Such payrolls still count, without a name.
@@ -776,7 +784,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           : i.projects && i.projects.length && i.projects[0] && i.projects[0].id
             ? i.projects[0].id
             : 0,
-        type: `${i.paid ? 'Ingrés cobrat' : 'Ingrés emès'} (${i.document_type.name})`,
+        type: `${i.paid ? 'Ingrés cobrat' : 'Ingrés emès'}${typeSuffix(i)}`,
         date_edit: dateEdit(i, 'received-incomes'),
         date_edit_id: i.id,
         concept: i.code,
@@ -800,8 +808,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         kind: 'received-incomes',
         sign: 1,
         labels: {
-          partial: `Ingrés cobrat (parcial, ${i.document_type.name})`,
-          pending: `Ingrés emès (pendent, ${i.document_type.name})`,
+          partial: `Ingrés cobrat (parcial${typeSuffix(i, ', ')})`,
+          pending: `Ingrés emès (pendent${typeSuffix(i, ', ')})`,
         },
         pendingDate: i.estimated_payment || i.paybefore || i.emitted,
         validationMap,
@@ -955,7 +963,7 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           : e.projects && e.projects.length && e.projects[0] && e.projects[0].id
             ? e.projects[0].id
             : 0,
-        type: `${e.paid ? 'Despesa pagada' : 'Despesa rebuda'} (${e.document_type.name})`,
+        type: `${e.paid ? 'Despesa pagada' : 'Despesa rebuda'}${typeSuffix(e)}`,
         date_edit: dateEdit(e, 'received-expenses'),
         date_edit_id: e.id,
         concept: e.code,
@@ -979,8 +987,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         kind: 'received-expenses',
         sign: -1,
         labels: {
-          partial: `Despesa pagada (parcial, ${e.document_type.name})`,
-          pending: `Despesa rebuda (pendent, ${e.document_type.name})`,
+          partial: `Despesa pagada (parcial${typeSuffix(e, ', ')})`,
+          pending: `Despesa rebuda (pendent${typeSuffix(e, ', ')})`,
         },
         pendingDate: e.paybefore || e.emitted,
         validationMap,
