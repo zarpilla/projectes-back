@@ -149,9 +149,12 @@ function createDocumentLifecycles({
       data.total = 0;
     }
 
-    // Serie-based code numbering: SERIE-000N
-    if (!data.code) {
-      const serialId = relationId(data.serial);
+    // Serie-based code numbering: SERIE-000N. Without a series there is
+    // nothing to number from: a findOne on `id: undefined` throws in v5 and the
+    // API answered 500 to a POST/PUT without `serial` (the form always sends
+    // one; an API client may not). Same guard as quote and emitted-invoice.
+    const serialId = data.code ? null : relationId(data.serial);
+    if (serialId) {
       const serial = await strapi.db.query('api::serie.serie').findOne({ where: { id: serialId } });
       if (serial) {
         if (!data.number) {
