@@ -30,6 +30,10 @@ const { vatPaymentDate } = require('./vat-forecast');
  *   38/39; the 390 tells them apart), isp = other reverse charge (12/13,
  *   deducted in 28/29 or 30/31), at `reverse_charge_rate` (21 % by default);
  *   none = reviewed, nothing to self-assess.
+ * Received lines with VAT at the REAGP rates (12, 10.5 %) or from abroad are
+ * classified too (`vat_special`: reagp → 42, foreign_vat → outside the
+ * return, none → 28/29). A received invoice with a negative base rectifies
+ * deductions: 40/41.
  * Unclassified ones are listed for review with a proposal: what the same
  * contact's last classified document had, or one from its country.
  *
@@ -57,6 +61,12 @@ const OPERATIONS = {
 // intracom: services (and goods until phase 3); intracom_goods: goods (the 390 tells them apart)
 const REVERSE_CHARGES = ['none', 'intracom', 'intracom_goods', 'isp'];
 const INTRACOM = ['intracom', 'intracom_goods'];
+// received lines with VAT: none = Spanish VAT, deductible; reagp = the agrarian
+// compensation of a farmer in the REAGP (box 42); foreign_vat = another
+// country's VAT, not deductible here (refunded through the model 360)
+const VAT_SPECIALS = ['none', 'reagp', 'foreign_vat'];
+const REAGP_RATES = [12, 10.5];
+const SPANISH_RATES = [2, 4, 5, 7.5, 10, 21];
 
 // compared without accents nor case (contacts' country is free text)
 const plain = (text) => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
@@ -174,6 +184,14 @@ function docInfo(doc, kind) {
 }
 
 const issuedProposal = (area) => (area === 'ES' ? null : 'N2');
+
+// a received line with VAT that needs a decision: the REAGP rates, and
+// VAT from abroad (a Spanish rate is proposed as Spanish VAT, e.g. Amazon EU)
+function specialProposal(area, rate) {
+  if (REAGP_RATES.includes(rate)) return 'reagp';
+  if (area !== 'ES') return SPANISH_RATES.includes(rate) ? 'none' : 'foreign_vat';
+  return null;
+}
 const receivedProposal = (area) => (area === 'EU' ? 'intracom' : area === 'NONEU' ? 'isp' : null);
 
 /**
@@ -245,7 +263,16 @@ function documentRows({ emittedInvoices = [], receivedIncomes = [], receivedInvo
         deductible_vat: round2((g.vat * pct) / 100),
       };
       if (g.rate > 0) {
-        Object.assign(row, g.capital ? { base_box: '30', vat_box: '31' } : { base_box: '28', vat_box: '29' });
+        const special = VAT_SPECIALS.includes(doc.vat_special) ? doc.vat_special : null;
+        const proposal = specialProposal(info.area, g.rate);
+        // the agrarian compensation and foreign VAT are classified; the rest as before
+        if (special || proposal) row.classify = { field: 'vat_special', value: special };
+        if (special === 'reagp') Object.assign(row, { vat_box: '42', reagp: true });
+        else if (special === 'foreign_vat') row.not_in_return = true;
+        else if (!special && proposal) Object.assign(row, { issue: proposal === 'reagp' ? 'received-reagp' : 'received-foreign-vat', proposal });
+        // a received rectifying invoice (negative) rectifies deductions: 40/41
+        else if (doc.total_base !== null && doc.total_base !== undefined && Number(doc.total_base) < 0) Object.assign(row, { base_box: '40', vat_box: '41' });
+        else Object.assign(row, g.capital ? { base_box: '30', vat_box: '31' } : { base_box: '28', vat_box: '29' });
         rows.push(row);
         continue;
       }
@@ -299,9 +326,9 @@ function periodBoxes(rows, compensate, extra = {}) {
       b[r.accrued_boxes[1]] += r.self_vat;
     }
     if (r.info_box) b[r.info_box] += r.base;
-    if (!r.base_box) continue;
-    b[r.base_box] += r.base;
-    b[r.vat_box] += r.side === 'received' ? r.deductible_vat : r.vat;
+    if (r.base_box) b[r.base_box] += r.base;
+    // 42 (agrarian compensation) has a quota only
+    if (r.vat_box) b[r.vat_box] += r.side === 'received' ? r.deductible_vat : r.vat;
   }
   b['151'] = 0;
   b['02'] = 4;
@@ -326,6 +353,8 @@ function periodBoxes(rows, compensate, extra = {}) {
 const ISSUE_TEXT = {
   'issued-zero': 'Línies emeses al 0 % sense classificar: poden ser exemptes, no subjectes, entregues intracomunitàries (59), exportacions (60), no subjectes per localització (120) o amb inversió del subjecte passiu (122). Fins que no es classifiquen no són a cap casella.',
   'unknown-rate': 'Línies emeses a un tipus que el 303 no té (només 4, 10 i 21 %). No són a cap casella.',
+  'received-reagp': "Factures rebudes al 12 % o al 10,5 %: si són d'un pagès en el règim especial agrari (REAGP), és la compensació a tant alçat, que es dedueix a la casella 42. Fins que no es classifiquen no són a cap casella.",
+  'received-foreign-vat': "Factures rebudes de fora d'Espanya amb IVA: l'IVA d'un altre país no es dedueix al 303 (es recupera amb el model 360); si és IVA espanyol (p. ex. Amazon EU al 21 %), sí. Si un proveïdor sense establiment a Espanya (Zoom, Canva…) cobra IVA espanyol en lloc d'aplicar la inversió del subjecte passiu, consulteu amb la gestoria si es pot deduir. Fins que no es classifiquen no són a cap casella.",
   'received-foreign-zero': "Factures rebudes de fora d'Espanya al 0 %: si és una compra intracomunitària o un servei de fora, cal autoliquidar l'IVA (caselles 10/11 i 36/37, o 12/13 i 28/29). Fins que no es classifiquen no són a cap casella.",
 };
 
@@ -345,7 +374,7 @@ function annualFigures(rows, annual, pct, finalPct = null) {
   if (figures['88'] > 0 && figures['83'] > 0) {
     const definitive = Math.min(100, Math.ceil((withRight / figures['88']) * 100));
     // the VAT paid before the provisional prorrata, applied again with the final one
-    const paid = rows.filter((r) => r.side === 'received' && r.base_box).reduce((s, r) => s + (r.self_vat !== undefined ? r.self_vat : r.vat), 0);
+    const paid = rows.filter((r) => r.side === 'received' && r.vat_box).reduce((s, r) => s + (r.self_vat !== undefined ? r.self_vat : r.vat), 0);
     prorrata = {
       provisional: pct,
       definitive,
@@ -384,7 +413,7 @@ function defaultDeclarationType(result) {
 function documentSnapshot(rows) {
   const docs = {};
   for (const r of rows) {
-    if (!r.base_box && !r.info_box && !r.accrued_boxes && !r.issue) continue;
+    if (!r.vat_box && !r.info_box && !r.accrued_boxes && !r.issue) continue;
     docs[r.key] = {
       kind: r.kind,
       id: r.id,
@@ -392,7 +421,7 @@ function documentSnapshot(rows) {
       contact: r.contact,
       base: r.base,
       vat: r.side === 'received' ? r.deductible_vat : r.vat,
-      boxes: [r.accrued_boxes && r.accrued_boxes.join('/'), r.base_box && `${r.base_box}/${r.vat_box}`, r.info_box].filter(Boolean).join(' · '),
+      boxes: [r.accrued_boxes && r.accrued_boxes.join('/'), r.vat_box && (r.base_box ? `${r.base_box}/${r.vat_box}` : r.vat_box), r.info_box].filter(Boolean).join(' · '),
     };
   }
   return docs;
@@ -466,7 +495,10 @@ function boxes390({ rows, annual, quarters, startCarry, pct, finalPct, prorrata,
       if (pair) { add(pair[0], r.base); add(pair[1], r.vat); } else unmapped.push(r);
       continue;
     }
-    if (r.side !== 'received' || !r.base_box) continue;
+    if (r.side !== 'received' || !r.vat_box) continue;
+    // 5. agrarian compensations and rectified deductions
+    if (r.reagp) { add('60', r.base); add('61', r.deductible_vat); continue; }
+    if (r.base_box === '40') { add('639', r.base); add('62', r.deductible_vat); continue; }
     const rate = r.self_rate !== undefined ? r.self_rate : r.rate;
     if (r.accrued_boxes) {
       if (r.reverse_charge === 'isp') { add('27', r.base); add('28', r.self_vat); }
@@ -533,7 +565,7 @@ function vatModels(data, year) {
 
   const finalPct = finalDeductiblePct(data.years, year);
   // box 44 in the last quarter: the year's VAT paid again with the final prorrata
-  const paidVat = round2(rows.filter((r) => r.side === 'received' && r.base_box).reduce((s, r) => s + (r.self_vat !== undefined ? r.self_vat : r.vat), 0));
+  const paidVat = round2(rows.filter((r) => r.side === 'received' && r.vat_box).reduce((s, r) => s + (r.self_vat !== undefined ? r.self_vat : r.vat), 0));
   const regularisation = finalPct === null ? 0 : round2((paidVat * (finalPct - pct)) / 100);
 
   const returns = data.returns || [];
@@ -642,4 +674,4 @@ function vatModels(data, year) {
   };
 }
 
-module.exports = { vatModels, contactArea, documentRows, documentSnapshot, periodBoxes, deductiblePct, OPERATIONS, REVERSE_CHARGES };
+module.exports = { vatModels, contactArea, documentRows, documentSnapshot, periodBoxes, deductiblePct, OPERATIONS, REVERSE_CHARGES, VAT_SPECIALS };

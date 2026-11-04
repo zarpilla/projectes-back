@@ -2410,6 +2410,7 @@ export interface ApiReceivedInvoiceReceivedInvoice extends Struct.CollectionType
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     vat_paid_date: Schema.Attribute.DateTime;
+    vat_special: Schema.Attribute.Enumeration<['none', 'reagp', 'foreign_vat']>;
   };
 }
 

@@ -143,6 +143,14 @@
     "reverse_charge_rate": {
       "type": "decimal",
       "default": 21
+    },
+    "vat_special": {
+      "type": "enumeration",
+      "enum": [
+        "none",
+        "reagp",
+        "foreign_vat"
+      ]
     }
   }
 }

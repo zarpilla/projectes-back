@@ -42,7 +42,7 @@ async function loadVatModelsData(year) {
       populate: { lines: true, contact },
     }),
     strapi.db.query('api::received-invoice.received-invoice').findMany({
-      select: [...select, 'reverse_charge', 'reverse_charge_rate'],
+      select: [...select, 'reverse_charge', 'reverse_charge_rate', 'vat_special'],
       where,
       populate: { lines: { populate: { expense_type: { select: ['id', 'capital_goods'] } } }, contact },
     }),

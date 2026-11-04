@@ -351,3 +351,55 @@ describe('AEAT files', () => {
     expect(page1.slice(148, 191)).toBe('SERVEIS'.padEnd(40, ' ') + 'A03');
   });
 });
+
+describe('agrarian compensation, foreign VAT and received rectifying invoices', () => {
+  const farmer = { id: 20, name: "L'hort del Puig SCP", nif: 'J12345678', country: null };
+  const pt = { id: 21, name: 'Porto Hostel', nif: 'PT123456789', country: 'Portugal' };
+  const amazon = { id: 22, name: 'Amazon EU', nif: 'LU26375245', country: 'Luxembourg' };
+  const data = {
+    years: [{ year: 2026, deductible_vat_pct: 100 }],
+    receivedInvoices: [
+      doc(1, '2026-01-10', [line(100, 12)], { contact: farmer }), // REAGP, unclassified
+      doc(2, '2026-01-11', [line(200, 12)], { contact: farmer, vat_special: 'reagp' }),
+      doc(3, '2026-01-12', [line(50, 6)], { contact: pt }), // foreign VAT, unclassified
+      doc(4, '2026-01-13', [line(60, 6)], { contact: pt, vat_special: 'foreign_vat' }),
+      doc(5, '2026-01-14', [line(30, 21)], { contact: amazon }), // Spanish VAT from abroad: proposed deductible
+      doc(6, '2026-01-15', [line(40, 21)], { contact: amazon, vat_special: 'none' }),
+      doc(7, '2026-01-16', [line(-100, 21)], { total_base: -100, total_vat: -21 }), // a credit note received
+    ],
+  };
+  const r = vatModels(data, 2026);
+  const row = (id) => r.rows.find((x) => x.kind === 'received-invoices' && x.id === id);
+  const t1 = r.quarters[0].boxes;
+
+  it('proposes and deducts the agrarian compensation in box 42', () => {
+    expect(row(1)).toMatchObject({ issue: 'received-reagp', proposal: 'reagp', classify: { field: 'vat_special', value: null } });
+    expect(row(2)).toMatchObject({ vat_box: '42', reagp: true });
+    expect(t1['42']).toBe(24);
+    expect(r.model390.boxes).toMatchObject({ '60': 200, '61': 24 });
+  });
+
+  it('keeps foreign VAT out of the return, and Spanish VAT charged from abroad in it', () => {
+    expect(row(3)).toMatchObject({ issue: 'received-foreign-vat', proposal: 'foreign_vat' });
+    expect(row(4)).toMatchObject({ not_in_return: true });
+    expect(row(5)).toMatchObject({ issue: 'received-foreign-vat', proposal: 'none' });
+    expect(row(6)).toMatchObject({ base_box: '28', vat_box: '29' });
+  });
+
+  it('puts a received rectifying invoice in 40/41', () => {
+    expect(row(7)).toMatchObject({ base_box: '40', vat_box: '41' });
+    expect(t1).toMatchObject({ '28': 40, '29': 8.4, '40': -100, '41': -21 });
+    expect(t1['45']).toBe(round(8.4 - 21 + 24));
+    expect(r.model390.boxes).toMatchObject({ '639': -100, '62': -21 });
+    expect(r.issues.map((i) => i.code)).toEqual(['received-reagp', 'received-foreign-vat']);
+  });
+
+  it('classifies the lines with VAT through vat_special', () => {
+    const { classifyWrites } = require('../src/api/treasury/services/vat-classify');
+    expect(classifyWrites([{ kind: 'received-invoices', id: 1, field: 'vat_special', value: 'reagp' }])).toEqual({
+      'received-invoices': [{ id: 1, data: { vat_special: 'reagp' } }],
+    });
+    expect(() => classifyWrites([{ kind: 'received-invoices', id: 1, field: 'vat_special', value: 'isp' }])).toThrow();
+    expect(() => classifyWrites([{ kind: 'emitted-invoices', id: 1, field: 'vat_special', value: 'reagp' }])).toThrow();
+  });
+});
