@@ -17,8 +17,8 @@ const { vatPaymentDate } = require('./vat-forecast');
  *   after the year's «% IVA deduïble» (prorrata; an empty year is 100 %,
  *   issues/338). The base is the whole base.
  * - Expenses (tiquets, dietes…) do not count: listed apart.
- * - Cash accounting, equivalence surcharge, REAGP and OSS are not supported:
- *   the page says so.
+ * - Cash accounting, equivalence surcharge, simplified regime, OSS, imports,
+ *   differentiated sectors and box 43 are not supported: the page says so.
  *
  * The lines at 0 % follow their document's classification (phase 2):
  * - issued `vat_operation`, Verifactu's codes: E1 exempt (art. 20, annual 83),
@@ -655,7 +655,7 @@ function vatModels(data, year) {
   });
   notes.push({
     code: 'unsupported',
-    text: "No es contemplen el criteri de caixa, el recàrrec d'equivalència, el règim d'agricultura (REAGP), la finestreta única (OSS), les importacions ni les rectificacions de factures rebudes (40/41).",
+    text: "No es contemplen el criteri de caixa, el recàrrec d'equivalència, el règim simplificat, la finestreta única (OSS), les importacions, els sectors diferenciats ni la regularització de béns d'inversió (43).",
   });
 
   return {
