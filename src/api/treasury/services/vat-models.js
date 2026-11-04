@@ -32,7 +32,9 @@ const { vatPaymentDate } = require('./vat-forecast');
  *   none = reviewed, nothing to self-assess.
  * Received lines with VAT at the REAGP rates (12, 10.5 %) or from abroad are
  * classified too (`vat_special`: reagp → 42, foreign_vat → outside the
- * return, none → 28/29). A received invoice with a negative base rectifies
+ * return, none → 28/29, wrong_vat → Spanish VAT charged by a provider without
+ * an establishment here instead of the reverse charge: not deductible, the
+ * base is self-assessed at the line's rate as intracom (from the EU) or isp). A received invoice with a negative base rectifies
  * deductions: 40/41.
  * Unclassified ones are listed for review with a proposal: what the same
  * contact's last classified document had, or one from its country.
@@ -63,8 +65,14 @@ const REVERSE_CHARGES = ['none', 'intracom', 'intracom_goods', 'isp'];
 const INTRACOM = ['intracom', 'intracom_goods'];
 // received lines with VAT: none = Spanish VAT, deductible; reagp = the agrarian
 // compensation of a farmer in the REAGP (box 42); foreign_vat = another
-// country's VAT, not deductible here (refunded through the model 360)
-const VAT_SPECIALS = ['none', 'reagp', 'foreign_vat'];
+// country's VAT, not deductible here (refunded through the model 360);
+// wrong_vat = Spanish VAT a provider from abroad charged where the reverse
+// charge applied (a B2B service: arts. 69.Uno.1, 84.Uno.2 LIVA): not
+// deductible (art. 94.Tres, CJEU C-35/05 Reemtsma; the entity claims it back
+// from the provider), and the base is self-assessed: 10/11 + 36/37 from the EU
+// (also in the model 349), 12/13 + 28/29 from elsewhere. The gestoria's answer
+// for webcoop, 2026-11-04.
+const VAT_SPECIALS = ['none', 'reagp', 'foreign_vat', 'wrong_vat'];
 const REAGP_RATES = [12, 10.5];
 const SPANISH_RATES = [2, 4, 5, 7.5, 10, 21];
 
@@ -186,12 +194,29 @@ function docInfo(doc, kind) {
 const issuedProposal = (area) => (area === 'ES' ? null : 'N2');
 
 // a received line with VAT that needs a decision: the REAGP rates, and
-// VAT from abroad (a Spanish rate is proposed as Spanish VAT, e.g. Amazon EU)
+// VAT from abroad (a Spanish rate is proposed as wrongly charged, the usual
+// case of a service from abroad; goods a provider sells from Spain with its
+// Spanish VAT number, e.g. Amazon EU, are «none»)
 function specialProposal(area, rate) {
   if (REAGP_RATES.includes(rate)) return 'reagp';
-  if (area !== 'ES') return SPANISH_RATES.includes(rate) ? 'none' : 'foreign_vat';
+  if (area !== 'ES') return SPANISH_RATES.includes(rate) ? 'wrong_vat' : 'foreign_vat';
   return null;
 }
+// a self-assessed row: charged (10/11 or 12/13) and deducted at the same time
+function selfAssessed(rc, base, rate, capital, pct) {
+  const vat = round2((base * rate) / 100);
+  return {
+    self_rate: rate,
+    self_vat: vat,
+    deductible_vat: round2((vat * pct) / 100),
+    accrued_boxes: rc === 'isp' ? ['12', '13'] : ['10', '11'],
+    reverse_charge: rc,
+    ...(rc !== 'isp'
+      ? capital ? { base_box: '38', vat_box: '39' } : { base_box: '36', vat_box: '37' }
+      : capital ? { base_box: '30', vat_box: '31' } : { base_box: '28', vat_box: '29' }),
+  };
+}
+
 const receivedProposal = (area) => (area === 'EU' ? 'intracom' : area === 'NONEU' ? 'isp' : null);
 
 /**
@@ -269,6 +294,8 @@ function documentRows({ emittedInvoices = [], receivedIncomes = [], receivedInvo
         if (special || proposal) row.classify = { field: 'vat_special', value: special };
         if (special === 'reagp') Object.assign(row, { vat_box: '42', reagp: true });
         else if (special === 'foreign_vat') row.not_in_return = true;
+        // the VAT on the invoice is not deducted; the base is self-assessed at its rate
+        else if (special === 'wrong_vat') Object.assign(row, selfAssessed(info.area === 'EU' ? 'intracom' : 'isp', g.base, g.rate, g.capital, pct));
         else if (!special && proposal) Object.assign(row, { issue: proposal === 'reagp' ? 'received-reagp' : 'received-foreign-vat', proposal });
         // a received rectifying invoice (negative) rectifies deductions: 40/41
         else if (doc.total_base !== null && doc.total_base !== undefined && Number(doc.total_base) < 0) Object.assign(row, { base_box: '40', vat_box: '41' });
@@ -283,16 +310,7 @@ function documentRows({ emittedInvoices = [], receivedIncomes = [], receivedInvo
         const rate = doc.reverse_charge_rate === null || doc.reverse_charge_rate === undefined || doc.reverse_charge_rate === ''
           ? 21
           : Number(doc.reverse_charge_rate);
-        const vat = round2((g.base * rate) / 100);
-        Object.assign(row, {
-          self_rate: rate,
-          self_vat: vat,
-          deductible_vat: round2((vat * pct) / 100),
-          accrued_boxes: rc === 'isp' ? ['12', '13'] : ['10', '11'],
-          reverse_charge: rc,
-        });
-        if (rc !== 'isp') Object.assign(row, g.capital ? { base_box: '38', vat_box: '39' } : { base_box: '36', vat_box: '37' });
-        else Object.assign(row, g.capital ? { base_box: '30', vat_box: '31' } : { base_box: '28', vat_box: '29' });
+        Object.assign(row, selfAssessed(rc, g.base, rate, g.capital, pct));
       } else if (rc === 'none') row.not_in_return = true;
       // a 0 % purchase from abroad may be a reverse charge the entity has to self-assess
       else if (info.area !== 'ES') Object.assign(row, { issue: 'received-foreign-zero', proposal: proposeReceived(doc) });
@@ -354,7 +372,7 @@ const ISSUE_TEXT = {
   'issued-zero': 'Línies emeses al 0 % sense classificar: poden ser exemptes, no subjectes, entregues intracomunitàries (59), exportacions (60), no subjectes per localització (120) o amb inversió del subjecte passiu (122). Fins que no es classifiquen no són a cap casella.',
   'unknown-rate': 'Línies emeses a un tipus que el 303 no té (només 4, 10 i 21 %). No són a cap casella.',
   'received-reagp': "Factures rebudes al 12 % o al 10,5 %: si són d'un pagès en el règim especial agrari (REAGP), és la compensació a tant alçat, que es dedueix a la casella 42. Fins que no es classifiquen no són a cap casella.",
-  'received-foreign-vat': "Factures rebudes de fora d'Espanya amb IVA: l'IVA d'un altre país no es dedueix al 303 (es recupera amb el model 360); si és IVA espanyol (p. ex. Amazon EU al 21 %), sí. Si un proveïdor sense establiment a Espanya (Zoom, Canva…) cobra IVA espanyol en lloc d'aplicar la inversió del subjecte passiu, consulteu amb la gestoria si es pot deduir. Fins que no es classifiquen no són a cap casella.",
+  'received-foreign-vat': "Factures rebudes de fora d'Espanya amb IVA: l'IVA d'un altre país no es dedueix al 303 (es recupera amb el model 360). Si un proveïdor sense establiment a Espanya (Anthropic, Zoom, Canva…) cobra IVA espanyol per un servei, l'IVA està mal repercutit: no es dedueix, la base s'autoliquida (10/11 i 36/37 si és de la UE, que també van al model 349; 12/13 i 28/29 si és de fora) i l'IVA cobrat es reclama al proveïdor amb una factura rectificativa. Si el proveïdor ven des d'Espanya amb NIF espanyol (p. ex. Amazon EU), és IVA espanyol deduïble. Fins que no es classifiquen no són a cap casella.",
   'received-foreign-zero': "Factures rebudes de fora d'Espanya al 0 %: si és una compra intracomunitària o un servei de fora, cal autoliquidar l'IVA (caselles 10/11 i 36/37, o 12/13 i 28/29). Fins que no es classifiquen no són a cap casella.",
 };
 

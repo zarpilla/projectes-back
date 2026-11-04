@@ -11,7 +11,7 @@ const { OPERATIONS, REVERSE_CHARGES, VAT_SPECIALS } = require('./vat-models');
  *   S2) or null to unclassify;
  * - received-invoices: `reverse_charge` (none, intracom, intracom_goods, isp) or null, and
  *   `reverse_charge_rate` (`rate`, 21 by default) when self-assessed; or, with
- *   `field: 'vat_special'`, the lines with VAT (none, reagp, foreign_vat).
+ *   `field: 'vat_special'`, the lines with VAT (none, reagp, foreign_vat, wrong_vat).
  *
  * Written straight to the column: it's how the entity declares the operation,
  * not a change to the invoice, so an issued invoice (lines locked, VeriFactu)

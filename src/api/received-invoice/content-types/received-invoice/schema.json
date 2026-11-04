@@ -149,7 +149,8 @@
       "enum": [
         "none",
         "reagp",
-        "foreign_vat"
+        "foreign_vat",
+        "wrong_vat"
       ]
     }
   }

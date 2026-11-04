@@ -363,7 +363,7 @@ describe('agrarian compensation, foreign VAT and received rectifying invoices', 
       doc(2, '2026-01-11', [line(200, 12)], { contact: farmer, vat_special: 'reagp' }),
       doc(3, '2026-01-12', [line(50, 6)], { contact: pt }), // foreign VAT, unclassified
       doc(4, '2026-01-13', [line(60, 6)], { contact: pt, vat_special: 'foreign_vat' }),
-      doc(5, '2026-01-14', [line(30, 21)], { contact: amazon }), // Spanish VAT from abroad: proposed deductible
+      doc(5, '2026-01-14', [line(30, 21)], { contact: amazon }), // Spanish VAT from abroad: proposed as wrongly charged
       doc(6, '2026-01-15', [line(40, 21)], { contact: amazon, vat_special: 'none' }),
       doc(7, '2026-01-16', [line(-100, 21)], { total_base: -100, total_vat: -21 }), // a credit note received
     ],
@@ -379,10 +379,10 @@ describe('agrarian compensation, foreign VAT and received rectifying invoices', 
     expect(r.model390.boxes).toMatchObject({ '60': 200, '61': 24 });
   });
 
-  it('keeps foreign VAT out of the return, and Spanish VAT charged from abroad in it', () => {
+  it('keeps foreign VAT out of the return, and Spanish VAT charged from abroad in it when classified so', () => {
     expect(row(3)).toMatchObject({ issue: 'received-foreign-vat', proposal: 'foreign_vat' });
     expect(row(4)).toMatchObject({ not_in_return: true });
-    expect(row(5)).toMatchObject({ issue: 'received-foreign-vat', proposal: 'none' });
+    expect(row(5)).toMatchObject({ issue: 'received-foreign-vat', proposal: 'wrong_vat' });
     expect(row(6)).toMatchObject({ base_box: '28', vat_box: '29' });
   });
 
@@ -423,5 +423,77 @@ describe('the 390’s exempt domestic purchases (230)', () => {
   it('counts only the domestic 0 % purchases', () => {
     expect(r.rows.filter((x) => x.not_in_return).map((x) => x.id)).toEqual([1, 2, 3, 4]);
     expect(r.model390.boxes['230']).toBe(100);
+  });
+});
+
+// 2026-11-04: a provider from Ireland, with no establishment in Spain, charged
+// Spanish VAT (21 %) for an online service. The gestoria's answer: the service
+// goes by the reverse charge (arts. 69.Uno.1 and 84.Uno.2 LIVA), so the VAT on
+// the invoice is wrongly charged and not deductible (art. 94.Tres, CJEU C-35/05
+// Reemtsma); the base is self-assessed in 10/11 and deducted in 36/37 (and goes
+// to the model 349); the VAT charged is claimed back from the provider. The
+// proposal was «none» (deduct it in 28/29): 37.80 € less to pay than due.
+// Figures of a real quarter, made-up names.
+describe('Spanish VAT wrongly charged from abroad (wrong_vat)', () => {
+  const ie = { id: 31, name: 'Proveïdora de programari', nif: 'IE1234567AB', country: null };
+  const us = { id: 32, name: 'Videoconferències Inc', nif: '', country: 'Estats Units' };
+  const local = { id: 33, name: 'Programari local SL', nif: 'B12345678', country: null };
+  const data = (pct, extra = {}) => ({
+    years: [{ year: 2026, deductible_vat_pct: pct }],
+    emittedInvoices: [
+      doc(1, '2026-10-26', [line(1645.53, 21)], { total_vat: 345.56 }),
+      doc(2, '2026-10-26', [line(1975, 21)]),
+    ],
+    receivedInvoices: [
+      doc(10, '2026-10-06', [line(17, 21)], { contact: local }),
+      doc(11, '2026-10-31', [line(180, 21)], { contact: ie, ...extra }),
+    ],
+  });
+  const row = (r, id) => r.rows.find((x) => x.kind === 'received-invoices' && x.id === id);
+
+  it('is proposed for a provider from abroad charging a Spanish rate, and stays out until classified', () => {
+    const r = vatModels(data(100), 2026);
+    expect(row(r, 11)).toMatchObject({ issue: 'received-foreign-vat', proposal: 'wrong_vat', classify: { field: 'vat_special', value: null } });
+    expect(r.quarters[3].boxes).toMatchObject({ '10': 0, '28': 17, '29': 3.57 });
+  });
+
+  it('self-assesses the base in 10/11 and deducts it in 36/37, not the VAT on the invoice', () => {
+    const r = vatModels(data(100, { vat_special: 'wrong_vat' }), 2026);
+    expect(row(r, 11)).toMatchObject({
+      accrued_boxes: ['10', '11'], base_box: '36', vat_box: '37', reverse_charge: 'intracom', self_rate: 21, self_vat: 37.8, deductible_vat: 37.8,
+    });
+    const b = r.quarters[3].boxes;
+    expect(b).toMatchObject({
+      '07': 3620.53, '09': 760.31, '10': 180, '11': 37.8, '12': 0, '13': 0,
+      '28': 17, '29': 3.57, '36': 180, '37': 37.8,
+    });
+    expect(b['27']).toBeCloseTo(798.11, 2);
+    expect(b['45']).toBeCloseTo(41.37, 2);
+    // the same result as without the invoice: what is self-assessed is deducted
+    expect(b['71']).toBeCloseTo(756.74, 2);
+    // the 390: an intra-EU acquisition of services at 21 %
+    expect(r.model390.boxes).toMatchObject({ '551': 180, '552': 37.8 });
+  });
+
+  it('deducts the self-assessed VAT at the year\'s % (prorrata)', () => {
+    const r = vatModels(data(80, { vat_special: 'wrong_vat' }), 2026);
+    expect(row(r, 11)).toMatchObject({ self_vat: 37.8, deductible_vat: 30.24 });
+    expect(r.quarters[3].boxes).toMatchObject({ '11': 37.8, '37': 30.24 });
+  });
+
+  it('from outside the EU goes to 12/13 and 28/29', () => {
+    const d = data(100);
+    d.receivedInvoices[1] = doc(11, '2026-10-31', [line(180, 21)], { contact: us, vat_special: 'wrong_vat' });
+    const r = vatModels(d, 2026);
+    expect(row(r, 11)).toMatchObject({ accrued_boxes: ['12', '13'], base_box: '28', vat_box: '29', reverse_charge: 'isp' });
+    expect(r.quarters[3].boxes).toMatchObject({ '10': 0, '12': 180, '13': 37.8, '28': 197, '29': 41.37 });
+    expect(r.quarters[3].boxes['71']).toBeCloseTo(756.74, 2);
+  });
+
+  it('can be classified through vat_special', () => {
+    const { classifyWrites } = require('../src/api/treasury/services/vat-classify');
+    expect(classifyWrites([{ kind: 'received-invoices', id: 11, field: 'vat_special', value: 'wrong_vat' }])).toEqual({
+      'received-invoices': [{ id: 11, data: { vat_special: 'wrong_vat' } }],
+    });
   });
 });
