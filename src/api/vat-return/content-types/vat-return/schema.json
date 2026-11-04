@@ -45,6 +45,11 @@
     "notes": {
       "type": "text"
     },
+    "receipt_file": {
+      "type": "media",
+      "multiple": false,
+      "allowedTypes": ["files"]
+    },
     "filed_by": {
       "type": "relation",
       "relation": "oneToOne",

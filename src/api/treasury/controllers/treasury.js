@@ -32,7 +32,7 @@ const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/p
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { groupPayrollRows } = require('../services/payroll-groups');
 const { irpfSummary } = require('../services/irpf-summary');
-const { computeVatModels, fileReturn, unfileReturn, setFinalProrrata, buildFile, VatReturnError, AeatFileError } = require('../services/vat-returns');
+const { computeVatModels, fileReturn, unfileReturn, attachReceipt, setFinalProrrata, buildFile, VatReturnError, VatReturnNotFound, AeatFileError } = require('../services/vat-returns');
 const { classifyDocuments, VatClassifyError } = require('../services/vat-classify');
 const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../services/vat-forecast');
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
@@ -1440,6 +1440,17 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       ctx.body = await unfileReturn(ctx.params.id);
     } catch (e) {
       if (e instanceof VatReturnError) return ctx.notFound(e.message);
+      throw e;
+    }
+  },
+
+  // PUT /treasuries/vat-models/returns/:id/receipt { file } — the AEAT's PDF of a filed return (null takes it away)
+  async vatModelsReceipt(ctx) {
+    try {
+      ctx.body = await attachReceipt(ctx.params.id, (ctx.request.body || {}).file);
+    } catch (e) {
+      if (e instanceof VatReturnNotFound) return ctx.notFound(e.message);
+      if (e instanceof VatReturnError) return ctx.badRequest(e.message);
       throw e;
     }
   },

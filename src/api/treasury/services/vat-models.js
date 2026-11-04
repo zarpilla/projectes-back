@@ -463,6 +463,8 @@ const publicReturn = (r) => ({
   result: r.result === null || r.result === undefined ? null : Number(r.result),
   notes: r.notes,
   boxes: r.boxes,
+  // the AEAT's PDF, when it was attached
+  receipt_file: r.receipt_file ? { id: r.receipt_file.id, name: r.receipt_file.name, url: r.receipt_file.url } : null,
 });
 
 /**

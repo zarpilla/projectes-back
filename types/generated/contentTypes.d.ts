@@ -3032,6 +3032,7 @@ export interface ApiVatReturnVatReturn extends Struct.CollectionTypeSchema {
     period: Schema.Attribute.String & Schema.Attribute.Required;
     publishedAt: Schema.Attribute.DateTime;
     receipt: Schema.Attribute.String;
+    receipt_file: Schema.Attribute.Media<'files'>;
     result: Schema.Attribute.Decimal;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;

@@ -17,6 +17,10 @@ const PERIODS = { 303: ['1T', '2T', '3T', '4T'], 390: ['0A'] };
 const DECLARATION_TYPES = ['I', 'U', 'C', 'D', 'N'];
 
 class VatReturnError extends Error {}
+class VatReturnNotFound extends VatReturnError {}
+
+const FILE_UID = 'plugin::upload.file';
+const FILE_SELECT = ['id', 'name', 'url', 'ext', 'mime', 'size'];
 
 /** The year's documents, classifications and filed returns, as vatModels takes them. */
 async function loadVatModelsData(year) {
@@ -53,6 +57,7 @@ async function loadVatModelsData(year) {
     classified('api::received-invoice.received-invoice', 'reverse_charge'),
     strapi.db.query(RETURN_UID).findMany({
       where: { $or: [{ year }, { year: year - 1, model: '303', period: '4T' }] },
+      populate: { receipt_file: { select: FILE_SELECT } },
     }),
   ]);
   return {
@@ -136,11 +141,53 @@ async function fileReturn(p, user) {
     : strapi.db.query(RETURN_UID).create({ data: row });
 }
 
+// a return's id from the URL: not a number is no return (a query on NaN answered 500)
+function returnId(id) {
+  const n = Number(id);
+  if (!Number.isInteger(n) || n <= 0) throw new VatReturnNotFound('Declaració no trobada.');
+  return n;
+}
+
 async function unfileReturn(id) {
-  const existing = await strapi.db.query(RETURN_UID).findOne({ where: { id: Number(id) } });
+  const existing = await strapi.db.query(RETURN_UID).findOne({ where: { id: returnId(id) }, populate: { receipt_file: { select: ['id'] } } });
   if (!existing) throw new VatReturnError('Declaració no trobada.');
   await strapi.db.query(RETURN_UID).delete({ where: { id: existing.id } });
+  // its receipt goes with it
+  if (existing.receipt_file) await removeFile(existing.receipt_file.id);
   return { id: existing.id };
+}
+
+async function removeFile(id) {
+  const file = await strapi.db.query(FILE_UID).findOne({ where: { id } });
+  if (file) await strapi.plugin('upload').service('upload').remove(file);
+}
+
+/**
+ * The AEAT's PDF of a filed return (the receipt with its CSV), uploaded by the
+ * front through /upload and linked here; `fileId` null takes it away. Only a
+ * PDF that is not linked to any other record yet (the one just uploaded):
+ * upload ids are sequential and /uploads is public, issues/387. The previous
+ * receipt of the return is deleted.
+ */
+async function attachReceipt(id, fileId) {
+  const existing = await strapi.db.query(RETURN_UID).findOne({ where: { id: returnId(id) }, populate: { receipt_file: { select: ['id'] } } });
+  if (!existing) throw new VatReturnNotFound('Declaració no trobada.');
+  const previous = existing.receipt_file ? existing.receipt_file.id : null;
+  let file = null;
+  if (fileId !== null && fileId !== undefined && fileId !== '') {
+    const fid = Number(fileId);
+    if (!Number.isInteger(fid) || fid <= 0) throw new VatReturnError('Fitxer no vàlid.');
+    file = await strapi.db.query(FILE_UID).findOne({ where: { id: fid }, select: FILE_SELECT });
+    if (!file) throw new VatReturnError('Fitxer no trobat.');
+    if (file.mime !== 'application/pdf' || String(file.ext || '').toLowerCase() !== '.pdf') throw new VatReturnError('El justificant ha de ser un PDF.');
+    if (fid !== previous) {
+      const linked = await strapi.db.connection('files_related_mph').where({ file_id: fid }).first();
+      if (linked) throw new VatReturnError('Aquest fitxer ja és d\'un altre document.');
+    }
+  }
+  await strapi.db.query(RETURN_UID).update({ where: { id: existing.id }, data: { receipt_file: file ? file.id : null } });
+  if (previous && (!file || previous !== file.id)) await removeFile(previous);
+  return { id: existing.id, receipt_file: file ? { id: file.id, name: file.name, url: file.url } : null };
 }
 
 /** The year's final prorrata (null clears it): box 44 of the last quarter and the 390. */
@@ -191,4 +238,4 @@ async function buildFile(p) {
   return { name: `303_${year}_${period}.txt`, content };
 }
 
-module.exports = { loadVatModelsData, computeVatModels, fileReturn, unfileReturn, setFinalProrrata, buildFile, VatReturnError, AeatFileError };
+module.exports = { loadVatModelsData, computeVatModels, fileReturn, unfileReturn, attachReceipt, setFinalProrrata, buildFile, VatReturnError, VatReturnNotFound, AeatFileError };

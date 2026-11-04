@@ -49,6 +49,11 @@ module.exports = {
       handler: 'treasury.vatModelsUnfile',
     },
     {
+      method: 'PUT',
+      path: '/treasuries/vat-models/returns/:id/receipt',
+      handler: 'treasury.vatModelsReceipt',
+    },
+    {
       method: 'POST',
       path: '/treasuries/vat-models/final-prorrata',
       handler: 'treasury.vatModelsFinalProrrata',

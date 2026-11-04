@@ -346,3 +346,85 @@ describe('the controller', () => {
     expect(c.body.quarters[0].boxes['71']).toBe(-210);
   });
 });
+
+// 2026-11-04: the AEAT's PDF of a filed return (the receipt with its CSV) is
+// kept with the return, so the quarter opens what was really filed.
+describe('the receipt PDF of a filed return', () => {
+  const FILE = 'plugin::upload.file';
+  let svc;
+  // files by id, the ids already linked to some record, and the files removed
+  function stubFiles({ returns, files = [], linked = [] }) {
+    const calls = stubStrapi({ returns });
+    const base = global.strapi.db.query;
+    calls.removed = [];
+    global.strapi.db.query = (uid) => (uid === FILE
+      ? { findOne: async ({ where }) => files.find((f) => f.id === where.id) || null }
+      : base(uid));
+    global.strapi.db.connection = () => ({ where: ({ file_id: id }) => ({ first: async () => (linked.includes(id) ? { file_id: id } : undefined) }) });
+    global.strapi.plugin = () => ({ service: () => ({ remove: async (f) => { calls.removed.push(f.id); } }) });
+    return calls;
+  }
+  const pdf = (id) => ({ id, name: `303_${id}.pdf`, url: `/uploads/303_${id}_abc.pdf`, ext: '.pdf', mime: 'application/pdf' });
+  beforeEach(() => {
+    jest.resetModules();
+    svc = require('../src/api/treasury/services/vat-returns');
+  });
+
+  it('links a just uploaded PDF and deletes the one it replaces', async () => {
+    const calls = stubFiles({ returns: [{ id: 3, model: '303', year: 2025, period: '1T', receipt_file: { id: 7 } }], files: [pdf(7), pdf(8)], linked: [7] });
+    await expect(svc.attachReceipt('3', 8)).resolves.toEqual({ id: 3, receipt_file: { id: 8, name: '303_8.pdf', url: '/uploads/303_8_abc.pdf' } });
+    expect(calls.update).toEqual([{ uid: RETURN, where: { id: 3 }, data: { receipt_file: 8 } }]);
+    expect(calls.removed).toEqual([7]);
+  });
+
+  it('keeps the same PDF when it is sent again, and takes it away with null', async () => {
+    const calls = stubFiles({ returns: [{ id: 3, model: '303', year: 2025, period: '1T', receipt_file: { id: 7 } }], files: [pdf(7)], linked: [7] });
+    await svc.attachReceipt(3, 7);
+    expect(calls.removed).toEqual([]);
+    await expect(svc.attachReceipt(3, null)).resolves.toEqual({ id: 3, receipt_file: null });
+    expect(calls.update[1].data).toEqual({ receipt_file: null });
+    expect(calls.removed).toEqual([7]);
+  });
+
+  it('refuses another record’s file, a file that is not a PDF, and a return that does not exist', async () => {
+    stubFiles({
+      returns: [{ id: 3, model: '303', year: 2025, period: '1T' }],
+      files: [pdf(9), { id: 10, name: 'a.png', url: '/uploads/a.png', ext: '.png', mime: 'image/png' }],
+      linked: [9],
+    });
+    await expect(svc.attachReceipt(3, 9)).rejects.toThrow("Aquest fitxer ja és d'un altre document.");
+    await expect(svc.attachReceipt(3, 10)).rejects.toThrow('El justificant ha de ser un PDF.');
+    await expect(svc.attachReceipt(3, 11)).rejects.toThrow('Fitxer no trobat.');
+    await expect(svc.attachReceipt(3, 'x')).rejects.toThrow('Fitxer no vàlid.');
+    await expect(svc.attachReceipt(4, 9)).rejects.toBeInstanceOf(svc.VatReturnNotFound);
+    // an id that is no number is no return (it was a query on NaN: 500)
+    await expect(svc.attachReceipt('undefined', 9)).rejects.toBeInstanceOf(svc.VatReturnNotFound);
+    await expect(svc.unfileReturn('undefined')).rejects.toThrow('Declaració no trobada.');
+  });
+
+  it('deletes the receipt with the return when it is unmarked', async () => {
+    const calls = stubFiles({ returns: [{ id: 3, model: '303', year: 2025, period: '1T', receipt_file: { id: 7 } }], files: [pdf(7)] });
+    await svc.unfileReturn(3);
+    expect(calls.removed).toEqual([7]);
+  });
+
+  it('loads the returns with their receipt and gives its name and address', async () => {
+    const calls = stubFiles({ returns: [{ id: 3, model: '303', year: 2026, period: '1T', declaration_type: 'I', boxes: {}, receipt_file: pdf(7) }] });
+    const r = await svc.computeVatModels(2026);
+    expect(calls.queries.find((q) => q.uid === RETURN).params.populate).toEqual({ receipt_file: { select: ['id', 'name', 'url', 'ext', 'mime', 'size'] } });
+    expect(r.quarters[0].filed.receipt_file).toEqual({ id: 7, name: '303_7.pdf', url: '/uploads/303_7_abc.pdf' });
+  });
+
+  it('answers 404 for a return that does not exist and 400 for a bad file', async () => {
+    jest.doMock('@strapi/strapi', () => ({ factories: { createCoreController: (uid, fn) => fn({ strapi: global.strapi }) } }));
+    stubFiles({ returns: [{ id: 3, model: '303', year: 2025, period: '1T' }], files: [] });
+    const controller = require('../src/api/treasury/controllers/treasury');
+    const c = (params, body) => ({ params, request: { body }, badRequest: jest.fn(), notFound: jest.fn() });
+    const missing = c({ id: '4' }, { file: 1 });
+    await controller.vatModelsReceipt(missing);
+    expect(missing.notFound).toHaveBeenCalledWith('Declaració no trobada.');
+    const bad = c({ id: '3' }, { file: 1 });
+    await controller.vatModelsReceipt(bad);
+    expect(bad.badRequest).toHaveBeenCalledWith('Fitxer no trobat.');
+  });
+});
