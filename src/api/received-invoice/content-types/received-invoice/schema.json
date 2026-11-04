@@ -137,7 +137,8 @@
         "none",
         "intracom",
         "intracom_goods",
-        "isp"
+        "isp",
+        "not_vat"
       ]
     },
     "reverse_charge_rate": {

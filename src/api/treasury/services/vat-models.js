@@ -29,7 +29,9 @@ const { vatPaymentDate } = require('./vat-forecast');
  *   intra-EU acquisition of services / goods (10/11, deducted in 36/37 or
  *   38/39; the 390 tells them apart), isp = other reverse charge (12/13,
  *   deducted in 28/29 or 30/31), at `reverse_charge_rate` (21 % by default);
- *   none = reviewed, nothing to self-assess.
+ *   none = reviewed, nothing to self-assess; not_vat = not a VAT operation at
+ *   all (the self-employed quota, taxes, fees…), left out of the 390's 230
+ *   (domestic exempt purchases) too.
  * Received lines with VAT at the REAGP rates (12, 10.5 %) or from abroad are
  * classified too (`vat_special`: reagp → 42, foreign_vat → outside the
  * return, none → 28/29, wrong_vat → Spanish VAT charged by a provider without
@@ -61,7 +63,7 @@ const OPERATIONS = {
   S2: { box: '122', annual: '125' },
 };
 // intracom: services (and goods until phase 3); intracom_goods: goods (the 390 tells them apart)
-const REVERSE_CHARGES = ['none', 'intracom', 'intracom_goods', 'isp'];
+const REVERSE_CHARGES = ['none', 'intracom', 'intracom_goods', 'isp', 'not_vat'];
 const INTRACOM = ['intracom', 'intracom_goods'];
 // received lines with VAT: none = Spanish VAT, deductible; reagp = the agrarian
 // compensation of a farmer in the REAGP (box 42); foreign_vat = another
@@ -311,10 +313,12 @@ function documentRows({ emittedInvoices = [], receivedIncomes = [], receivedInvo
           ? 21
           : Number(doc.reverse_charge_rate);
         Object.assign(row, selfAssessed(rc, g.base, rate, g.capital, pct));
-      } else if (rc === 'none') row.not_in_return = true;
+      } else if (rc === 'not_vat') Object.assign(row, { not_in_return: true, not_vat: true });
+      // a domestic 0 % purchase is an exempt one (390: 230), unless it is no VAT operation at all
+      else if (rc === 'none') Object.assign(row, { not_in_return: true }, info.area === 'ES' ? { annual_box: '230' } : {});
       // a 0 % purchase from abroad may be a reverse charge the entity has to self-assess
       else if (info.area !== 'ES') Object.assign(row, { issue: 'received-foreign-zero', proposal: proposeReceived(doc) });
-      else row.not_in_return = true;
+      else Object.assign(row, { not_in_return: true, annual_box: '230' });
       rows.push(row);
     }
   }
@@ -481,6 +485,28 @@ function changesSince(filed, boxes, rows, withDocuments = true) {
   return differentBoxes.length || documents.length ? { boxes: differentBoxes, documents } : null;
 }
 
+/**
+ * The 390 is built from the documents as they are now; it has to add up the
+ * 303s that were filed. When a quarter's documents changed after filing it
+ * (an invoice entered late, an amount corrected), the 390 no longer matches:
+ * say which quarters and boxes, and the result the 303s filed (sum of 46)
+ * against the 390's (84). Null when no quarter is marked as filed.
+ */
+function checkAgainstFiled(quarters, model390) {
+  const filed = quarters.filter((q) => q.filed && q.filed.boxes);
+  if (!filed.length) return null;
+  const changed = filed
+    .filter((q) => q.changes && q.changes.boxes.length)
+    .map((q) => ({ quarter: q.quarter, period: q.period, boxes: q.changes.boxes }));
+  const unfiled = quarters.filter((q) => !q.filed).map((q) => q.period);
+  const filedResult = filed.length === quarters.length
+    ? round2(filed.reduce((s, q) => s + (Number(q.filed.boxes['46']) || 0), 0))
+    : null;
+  const result = model390.boxes['84'];
+  if (!changed.length && !unfiled.length && filedResult === result) return { ok: true, changed: [], unfiled: [], filed_result: filedResult, result };
+  return { ok: false, changed, unfiled, filed_result: filedResult, result };
+}
+
 // --- 390 -------------------------------------------------------------------
 
 // issued: rate → [base, quota] (page 2, régimen ordinario)
@@ -560,7 +586,8 @@ function boxes390({ rows, annual, quarters, startCarry, pct, finalPct, prorrata,
   Object.assign(b, { '99': annual['80'], '103': annual['93'], '104': annual['94'], '105': annual['83'], '110': annual['84'], '125': annual['125'], '108': annual['88'] });
   // 11. exempt or not subject domestic purchases: the 0 % ones from Spain, not
   // purchases from abroad nor foreign VAT (also out of the return)
-  b['230'] = round2(rows.filter((r) => r.side === 'received' && r.not_in_return && r.rate === 0 && r.area === 'ES').reduce((s, r) => s + r.base, 0));
+  // («fora de l'IVA» lines, e.g. the self-employed quota, are no purchase at all)
+  b['230'] = round2(rows.filter((r) => r.side === 'received' && r.annual_box === '230').reduce((s, r) => s + r.base, 0));
   // 12. prorrata, when it applies
   const applies = pct < 100 || (finalPct !== null && finalPct < 100) || (prorrata && prorrata.definitive !== null && prorrata.definitive < 100);
   if (applies && prorrata) {
@@ -626,6 +653,7 @@ function vatModels(data, year) {
   Object.assign(annual, figures);
   const model390 = boxes390({ rows, annual, quarters, startCarry, pct, finalPct, prorrata, regularisation, returns, year });
   const filed390 = returns.find((r) => r.model === '390' && Number(r.year) === year) || null;
+  const check390 = checkAgainstFiled(quarters, model390);
 
   const issues = Object.keys(ISSUE_TEXT)
     .map((code) => {
@@ -686,6 +714,7 @@ function vatModels(data, year) {
     model390,
     filed390: filed390 ? publicReturn(filed390) : null,
     changes390: filed390 ? changesSince(filed390, model390.boxes, rows, false) : null,
+    check390,
     prorrata,
     issues,
     notes,

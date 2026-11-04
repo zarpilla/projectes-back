@@ -497,3 +497,95 @@ describe('Spanish VAT wrongly charged from abroad (wrong_vat)', () => {
     });
   });
 });
+
+// 2026-11-04, comparing a real 2025 with the returns filed through another
+// program: invoices entered after a quarter was filed (and one amount changed)
+// left the 390, built from the documents as they are now, not adding up the
+// 303s filed — and nothing said so. Figures of that year, rounded down.
+describe('the 390 against the 303s filed', () => {
+  const { documentSnapshot } = require('../src/api/treasury/services/vat-models');
+  const ie = { id: 41, name: 'Servidors', nif: 'DE123456789', country: null };
+  const base = () => ({
+    years: [{ year: 2025, deductible_vat_pct: 100 }],
+    emittedInvoices: [
+      doc(1, '2025-02-28', [line(20808.25, 21)]),
+      doc(2, '2025-05-31', [line(11133.5, 21)]),
+      doc(3, '2025-09-30', [line(21935, 21)]),
+      doc(4, '2025-12-05', [line(8932.16, 21)]),
+    ],
+    receivedInvoices: [doc(10, '2025-10-02', [line(17, 21)])],
+    returns: [],
+  });
+  // every quarter marked as filed with what the documents said then
+  const fileAll = (data) => {
+    const r = vatModels(data, 2025);
+    data.returns = r.quarters.map((q) => ({
+      id: q.quarter, model: '303', year: 2025, period: q.period, declaration_type: 'I', boxes: { ...q.boxes },
+      documents: documentSnapshot(r.rows.filter((x) => x.quarter === q.quarter)),
+    }));
+    return data;
+  };
+
+  it('says nothing is wrong when no 303 is marked as filed', () => {
+    expect(vatModels(base(), 2025).check390).toBe(null);
+  });
+
+  it('adds up when the documents did not change', () => {
+    const r = vatModels(fileAll(base()), 2025);
+    expect(r.check390).toMatchObject({ ok: true, changed: [], unfiled: [] });
+    expect(r.check390.result).toBe(r.check390.filed_result);
+  });
+
+  it('lists the quarters whose documents changed after filing, and the result filed against the 390’s', () => {
+    const d = fileAll(base());
+    d.emittedInvoices[2] = doc(3, '2025-09-30', [line(21935.5, 21)]); // corrected after filing
+    d.receivedInvoices.push(doc(11, '2025-12-15', [line(65.07, 21)], { contact: ie, vat_special: 'wrong_vat' })); // entered late
+    const r = vatModels(d, 2025);
+    expect(r.check390.ok).toBe(false);
+    expect(r.check390.changed.map((c) => c.period)).toEqual(['3T', '4T']);
+    expect(r.check390.changed[0].boxes).toEqual(expect.arrayContaining([
+      { box: '07', filed: 21935, now: 21935.5 },
+      { box: '09', filed: 4606.35, now: 4606.46 },
+    ]));
+    expect(r.check390.changed[1].boxes.map((b) => b.box)).toEqual(expect.arrayContaining(['10', '11', '36', '37']));
+    // the late invoice self-assesses what it deducts: only the corrected one moves the result
+    expect(round(r.check390.result - r.check390.filed_result)).toBe(0.11);
+  });
+
+  it('names the quarters not marked as filed, without a result to compare', () => {
+    const d = fileAll(base());
+    d.returns = d.returns.filter((x) => x.period !== '2T');
+    const r = vatModels(d, 2025);
+    expect(r.check390).toMatchObject({ ok: false, unfiled: ['2T'], filed_result: null });
+  });
+});
+
+// 2026-11-04: the self-employed quota, entered as a received invoice at 0 %,
+// went to the 390's 230 (domestic exempt purchases): it is no purchase at all.
+describe('received lines outside VAT (not_vat)', () => {
+  const ss = { id: 51, name: 'Seguretat Social', nif: '', country: null };
+  const r = vatModels({
+    years: [{ year: 2025, deductible_vat_pct: 100 }],
+    receivedInvoices: [
+      doc(1, '2025-01-31', [line(624, 0)], { contact: ss, reverse_charge: 'not_vat' }),
+      doc(2, '2025-02-28', [line(624, 0)], { contact: ss }), // not classified yet: an exempt purchase
+      doc(3, '2025-03-10', [line(40, 0)], { reverse_charge: 'none' }), // insurance: exempt
+    ],
+  }, 2025);
+  const row = (id) => r.rows.find((x) => x.id === id);
+
+  it('leaves them out of the return and of the 230', () => {
+    expect(row(1)).toMatchObject({ not_in_return: true, not_vat: true, classify: { field: 'reverse_charge', value: 'not_vat' } });
+    expect(row(1).annual_box).toBeUndefined();
+    expect(row(2)).toMatchObject({ annual_box: '230' });
+    expect(row(3)).toMatchObject({ annual_box: '230' });
+    expect(r.model390.boxes['230']).toBe(664);
+  });
+
+  it('is classified without a self-assessed rate', () => {
+    const { classifyWrites } = require('../src/api/treasury/services/vat-classify');
+    expect(classifyWrites([{ kind: 'received-invoices', id: 1, value: 'not_vat' }])).toEqual({
+      'received-invoices': [{ id: 1, data: { reverse_charge: 'not_vat' } }],
+    });
+  });
+});

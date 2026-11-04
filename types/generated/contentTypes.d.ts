@@ -2396,7 +2396,7 @@ export interface ApiReceivedInvoiceReceivedInvoice extends Struct.CollectionType
     project: Schema.Attribute.Relation<'manyToOne', 'api::project.project'>;
     projects: Schema.Attribute.Relation<'manyToMany', 'api::project.project'>;
     publishedAt: Schema.Attribute.DateTime;
-    reverse_charge: Schema.Attribute.Enumeration<['none', 'intracom', 'intracom_goods', 'isp']>;
+    reverse_charge: Schema.Attribute.Enumeration<['none', 'intracom', 'intracom_goods', 'isp', 'not_vat']>;
     reverse_charge_rate: Schema.Attribute.Decimal & Schema.Attribute.DefaultTo<21>;
     sent: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     sent_date: Schema.Attribute.Date;
