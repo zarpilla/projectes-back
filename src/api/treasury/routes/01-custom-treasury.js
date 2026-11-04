@@ -29,6 +29,41 @@ module.exports = {
       handler: 'treasury.irpf',
     },
     {
+      method: 'GET',
+      path: '/treasuries/vat-models',
+      handler: 'treasury.vatModels',
+    },
+    {
+      method: 'POST',
+      path: '/treasuries/vat-models/classify',
+      handler: 'treasury.vatModelsClassify',
+    },
+    {
+      method: 'POST',
+      path: '/treasuries/vat-models/returns',
+      handler: 'treasury.vatModelsFile',
+    },
+    {
+      method: 'DELETE',
+      path: '/treasuries/vat-models/returns/:id',
+      handler: 'treasury.vatModelsUnfile',
+    },
+    {
+      method: 'PUT',
+      path: '/treasuries/vat-models/returns/:id/receipt',
+      handler: 'treasury.vatModelsReceipt',
+    },
+    {
+      method: 'POST',
+      path: '/treasuries/vat-models/final-prorrata',
+      handler: 'treasury.vatModelsFinalProrrata',
+    },
+    {
+      method: 'GET',
+      path: '/treasuries/vat-models/aeat-file',
+      handler: 'treasury.vatModelsAeatFile',
+    },
+    {
       method: 'POST',
       path: '/treasuries/movement-dates',
       handler: 'treasury.updateMovementDates',

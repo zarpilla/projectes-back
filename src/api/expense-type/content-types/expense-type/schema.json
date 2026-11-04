@@ -16,6 +16,10 @@
     },
     "vat_pct": {
       "type": "decimal"
+    },
+    "capital_goods": {
+      "type": "boolean",
+      "default": false
     }
   }
 }

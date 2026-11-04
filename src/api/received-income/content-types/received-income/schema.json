@@ -138,6 +138,17 @@
     },
     "document_concept": {
       "type": "string"
+    },
+    "vat_operation": {
+      "type": "enumeration",
+      "enum": [
+        "E1",
+        "E2",
+        "E5",
+        "N1",
+        "N2",
+        "S2"
+      ]
     }
   }
 }

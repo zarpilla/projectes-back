@@ -933,6 +933,7 @@ export interface ApiEmittedInvoiceEmittedInvoice extends Struct.CollectionTypeSc
     user_draft: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
     user_last: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
     user_real: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
+    vat_operation: Schema.Attribute.Enumeration<['E1', 'E2', 'E5', 'N1', 'N2', 'S2']>;
     vat_paid_date: Schema.Attribute.DateTime;
     verifactu: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
   };
@@ -1071,6 +1072,7 @@ export interface ApiExpenseTypeExpenseType extends Struct.CollectionTypeSchema {
     draftAndPublish: false;
   };
   attributes: {
+    capital_goods: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -1461,6 +1463,11 @@ export interface ApiMeMe extends Struct.SingleTypeSchema {
   };
   attributes: {
     address: Schema.Attribute.String;
+    aeat_activity: Schema.Attribute.String;
+    aeat_activity_code: Schema.Attribute.String;
+    aeat_cnae: Schema.Attribute.String;
+    aeat_iae: Schema.Attribute.String;
+    aeat_vat_390_exempt: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     bank_account_default: Schema.Attribute.Relation<'oneToOne', 'api::bank-account.bank-account'>;
     bank_account_irpf: Schema.Attribute.Relation<'oneToOne', 'api::bank-account.bank-account'>;
     bank_account_payroll: Schema.Attribute.Relation<'oneToOne', 'api::bank-account.bank-account'>;
@@ -2347,6 +2354,7 @@ export interface ApiReceivedIncomeReceivedIncome extends Struct.CollectionTypeSc
     updatable_admin: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    vat_operation: Schema.Attribute.Enumeration<['E1', 'E2', 'E5', 'N1', 'N2', 'S2']>;
     vat_paid_date: Schema.Attribute.DateTime;
   };
 }
@@ -2388,6 +2396,8 @@ export interface ApiReceivedInvoiceReceivedInvoice extends Struct.CollectionType
     project: Schema.Attribute.Relation<'manyToOne', 'api::project.project'>;
     projects: Schema.Attribute.Relation<'manyToMany', 'api::project.project'>;
     publishedAt: Schema.Attribute.DateTime;
+    reverse_charge: Schema.Attribute.Enumeration<['none', 'intracom', 'intracom_goods', 'isp', 'not_vat']>;
+    reverse_charge_rate: Schema.Attribute.Decimal & Schema.Attribute.DefaultTo<21>;
     sent: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     sent_date: Schema.Attribute.Date;
     serial: Schema.Attribute.Relation<'oneToOne', 'api::serie.serie'>;
@@ -2400,6 +2410,7 @@ export interface ApiReceivedInvoiceReceivedInvoice extends Struct.CollectionType
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     vat_paid_date: Schema.Attribute.DateTime;
+    vat_special: Schema.Attribute.Enumeration<['none', 'reagp', 'foreign_vat', 'wrong_vat']>;
   };
 }
 
@@ -2994,6 +3005,41 @@ export interface ApiUserFestiveUserFestive extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiVatReturnVatReturn extends Struct.CollectionTypeSchema {
+  collectionName: 'vat_returns';
+  info: {
+    description: 'IVA \u203A Models 303 i 390: a return marked as filed, with its boxes and documents as they were';
+    displayName: 'VAT return';
+    pluralName: 'vat-returns';
+    singularName: 'vat-return';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    boxes: Schema.Attribute.JSON;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    declaration_type: Schema.Attribute.String;
+    documents: Schema.Attribute.JSON;
+    filed_by: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
+    filed_date: Schema.Attribute.Date;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::vat-return.vat-return'> &
+      Schema.Attribute.Private;
+    model: Schema.Attribute.String & Schema.Attribute.Required;
+    notes: Schema.Attribute.Text;
+    period: Schema.Attribute.String & Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    receipt: Schema.Attribute.String;
+    receipt_file: Schema.Attribute.Media<'files'>;
+    result: Schema.Attribute.Decimal;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    year: Schema.Attribute.Integer & Schema.Attribute.Required;
+  };
+}
+
 export interface ApiVatTypeVatType extends Struct.CollectionTypeSchema {
   collectionName: 'vat_types';
   info: {
@@ -3157,6 +3203,7 @@ export interface ApiYearYear extends Struct.CollectionTypeSchema {
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     deductible_vat_pct: Schema.Attribute.Decimal & Schema.Attribute.DefaultTo<100>;
+    final_deductible_vat_pct: Schema.Attribute.Decimal;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::year.year'> & Schema.Attribute.Private;
     publishedAt: Schema.Attribute.DateTime;
@@ -3676,6 +3723,7 @@ declare module '@strapi/strapi' {
       'api::treasury-validation.treasury-validation': ApiTreasuryValidationTreasuryValidation;
       'api::treasury.treasury': ApiTreasuryTreasury;
       'api::user-festive.user-festive': ApiUserFestiveUserFestive;
+      'api::vat-return.vat-return': ApiVatReturnVatReturn;
       'api::vat-type.vat-type': ApiVatTypeVatType;
       'api::verifactu-chain.verifactu-chain': ApiVerifactuChainVerifactuChain;
       'api::verifactu-declaration.verifactu-declaration': ApiVerifactuDeclarationVerifactuDeclaration;

@@ -32,6 +32,8 @@ const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/p
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { groupPayrollRows } = require('../services/payroll-groups');
 const { irpfSummary } = require('../services/irpf-summary');
+const { computeVatModels, fileReturn, unfileReturn, attachReceipt, setFinalProrrata, buildFile, VatReturnError, VatReturnNotFound, AeatFileError } = require('../services/vat-returns');
+const { classifyDocuments, VatClassifyError } = require('../services/vat-classify');
 const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../services/vat-forecast');
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
 const { pendingInvoicingRows, invoicedByMonth, PROJECT_POPULATE } = require('../services/invoicing-forecast');
@@ -1411,6 +1413,80 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
       }),
     ]);
     ctx.body = irpfSummary({ receivedInvoices, receivedExpenses, payrolls }, year, moment().format('YYYY-MM-DD'));
+  },
+
+  /**
+   * GET /api/treasuries/vat-models?year=YYYY — IVA › Models 303 i 390 (Beta):
+   * the boxes of the VAT return per quarter and for the year.
+   */
+  async vatModels(ctx) {
+    const year = parseInt(ctx.query.year, 10) || moment().year();
+    ctx.body = await computeVatModels(year);
+  },
+
+  // POST /treasuries/vat-models/returns { model, year, period, declaration_type, filed_date, receipt, notes }
+  async vatModelsFile(ctx) {
+    try {
+      ctx.body = await fileReturn(ctx.request.body || {}, ctx.state.user);
+    } catch (e) {
+      if (e instanceof VatReturnError) return ctx.badRequest(e.message);
+      throw e;
+    }
+  },
+
+  // DELETE /treasuries/vat-models/returns/:id
+  async vatModelsUnfile(ctx) {
+    try {
+      ctx.body = await unfileReturn(ctx.params.id);
+    } catch (e) {
+      if (e instanceof VatReturnError) return ctx.notFound(e.message);
+      throw e;
+    }
+  },
+
+  // PUT /treasuries/vat-models/returns/:id/receipt { file } — the AEAT's PDF of a filed return (null takes it away)
+  async vatModelsReceipt(ctx) {
+    try {
+      ctx.body = await attachReceipt(ctx.params.id, (ctx.request.body || {}).file);
+    } catch (e) {
+      if (e instanceof VatReturnNotFound) return ctx.notFound(e.message);
+      if (e instanceof VatReturnError) return ctx.badRequest(e.message);
+      throw e;
+    }
+  },
+
+  // POST /treasuries/vat-models/final-prorrata { year, pct }
+  async vatModelsFinalProrrata(ctx) {
+    const body = ctx.request.body || {};
+    try {
+      ctx.body = await setFinalProrrata(body.year, body.pct);
+    } catch (e) {
+      if (e instanceof VatReturnError) return ctx.badRequest(e.message);
+      throw e;
+    }
+  },
+
+  // GET /treasuries/vat-models/aeat-file?model=303&year=&period=1T&declaration_type=I&iban=
+  async vatModelsAeatFile(ctx) {
+    try {
+      const { name, content } = await buildFile(ctx.query || {});
+      ctx.set('Content-Type', 'text/plain; charset=ISO-8859-1');
+      ctx.set('Content-Disposition', `attachment; filename="${name}"`);
+      ctx.body = Buffer.from(content, 'latin1');
+    } catch (e) {
+      if (e instanceof VatReturnError || e instanceof AeatFileError) return ctx.badRequest(e.message);
+      throw e;
+    }
+  },
+
+  // POST /treasuries/vat-models/classify { items: [{ kind, id, value, rate? }] }
+  async vatModelsClassify(ctx) {
+    try {
+      ctx.body = await classifyDocuments((ctx.request.body || {}).items);
+    } catch (e) {
+      if (e instanceof VatClassifyError) return ctx.badRequest(e.message);
+      throw e;
+    }
   },
 
   async invoicingForecast(ctx) {

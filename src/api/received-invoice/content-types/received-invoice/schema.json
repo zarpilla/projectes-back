@@ -130,6 +130,29 @@
     },
     "document_concept": {
       "type": "string"
+    },
+    "reverse_charge": {
+      "type": "enumeration",
+      "enum": [
+        "none",
+        "intracom",
+        "intracom_goods",
+        "isp",
+        "not_vat"
+      ]
+    },
+    "reverse_charge_rate": {
+      "type": "decimal",
+      "default": 21
+    },
+    "vat_special": {
+      "type": "enumeration",
+      "enum": [
+        "none",
+        "reagp",
+        "foreign_vat",
+        "wrong_vat"
+      ]
     }
   }
 }
