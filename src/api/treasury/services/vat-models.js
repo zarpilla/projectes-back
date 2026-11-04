@@ -25,8 +25,9 @@ const { vatPaymentDate } = require('./vat-forecast');
  *   E2 export (60, annual 94), E5 intra-EU supply (59, annual 93), N1 not
  *   subject (outside the return), N2 not subject by place of supply (120,
  *   annual 84), S2 reverse charge (122, annual 125);
- * - received `reverse_charge`: intracom = self-assessed intra-EU acquisition
- *   (10/11, deducted in 36/37 or 38/39), isp = other reverse charge (12/13,
+ * - received `reverse_charge`: intracom / intracom_goods = self-assessed
+ *   intra-EU acquisition of services / goods (10/11, deducted in 36/37 or
+ *   38/39; the 390 tells them apart), isp = other reverse charge (12/13,
  *   deducted in 28/29 or 30/31), at `reverse_charge_rate` (21 % by default);
  *   none = reviewed, nothing to self-assess.
  * Unclassified ones are listed for review with a proposal: what the same
@@ -53,7 +54,9 @@ const OPERATIONS = {
   N2: { box: '120', annual: '84' },
   S2: { box: '122', annual: '125' },
 };
-const REVERSE_CHARGES = ['none', 'intracom', 'isp'];
+// intracom: services (and goods until phase 3); intracom_goods: goods (the 390 tells them apart)
+const REVERSE_CHARGES = ['none', 'intracom', 'intracom_goods', 'isp'];
+const INTRACOM = ['intracom', 'intracom_goods'];
 
 // compared without accents nor case (contacts' country is free text)
 const plain = (text) => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
@@ -248,7 +251,7 @@ function documentRows({ emittedInvoices = [], receivedIncomes = [], receivedInvo
       }
       const rc = REVERSE_CHARGES.includes(doc.reverse_charge) ? doc.reverse_charge : null;
       row.classify = { field: 'reverse_charge', value: rc };
-      if (rc === 'intracom' || rc === 'isp') {
+      if (INTRACOM.includes(rc) || rc === 'isp') {
         // self-assessed: charged and deducted at the same time
         const rate = doc.reverse_charge_rate === null || doc.reverse_charge_rate === undefined || doc.reverse_charge_rate === ''
           ? 21
@@ -258,9 +261,10 @@ function documentRows({ emittedInvoices = [], receivedIncomes = [], receivedInvo
           self_rate: rate,
           self_vat: vat,
           deductible_vat: round2((vat * pct) / 100),
-          accrued_boxes: rc === 'intracom' ? ['10', '11'] : ['12', '13'],
+          accrued_boxes: rc === 'isp' ? ['12', '13'] : ['10', '11'],
+          reverse_charge: rc,
         });
-        if (rc === 'intracom') Object.assign(row, g.capital ? { base_box: '38', vat_box: '39' } : { base_box: '36', vat_box: '37' });
+        if (rc !== 'isp') Object.assign(row, g.capital ? { base_box: '38', vat_box: '39' } : { base_box: '36', vat_box: '37' });
         else Object.assign(row, g.capital ? { base_box: '30', vat_box: '31' } : { base_box: '28', vat_box: '29' });
       } else if (rc === 'none') row.not_in_return = true;
       // a 0 % purchase from abroad may be a reverse charge the entity has to self-assess
@@ -284,9 +288,11 @@ function emptyBoxes() {
   return boxes;
 }
 
-// the boxes of one period from its rows; `compensate` = box 110
-function periodBoxes(rows, compensate) {
+// the boxes of one period from its rows; `compensate` = box 110; `extra`:
+// boxes set from outside the rows (44, the final prorrata in the last quarter)
+function periodBoxes(rows, compensate, extra = {}) {
   const b = emptyBoxes();
+  Object.assign(b, extra);
   for (const r of rows) {
     if (r.accrued_boxes) {
       b[r.accrued_boxes[0]] += r.base;
@@ -329,7 +335,7 @@ const ISSUE_TEXT = {
  * all of them, rounded up), with the box 44 regularisation it would bring.
  * Information only: the gestoria decides.
  */
-function annualFigures(rows, annual, pct) {
+function annualFigures(rows, annual, pct, finalPct = null) {
   const sum = (box) => round2(rows.filter((r) => r.annual_box === box).reduce((s, r) => s + r.base, 0));
   const figures = { '83': sum('83'), '84': sum('84'), '93': sum('93'), '94': sum('94'), '125': sum('125') };
   figures['80'] = round2(['150', '01', '04', '07', '14'].reduce((s, k) => s + annual[k], 0));
@@ -344,13 +350,180 @@ function annualFigures(rows, annual, pct) {
       provisional: pct,
       definitive,
       regularisation: round2((paid * (definitive - pct)) / 100),
+      with_right: round2(withRight),
+      total: figures['88'],
     };
   }
+  if (!prorrata && finalPct !== null) {
+    prorrata = { provisional: pct, definitive: null, regularisation: null, with_right: round2(withRight), total: figures['88'] };
+  }
+  if (prorrata) prorrata.final = finalPct;
   return { figures, prorrata };
 }
 
+// the year's final prorrata (Configuració › Anys, set at IVA › Models 303 i 390), or null
+function finalDeductiblePct(years, year) {
+  const y = (years || []).find((x) => Number(x.year) === Number(year));
+  const v = y ? y.final_deductible_vat_pct : null;
+  return v === null || v === undefined || v === '' ? null : Number(v);
+}
+
+// what a return leaves to compensate: its pending (87) and a negative result
+function carryOf(boxes) {
+  return round2((Number(boxes['87']) || 0) + Math.max(-(Number(boxes['71']) || 0), 0));
+}
+
+// I: to pay, N: nothing, C: to compensate (the last quarter may ask for D: refund)
+function defaultDeclarationType(result) {
+  if (result > 0) return 'I';
+  if (result < 0) return 'C';
+  return 'N';
+}
+
+/** What a document adds to the return, as kept with a filed return. */
+function documentSnapshot(rows) {
+  const docs = {};
+  for (const r of rows) {
+    if (!r.base_box && !r.info_box && !r.accrued_boxes && !r.issue) continue;
+    docs[r.key] = {
+      kind: r.kind,
+      id: r.id,
+      code: r.code,
+      contact: r.contact,
+      base: r.base,
+      vat: r.side === 'received' ? r.deductible_vat : r.vat,
+      boxes: [r.accrued_boxes && r.accrued_boxes.join('/'), r.base_box && `${r.base_box}/${r.vat_box}`, r.info_box].filter(Boolean).join(' · '),
+    };
+  }
+  return docs;
+}
+
+const publicReturn = (r) => ({
+  id: r.id,
+  model: r.model,
+  year: r.year,
+  period: r.period,
+  declaration_type: r.declaration_type,
+  filed_date: r.filed_date,
+  receipt: r.receipt,
+  result: r.result === null || r.result === undefined ? null : Number(r.result),
+  notes: r.notes,
+  boxes: r.boxes,
+});
+
 /**
- * @param {object} data { emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years, history }
+ * What changed since a return was filed: the boxes that differ and the
+ * documents added, removed or changed (another amount or box).
+ */
+function changesSince(filed, boxes, rows, withDocuments = true) {
+  const before = filed.boxes || {};
+  const differentBoxes = Object.keys(boxes)
+    .filter((k) => typeof boxes[k] === 'number' && round2(Number(before[k]) || 0) !== round2(boxes[k]))
+    .map((k) => ({ box: k, filed: round2(Number(before[k]) || 0), now: boxes[k] }));
+  const documents = [];
+  if (withDocuments) {
+    const was = filed.documents || {};
+    const now = documentSnapshot(rows);
+    for (const [key, d] of Object.entries(now)) {
+      const old = was[key];
+      if (!old) documents.push({ ...d, key, change: 'added' });
+      else if (round2(old.base) !== round2(d.base) || round2(old.vat) !== round2(d.vat) || old.boxes !== d.boxes) documents.push({ ...d, key, change: 'changed', filed: old });
+    }
+    for (const [key, d] of Object.entries(was)) if (!now[key]) documents.push({ ...d, key, change: 'removed' });
+  }
+  return differentBoxes.length || documents.length ? { boxes: differentBoxes, documents } : null;
+}
+
+// --- 390 -------------------------------------------------------------------
+
+// issued: rate → [base, quota] (page 2, régimen ordinario)
+const B390_ISSUED = { 4: ['01', '02'], 10: ['03', '04'], 21: ['05', '06'] };
+// self-assessed intra-EU acquisitions, by rate
+const B390_INTRA_GOODS = { 4: ['21', '22'], 10: ['23', '24'], 21: ['25', '26'] };
+const B390_INTRA_SERVICES = { 4: ['545', '546'], 10: ['547', '548'], 21: ['551', '552'] };
+// deductible, by rate (2, 4, 5, 7.5, 10, 21) and the group total
+const B390_DEDUCTIBLE = {
+  interior: { 2: ['695', '696'], 4: ['190', '191'], 5: ['724', '725'], 7.5: ['697', '698'], 10: ['603', '604'], 21: ['605', '606'], total: ['48', '49'] },
+  interiorCapital: { 2: ['749', '750'], 4: ['196', '197'], 5: ['728', '729'], 7.5: ['751', '752'], 10: ['611', '612'], 21: ['613', '614'], total: ['50', '51'] },
+  intraGoods: { 2: ['765', '766'], 4: ['214', '215'], 5: ['736', '737'], 7.5: ['767', '768'], 10: ['627', '628'], 21: ['629', '630'], total: ['56', '57'] },
+  intraCapital: { 2: ['769', '770'], 4: ['220', '221'], 5: ['738', '739'], 7.5: ['771', '772'], 10: ['631', '632'], 21: ['633', '634'], total: ['58', '59'] },
+  intraServices: { 2: ['773', '774'], 4: ['587', '588'], 5: ['740', '741'], 7.5: ['775', '776'], 10: ['635', '636'], 21: ['637', '638'], total: ['597', '598'] },
+};
+
+/**
+ * The 390's boxes (its own numbering) from the year's rows: VAT charged and
+ * deductible by rate, the result, the quarters' results and the volume of
+ * operations. `unmapped`: rows at a rate the 390 has no box for.
+ */
+function boxes390({ rows, annual, quarters, startCarry, pct, finalPct, prorrata, regularisation }) {
+  const b = {};
+  const add = (box, v) => { b[box] = round2((b[box] || 0) + v); };
+  const unmapped = [];
+  for (const r of rows) {
+    if (r.side === 'issued' && r.base_box) {
+      if (r.base_box === '14') { add('29', r.base); add('30', r.vat); continue; }
+      const pair = B390_ISSUED[r.rate];
+      if (pair) { add(pair[0], r.base); add(pair[1], r.vat); } else unmapped.push(r);
+      continue;
+    }
+    if (r.side !== 'received' || !r.base_box) continue;
+    const rate = r.self_rate !== undefined ? r.self_rate : r.rate;
+    if (r.accrued_boxes) {
+      if (r.reverse_charge === 'isp') { add('27', r.base); add('28', r.self_vat); }
+      else {
+        const pair = (r.reverse_charge === 'intracom_goods' ? B390_INTRA_GOODS : B390_INTRA_SERVICES)[rate];
+        if (pair) { add(pair[0], r.base); add(pair[1], r.self_vat); } else unmapped.push(r);
+      }
+    }
+    let group = 'interior';
+    if (r.base_box === '30') group = 'interiorCapital';
+    else if (r.base_box === '38') group = 'intraCapital';
+    else if (r.base_box === '36') group = r.reverse_charge === 'intracom_goods' ? 'intraGoods' : 'intraServices';
+    const pair = B390_DEDUCTIBLE[group][rate];
+    if (pair) { add(pair[0], r.base); add(pair[1], r.deductible_vat); } else unmapped.push(r);
+    add(B390_DEDUCTIBLE[group].total[0], r.base);
+    add(B390_DEDUCTIBLE[group].total[1], r.deductible_vat);
+  }
+  const sum = (keys) => round2(keys.reduce((s, k) => s + (b[k] || 0), 0));
+  b['33'] = sum(['01', '03', '05', '21', '23', '25', '545', '547', '551', '27', '29']);
+  b['34'] = sum(['02', '04', '06', '22', '24', '26', '546', '548', '552', '28', '30']);
+  b['522'] = regularisation || 0;
+  b['64'] = sum(['49', '51', '53', '55', '57', '59', '598', '61', '62', '63', '522']);
+  b['65'] = round2(b['34'] - b['64']);
+  // 7. the year's result; 8. all of it in territorio común
+  b['84'] = b['65'];
+  b['85'] = round2(startCarry || 0);
+  b['86'] = round2(b['84'] - b['85']);
+  b['87'] = 100;
+  b['92'] = b['84'];
+  b['93'] = b['85'];
+  b['94'] = b['86'];
+  // 9. the quarters' returns (filed ones as filed)
+  const results = quarters.map((q) => (q.filed && q.filed.boxes ? Number(q.filed.boxes['71']) || 0 : q.boxes['71']));
+  b['95'] = round2(results.filter((v) => v > 0).reduce((s, v) => s + v, 0));
+  const last = quarters[3];
+  const lastResult = results[3];
+  const lastType = last.filed ? last.filed.declaration_type : last.declaration_type;
+  b['97'] = lastResult < 0 && lastType !== 'D' ? round2(-lastResult) : 0;
+  b['98'] = lastResult < 0 && lastType === 'D' ? round2(-lastResult) : 0;
+  // 10. volume of operations (the 303's 80, 93, 94, 83, 84, 125, 88)
+  Object.assign(b, { '99': annual['80'], '103': annual['93'], '104': annual['94'], '105': annual['83'], '110': annual['84'], '125': annual['125'], '108': annual['88'] });
+  // 11. exempt or not subject domestic purchases
+  b['230'] = round2(rows.filter((r) => r.side === 'received' && r.not_in_return).reduce((s, r) => s + r.base, 0));
+  // 12. prorrata, when it applies
+  const applies = pct < 100 || (finalPct !== null && finalPct < 100) || (prorrata && prorrata.definitive !== null && prorrata.definitive < 100);
+  if (applies && prorrata) {
+    b['115'] = prorrata.total;
+    b['116'] = prorrata.with_right;
+    b['117'] = 'G';
+    b['118'] = finalPct !== null ? finalPct : prorrata.definitive !== null ? prorrata.definitive : pct;
+  }
+  return { boxes: b, unmapped: unmapped.length, unmapped_base: round2(unmapped.reduce((s, r) => s + r.base, 0)) };
+}
+
+/**
+ * @param {object} data { emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years, history, returns }
+ *   returns: the vat-return rows of the year (and the year before's 4T)
  * @param {number} year
  */
 function vatModels(data, year) {
@@ -358,17 +531,34 @@ function vatModels(data, year) {
   const rows = documentRows(data, data.years).filter((r) => r.year === year);
   const pct = deductiblePct(data.years, year);
 
-  let carry = 0;
+  const finalPct = finalDeductiblePct(data.years, year);
+  // box 44 in the last quarter: the year's VAT paid again with the final prorrata
+  const paidVat = round2(rows.filter((r) => r.side === 'received' && r.base_box).reduce((s, r) => s + (r.self_vat !== undefined ? r.self_vat : r.vat), 0));
+  const regularisation = finalPct === null ? 0 : round2((paidVat * (finalPct - pct)) / 100);
+
+  const returns = data.returns || [];
+  const filed303 = (y, period) => returns.find((r) => r.model === '303' && Number(r.year) === y && r.period === period) || null;
+  // compensation pending from the year before: its last quarter, filed asking to compensate
+  const previous = filed303(year - 1, '4T');
+  const startCarry = previous && previous.declaration_type === 'C' && previous.boxes ? carryOf(previous.boxes) : 0;
+
+  let carry = startCarry;
   const quarters = [1, 2, 3, 4].map((quarter) => {
     const qRows = rows.filter((r) => r.quarter === quarter);
-    const boxes = periodBoxes(qRows, carry);
-    // a negative result of T1–T3 is compensated in the next quarters
-    carry = quarter < 4 ? round2(boxes['87'] + Math.max(-boxes['71'], 0)) : 0;
+    const boxes = periodBoxes(qRows, carry, quarter === 4 && regularisation ? { '44': regularisation } : {});
+    const filed = filed303(year, `${quarter}T`);
+    // a filed return carries what was filed, not what the documents say now
+    const effective = filed && filed.boxes ? filed.boxes : boxes;
+    carry = quarter < 4 ? carryOf(effective) : 0;
     return {
       quarter,
+      period: `${quarter}T`,
       deadline: vatPaymentDate(year, quarter).format('YYYY-MM-DD'),
       documents: new Set(qRows.map((r) => `${r.kind}:${r.id}`)).size,
       boxes,
+      declaration_type: defaultDeclarationType(boxes['71'], quarter),
+      filed: filed ? publicReturn(filed) : null,
+      changes: filed ? changesSince(filed, boxes, qRows) : null,
     };
   });
 
@@ -381,8 +571,10 @@ function vatModels(data, year) {
   annual['71'] = annual['66'];
   const unclassified = rows.filter((r) => r.issue === 'issued-zero' || r.issue === 'unknown-rate');
   annual.unclassified_base = round2(unclassified.reduce((s, r) => s + r.base, 0));
-  const { figures, prorrata } = annualFigures(rows, annual, pct);
+  const { figures, prorrata } = annualFigures(rows, annual, pct, finalPct);
   Object.assign(annual, figures);
+  const model390 = boxes390({ rows, annual, quarters, startCarry, pct, finalPct, prorrata, regularisation, returns, year });
+  const filed390 = returns.find((r) => r.model === '390' && Number(r.year) === year) || null;
 
   const issues = Object.keys(ISSUE_TEXT)
     .map((code) => {
@@ -415,15 +607,19 @@ function vatModels(data, year) {
   if (drafts.length) {
     notes.push({ code: 'drafts-excluded', text: 'Les factures emeses en esborrany no compten.', count: drafts.length, vat: round2(drafts.reduce((s, d) => s + (Number(d.total_vat) || 0), 0)) });
   }
-  if (pct < 100) {
+  if (pct < 100 || finalPct !== null) {
     notes.push({
       code: 'prorrata',
-      text: `L'IVA suportat es dedueix al ${pct} % (prorrata de l'any, Configuració › Anys). La regularització amb la prorrata definitiva del 4T (casella 44) no es posa al model: a «Any (390)» se n'hi mostra una estimació.`,
+      text: finalPct === null
+        ? `L'IVA suportat es dedueix al ${pct} % (prorrata provisional de l'any, Configuració › Anys). Quan es fixi la prorrata definitiva al T4, la regularització va a la casella 44.`
+        : `L'IVA suportat es dedueix al ${pct} % (prorrata provisional) i la definitiva és del ${finalPct} %: la regularització, ${regularisation} €, va a la casella 44 del T4.`,
     });
   }
   notes.push({
     code: 'compensation',
-    text: "Les quotes a compensar (110) només porten els resultats negatius dels trimestres d'aquest any. Si al 4T de l'any anterior vau triar compensar, cal sumar-ho al T1.",
+    text: previous
+      ? "Les quotes a compensar (110) surten de les declaracions marcades com a presentades: les del T1 vénen del 4T de l'any anterior si s'hi va demanar compensar."
+      : "Les quotes a compensar (110) surten de les declaracions marcades com a presentades i dels resultats negatius d'aquest any. El 4T de l'any anterior no està marcat com a presentat: si s'hi va demanar compensar, marca'l perquè el T1 ho tingui en compte.",
   });
   notes.push({
     code: 'unsupported',
@@ -433,8 +629,12 @@ function vatModels(data, year) {
   return {
     year,
     deductible_pct: pct,
+    final_deductible_pct: finalPct,
     quarters,
     annual,
+    model390,
+    filed390: filed390 ? publicReturn(filed390) : null,
+    changes390: filed390 ? changesSince(filed390, model390.boxes, rows, false) : null,
     prorrata,
     issues,
     notes,
@@ -442,4 +642,4 @@ function vatModels(data, year) {
   };
 }
 
-module.exports = { vatModels, contactArea, documentRows, periodBoxes, deductiblePct, OPERATIONS, REVERSE_CHARGES };
+module.exports = { vatModels, contactArea, documentRows, documentSnapshot, periodBoxes, deductiblePct, OPERATIONS, REVERSE_CHARGES };

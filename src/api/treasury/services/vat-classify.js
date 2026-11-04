@@ -9,7 +9,7 @@ const { OPERATIONS, REVERSE_CHARGES } = require('./vat-models');
  * «Per revisar» list. `items`: [{ kind, id, value, rate? }]
  * - emitted-invoices / received-incomes: `vat_operation` (E1, E2, E5, N1, N2,
  *   S2) or null to unclassify;
- * - received-invoices: `reverse_charge` (none, intracom, isp) or null, and
+ * - received-invoices: `reverse_charge` (none, intracom, intracom_goods, isp) or null, and
  *   `reverse_charge_rate` (`rate`, 21 by default) when self-assessed.
  *
  * Written straight to the column: it's how the entity declares the operation,
@@ -38,7 +38,7 @@ function classifyWrites(items) {
     const value = item.value === undefined || item.value === '' ? null : item.value;
     if (value !== null && !kind.values.includes(value)) throw new VatClassifyError(`Valor no vàlid: ${value}`);
     const data = { [kind.field]: value };
-    if (kind.field === 'reverse_charge' && (value === 'intracom' || value === 'isp')) {
+    if (kind.field === 'reverse_charge' && value !== 'none' && value !== null) {
       const rate = item.rate === undefined || item.rate === null || item.rate === '' ? 21 : Number(item.rate);
       if (!Number.isFinite(rate) || rate < 0 || rate > 100) throw new VatClassifyError(`Tipus no vàlid: ${item.rate}`);
       data.reverse_charge_rate = rate;

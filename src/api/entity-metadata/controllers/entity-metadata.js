@@ -45,6 +45,8 @@ const FIELD_TRANSLATIONS = {
   workingHours: 'Hores de treball',
   deductible: 'Deduïble',
   deductible_vat_pct: '% IVA deduïble',
+  // IVA › Models 303 i 390: set from its T4
+  final_deductible_vat_pct: '% IVA deduïble definitiu (prorrata)',
   deductibleVatPct: '% IVA deduïble',
   vat: 'IVA',
   pct: 'Percentatge',

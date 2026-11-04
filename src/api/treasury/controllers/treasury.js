@@ -32,7 +32,7 @@ const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/p
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { groupPayrollRows } = require('../services/payroll-groups');
 const { irpfSummary } = require('../services/irpf-summary');
-const { vatModels } = require('../services/vat-models');
+const { computeVatModels, fileReturn, unfileReturn, setFinalProrrata, buildFile, VatReturnError, AeatFileError } = require('../services/vat-returns');
 const { classifyDocuments, VatClassifyError } = require('../services/vat-classify');
 const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../services/vat-forecast');
 const { loadPhaseDocumentLinks, phaseDocumentLinkTables, withPhaseDocuments } = require('../services/phase-documents');
@@ -1421,40 +1421,51 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
    */
   async vatModels(ctx) {
     const year = parseInt(ctx.query.year, 10) || moment().year();
-    const where = { emitted: { $gte: `${year}-01-01`, $lte: `${year}-12-31` } };
-    const select = ['id', 'code', 'emitted', 'total_base', 'total_vat'];
-    const contact = { select: ['id', 'name', 'nif', 'country'] };
-    // other years' classified documents, for the proposals (same contact)
-    const classified = (uid, field) =>
-      strapi.db.query(uid).findMany({
-        select: ['id', 'emitted', field],
-        where: { [field]: { $notNull: true }, $not: where },
-        populate: { contact: { select: ['id'] } },
-      });
-    const [emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years, oldEmitted, oldIncomes, oldReceived] = await Promise.all([
-      strapi.db.query('api::emitted-invoice.emitted-invoice').findMany({
-        select: [...select, 'state', 'vat_operation'],
-        where,
-        populate: { lines: true, contact, serial: { select: ['id', 'rectificative'] } },
-      }),
-      strapi.db.query('api::received-income.received-income').findMany({
-        select: [...select, 'vat_operation'],
-        where,
-        populate: { lines: true, contact },
-      }),
-      strapi.db.query('api::received-invoice.received-invoice').findMany({
-        select: [...select, 'reverse_charge', 'reverse_charge_rate'],
-        where,
-        populate: { lines: { populate: { expense_type: { select: ['id', 'capital_goods'] } } }, contact },
-      }),
-      strapi.db.query('api::received-expense.received-expense').findMany({ select, where }),
-      strapi.db.query('api::year.year').findMany({ select: ['id', 'year', 'deductible_vat_pct'] }),
-      classified('api::emitted-invoice.emitted-invoice', 'vat_operation'),
-      classified('api::received-income.received-income', 'vat_operation'),
-      classified('api::received-invoice.received-invoice', 'reverse_charge'),
-    ]);
-    const history = { issued: [...oldEmitted, ...oldIncomes], received: oldReceived };
-    ctx.body = vatModels({ emittedInvoices, receivedIncomes, receivedInvoices, receivedExpenses, years, history }, year);
+    ctx.body = await computeVatModels(year);
+  },
+
+  // POST /treasuries/vat-models/returns { model, year, period, declaration_type, filed_date, receipt, notes }
+  async vatModelsFile(ctx) {
+    try {
+      ctx.body = await fileReturn(ctx.request.body || {}, ctx.state.user);
+    } catch (e) {
+      if (e instanceof VatReturnError) return ctx.badRequest(e.message);
+      throw e;
+    }
+  },
+
+  // DELETE /treasuries/vat-models/returns/:id
+  async vatModelsUnfile(ctx) {
+    try {
+      ctx.body = await unfileReturn(ctx.params.id);
+    } catch (e) {
+      if (e instanceof VatReturnError) return ctx.notFound(e.message);
+      throw e;
+    }
+  },
+
+  // POST /treasuries/vat-models/final-prorrata { year, pct }
+  async vatModelsFinalProrrata(ctx) {
+    const body = ctx.request.body || {};
+    try {
+      ctx.body = await setFinalProrrata(body.year, body.pct);
+    } catch (e) {
+      if (e instanceof VatReturnError) return ctx.badRequest(e.message);
+      throw e;
+    }
+  },
+
+  // GET /treasuries/vat-models/aeat-file?model=303&year=&period=1T&declaration_type=I&iban=
+  async vatModelsAeatFile(ctx) {
+    try {
+      const { name, content } = await buildFile(ctx.query || {});
+      ctx.set('Content-Type', 'text/plain; charset=ISO-8859-1');
+      ctx.set('Content-Disposition', `attachment; filename="${name}"`);
+      ctx.body = Buffer.from(content, 'latin1');
+    } catch (e) {
+      if (e instanceof VatReturnError || e instanceof AeatFileError) return ctx.badRequest(e.message);
+      throw e;
+    }
   },
 
   // POST /treasuries/vat-models/classify { items: [{ kind, id, value, rate? }] }

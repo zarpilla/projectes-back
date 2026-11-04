@@ -20,6 +20,9 @@
     "deductible_vat_pct": {
       "type": "decimal",
       "default": 100
+    },
+    "final_deductible_vat_pct": {
+      "type": "decimal"
     }
   }
 }

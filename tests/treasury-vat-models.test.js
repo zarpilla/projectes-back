@@ -218,3 +218,136 @@ describe('classify writes', () => {
     expect(() => classifyWrites([{ kind: 'emitted-invoices', id: 'x', value: 'E1' }])).toThrow();
   });
 });
+
+describe('phase 3: filed returns, final prorrata and the 390', () => {
+  const data = () => ({
+    years: [{ year: 2026, deductible_vat_pct: 80, final_deductible_vat_pct: 75 }],
+    emittedInvoices: [
+      doc(1, '2026-01-10', [line(1000, 21)]),
+      doc(2, '2026-04-10', [line(100, 21)]),
+      doc(3, '2026-05-10', [line(400, 0)], { vat_operation: 'E1' }),
+    ],
+    receivedInvoices: [
+      doc(10, '2026-02-10', [line(2000, 21)]), // T1: 210 − 336 = −126
+      doc(11, '2026-04-11', [line(100, 0)], { contact: { id: 7, name: 'G', nif: 'IE1' }, reverse_charge: 'intracom', reverse_charge_rate: 21 }),
+      doc(12, '2026-10-11', [line(50, 0)], { contact: { id: 8, name: 'Books', nif: 'DE1' }, reverse_charge: 'intracom_goods', reverse_charge_rate: 4 }),
+    ],
+    returns: [],
+  });
+
+  it('puts the final prorrata regularisation in box 44 of the last quarter', () => {
+    const r = vatModels(data(), 2026);
+    // VAT paid in the year: 420 + 21 + 2 = 443 → × (75 − 80) %
+    expect(r.quarters[3].boxes['44']).toBe(-22.15);
+    expect(r.quarters[0].boxes['44']).toBe(0);
+    expect(r.final_deductible_pct).toBe(75);
+    expect(r.model390.boxes['522']).toBe(-22.15);
+  });
+
+  it('carries what a filed return says, and the year before’s 4T asking to compensate', () => {
+    const d = data();
+    d.returns = [
+      { id: 1, model: '303', year: 2025, period: '4T', declaration_type: 'C', boxes: { '71': -50, '87': 10 } },
+      { id: 2, model: '303', year: 2026, period: '1T', declaration_type: 'C', boxes: { '71': -200, '87': 0 }, documents: {} },
+    ];
+    const r = vatModels(d, 2026);
+    expect(r.quarters[0].boxes['110']).toBe(60);
+    // T2 starts from the filed T1 (200), not from the documents (126 + 60 …)
+    expect(r.quarters[1].boxes['110']).toBe(200);
+    expect(r.quarters[0].filed).toMatchObject({ id: 2, declaration_type: 'C' });
+    expect(r.quarters[1].filed).toBe(null);
+    expect(r.model390.boxes['85']).toBe(60);
+  });
+
+  it('says what changed since a quarter was filed', () => {
+    const d = data();
+    const first = vatModels(d, 2026);
+    const { documentSnapshot } = require('../src/api/treasury/services/vat-models');
+    d.returns = [{
+      id: 3, model: '303', year: 2026, period: '1T', declaration_type: 'C',
+      boxes: first.quarters[0].boxes, documents: documentSnapshot(first.rows.filter((x) => x.quarter === 1)),
+    }];
+    expect(vatModels(d, 2026).quarters[0].changes).toBe(null);
+    // an invoice entered afterwards in the filed quarter
+    d.emittedInvoices.push(doc(4, '2026-03-30', [line(100, 21)]));
+    const changes = vatModels(d, 2026).quarters[0].changes;
+    expect(changes.boxes.find((b) => b.box === '09')).toEqual({ box: '09', filed: 210, now: 231 });
+    expect(changes.documents).toEqual([expect.objectContaining({ id: 4, change: 'added', vat: 21 })]);
+  });
+
+  it('gives the 390 its own boxes', () => {
+    const b = vatModels(data(), 2026).model390.boxes;
+    expect(b).toMatchObject({ '05': 1100, '06': 231 });
+    // intra-EU services at 21 % and goods at 4 %
+    expect(b).toMatchObject({ '551': 100, '552': 21, '21': 50, '22': 2 });
+    expect(b['33']).toBe(1250);
+    expect(b['34']).toBe(254);
+    // deductible: interior 21 %, intra-EU services 21 %, intra-EU goods 4 %, after the 80 % prorrata
+    expect(b).toMatchObject({ '605': 2000, '606': 336, '48': 2000, '49': 336, '637': 100, '638': 16.8, '597': 100, '598': 16.8, '214': 50, '215': 1.6, '56': 50, '57': 1.6 });
+    expect(b['64']).toBe(round(336 + 16.8 + 1.6 - 22.15));
+    expect(b['65']).toBe(round(254 - b['64']));
+    expect(b).toMatchObject({ '99': 1100, '105': 400, '108': 1500 });
+    // the prorrata applies: totals, operations with a right to deduct, the final %
+    expect(b).toMatchObject({ '115': 1500, '116': 1100, '117': 'G', '118': 75 });
+  });
+});
+
+describe('AEAT files', () => {
+  const { file303, file390, number, text } = require('../src/api/treasury/services/aeat-file');
+  const spec303 = require('../src/api/treasury/services/aeat/dr303-2026.json');
+  const field = (spec, sheet, box) => spec.pages.find((p) => p.sheet === sheet).fields.find((f) => f.box === box);
+  const me = { nif: 'F-12345678', name: "Cooperativa L'Era, SCCL" };
+
+  it('formats numbers and text as the design wants them', () => {
+    expect(number(1234.5, 17, true)).toBe('00000000000123450');
+    expect(number(-12.34, 17, true)).toBe('N0000000000001234');
+    expect(() => number(-1, 17, false)).toThrow();
+    expect(number(100, 5, false)).toBe('10000');
+    expect(text("Cooperativa L'Era, SCCL — Ñ ç", 30)).toBe('COOPERATIVA L ERA SCCL Ñ Ç    ');
+  });
+
+  it('writes a quarter with its boxes in their positions', () => {
+    const r = vatModels({
+      years: [],
+      emittedInvoices: [doc(1, '2026-01-10', [line(1000, 21)])],
+      receivedInvoices: [doc(2, '2026-01-11', [line(2000, 21)])],
+    }, 2026);
+    const out = file303({ year: 2026, period: '1T', boxes: r.quarters[0].boxes, declarationType: 'C', me });
+    expect(out.startsWith('<T303020261T0000><AUX>')).toBe(true);
+    expect(out.endsWith('</T303020261T0000>')).toBe(true);
+    const page1 = out.slice(328, 328 + 1581);
+    expect(page1.slice(0, 13)).toBe('<T30301000> C');
+    expect(page1.slice(13, 22)).toBe('F12345678');
+    const at = (sheet, box, page) => { const f = field(spec303, sheet, box); return page.slice(f.pos - 1, f.pos - 1 + f.len); };
+    expect(at('DP30301', '07', page1)).toBe('00000000000100000');
+    expect(at('DP30301', '08', page1)).toBe('02100');
+    expect(at('DP30301', '29', page1)).toBe('00000000000042000');
+    expect(at('DP30301', '46', page1)).toBe('N0000000000021000');
+    const page3 = out.slice(328 + 1581, 328 + 1581 + 1017);
+    expect(page3.startsWith('<T30303000>')).toBe(true);
+    expect(at('DP30303', '71', page3)).toBe('N0000000000021000');
+    expect(at('DP30303', '65', page3)).toBe('10000');
+    // no bank page unless direct debit or refund
+    expect(out).not.toContain('<T303DID00>');
+    expect(() => file303({ year: 2026, period: '1T', boxes: r.quarters[0].boxes, declarationType: 'U', me })).toThrow(/IBAN/);
+    const debit = file303({ year: 2026, period: '1T', boxes: r.quarters[0].boxes, declarationType: 'U', me, iban: 'ES91 2100 0418 4502 0005 1332' });
+    expect(debit).toContain('<T303DID00>           ES9121000418450200051332');
+  });
+
+  it('adds the prorrata page to the last quarter', () => {
+    const boxes = vatModels({ years: [], emittedInvoices: [doc(1, '2026-11-10', [line(100, 21)])] }, 2026).quarters[3].boxes;
+    const out = file303({ year: 2026, period: '4T', boxes, declarationType: 'I', me: { ...me, aeat_cnae: '7490' }, prorrata: { total: 1000, with_right: 800, pct: 80 } });
+    expect(out).toContain('<T30305000> 7490' + '00000000000100000' + '00000000000080000' + 'G' + '08000');
+  });
+
+  it('writes the year’s 390 with all its pages', () => {
+    const r = vatModels({ years: [], emittedInvoices: [doc(1, '2026-01-10', [line(1000, 21)])] }, 2026);
+    const out = file390({ year: 2026, boxes: r.model390.boxes, me: { ...me, aeat_activity: 'Serveis', aeat_activity_code: 'A03', aeat_iae: '8499' } });
+    expect(out.startsWith('<T390020260A0000><AUX>')).toBe(true);
+    for (const page of ['01000', '02000', '02B00', '03000', '04000', '05000', '06000', '07000', '08000']) expect(out).toContain(`<T390${page}>`);
+    expect(out.endsWith('</T390020260A0000>')).toBe(true);
+    const page1 = out.slice(out.indexOf('<T39001000>'));
+    expect(page1.slice(13, 22)).toBe('F12345678');
+    expect(page1.slice(148, 191)).toBe('SERVEIS'.padEnd(40, ' ') + 'A03');
+  });
+});

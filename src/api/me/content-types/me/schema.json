@@ -202,6 +202,22 @@
     "invoice_parser_api_token": {
       "type": "string",
       "private": true
+    },
+    "aeat_activity": {
+      "type": "string"
+    },
+    "aeat_activity_code": {
+      "type": "string"
+    },
+    "aeat_iae": {
+      "type": "string"
+    },
+    "aeat_cnae": {
+      "type": "string"
+    },
+    "aeat_vat_390_exempt": {
+      "type": "boolean",
+      "default": false
     }
   }
 }

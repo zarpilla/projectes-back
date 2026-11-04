@@ -136,6 +136,7 @@
       "enum": [
         "none",
         "intracom",
+        "intracom_goods",
         "isp"
       ]
     },

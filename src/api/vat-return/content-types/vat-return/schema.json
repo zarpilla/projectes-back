@@ -1,0 +1,54 @@
+{
+  "kind": "collectionType",
+  "collectionName": "vat_returns",
+  "info": {
+    "singularName": "vat-return",
+    "pluralName": "vat-returns",
+    "displayName": "VAT return",
+    "description": "IVA › Models 303 i 390: a return marked as filed, with its boxes and documents as they were"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "model": {
+      "type": "string",
+      "required": true
+    },
+    "year": {
+      "type": "integer",
+      "required": true
+    },
+    "period": {
+      "type": "string",
+      "required": true
+    },
+    "declaration_type": {
+      "type": "string"
+    },
+    "filed_date": {
+      "type": "date"
+    },
+    "receipt": {
+      "type": "string"
+    },
+    "result": {
+      "type": "decimal"
+    },
+    "boxes": {
+      "type": "json"
+    },
+    "documents": {
+      "type": "json"
+    },
+    "notes": {
+      "type": "text"
+    },
+    "filed_by": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "plugin::users-permissions.user"
+    }
+  }
+}
