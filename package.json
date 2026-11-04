@@ -49,7 +49,7 @@
     "rrule": "^2.8.1",
     "styled-components": "^6.0.0",
     "transliteration": "^2.6.1",
-    "verifactu-node-lib": "^1.0.0",
+    "verifactu-node-lib": "^1.0.1",
     "xadesjs": "^2.6.7"
   },
   "devDependencies": {
