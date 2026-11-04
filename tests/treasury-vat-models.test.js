@@ -403,3 +403,25 @@ describe('agrarian compensation, foreign VAT and received rectifying invoices', 
     expect(() => classifyWrites([{ kind: 'emitted-invoices', id: 1, field: 'vat_special', value: 'reagp' }])).toThrow();
   });
 });
+
+// 2026-11-04, validation of branch model-303: the 390's box 230 («adquisiciones
+// interiores exentas») summed every received row out of the return, foreign
+// VAT and purchases from abroad included. Only domestic 0 % purchases count.
+describe('the 390’s exempt domestic purchases (230)', () => {
+  const pt = { id: 21, name: 'Porto Hostel', nif: 'PT123456789', country: 'Portugal' };
+  const us = { id: 23, name: 'Zoom', nif: '', country: 'Estats Units' };
+  const r = vatModels({
+    years: [{ year: 2026, deductible_vat_pct: 100 }],
+    receivedInvoices: [
+      doc(1, '2026-01-10', [line(60, 0)]), // domestic 0 %: in 230
+      doc(2, '2026-01-11', [line(40, 0)], { reverse_charge: 'none' }), // domestic, reviewed: in 230
+      doc(3, '2026-01-12', [line(500, 6)], { contact: pt, vat_special: 'foreign_vat' }), // foreign VAT: not
+      doc(4, '2026-01-13', [line(300, 0)], { contact: us, reverse_charge: 'none' }), // from abroad: not
+    ],
+  }, 2026);
+
+  it('counts only the domestic 0 % purchases', () => {
+    expect(r.rows.filter((x) => x.not_in_return).map((x) => x.id)).toEqual([1, 2, 3, 4]);
+    expect(r.model390.boxes['230']).toBe(100);
+  });
+});

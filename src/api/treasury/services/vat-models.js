@@ -540,8 +540,9 @@ function boxes390({ rows, annual, quarters, startCarry, pct, finalPct, prorrata,
   b['98'] = lastResult < 0 && lastType === 'D' ? round2(-lastResult) : 0;
   // 10. volume of operations (the 303's 80, 93, 94, 83, 84, 125, 88)
   Object.assign(b, { '99': annual['80'], '103': annual['93'], '104': annual['94'], '105': annual['83'], '110': annual['84'], '125': annual['125'], '108': annual['88'] });
-  // 11. exempt or not subject domestic purchases
-  b['230'] = round2(rows.filter((r) => r.side === 'received' && r.not_in_return).reduce((s, r) => s + r.base, 0));
+  // 11. exempt or not subject domestic purchases: the 0 % ones from Spain, not
+  // purchases from abroad nor foreign VAT (also out of the return)
+  b['230'] = round2(rows.filter((r) => r.side === 'received' && r.not_in_return && r.rate === 0 && r.area === 'ES').reduce((s, r) => s + r.base, 0));
   // 12. prorrata, when it applies
   const applies = pct < 100 || (finalPct !== null && finalPct < 100) || (prorrata && prorrata.definitive !== null && prorrata.definitive < 100);
   if (applies && prorrata) {

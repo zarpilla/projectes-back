@@ -26,12 +26,12 @@ const DECIMALS = 2;
 function text(value, length) {
   const clean = String(value === null || value === undefined ? '' : value)
     .toUpperCase()
-    .replace(/Ñ/g, '\u0001')
-    .replace(/Ç/g, '\u0002')
+    .replace(/Ñ/g, '\uE000')
+    .replace(/Ç/g, '\uE001')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
-    .replace(/\u0001/g, 'Ñ')
-    .replace(/\u0002/g, 'Ç')
+    .replace(/\uE000/g, 'Ñ')
+    .replace(/\uE001/g, 'Ç')
     .replace(/[^A-Z0-9ÑÇ ]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
