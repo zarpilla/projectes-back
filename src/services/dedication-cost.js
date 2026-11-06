@@ -80,4 +80,29 @@ async function rederiveYear(year, workingHours) {
   return written;
 }
 
-module.exports = { costByHourOf, deriveCostByHour, rederiveYear, yearOf, DEFAULT_WORKING_HOURS };
+/**
+ * Startup repair (issues/416): the jornadas starting from 2026 on whose stored
+ * cost per hour isn't the one their salary and year give (saved before their
+ * year existed in «Anys»). Older ones are left as they are: re-pricing them
+ * would change the costs of closed projects; saving one re-derives it.
+ * Each update goes through the lifecycles (activities and lines follow).
+ * Idempotent: a second run writes nothing.
+ */
+async function rederiveFrom(day = '2026-01-01') {
+  const rows = await strapi.db.query(DEDICATION).findMany({ where: { from: { $gte: day } } });
+  const hoursByYear = new Map();
+  let written = 0;
+  for (const row of rows) {
+    const year = yearOf(row.from);
+    if (!hoursByYear.has(year)) hoursByYear.set(year, await workingHoursOf(year));
+    const cost = costByHourOf(row, hoursByYear.get(year));
+    if (cost === undefined || (!blank(row.costByHour) && Number(row.costByHour) === cost)) continue;
+    strapi.log.info(`[dedicationCost] jornada ${row.id} (${row.from}): ${row.costByHour} → ${cost}`);
+    await strapi.db.query(DEDICATION).update({ where: { id: row.id }, data: { costByHour: cost } });
+    written += 1;
+  }
+  strapi.log.info(`[dedicationCost] ${written} of ${rows.length} jornades from ${day} re-priced`);
+  return written;
+}
+
+module.exports = { costByHourOf, deriveCostByHour, rederiveYear, rederiveFrom, yearOf, DEFAULT_WORKING_HOURS };

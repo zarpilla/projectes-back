@@ -151,3 +151,21 @@ describe('year lifecycles re-price the jornadas of the year (issues/416)', () =>
   });
 });
 
+
+describe('rederiveFrom startup repair (issues/416)', () => {
+  it('re-prices only the stale jornadas from the given day, once', async () => {
+    years = [{ year: 2026, working_hours: 1760 }, { year: 2027, working_hours: 1760 }];
+    others = [
+      { id: 127, monthly_salary: 3292.8, quota: 0, pct_quota: 0, from: '2026-01-01', costByHour: 22.4 },
+      { id: 160, monthly_salary: 3292.8, quota: 0, pct_quota: 0, from: '2027-04-01', costByHour: 22.4 },
+      { id: 152, monthly_salary: 3292.8, quota: 0, pct_quota: 0, from: '2026-02-01', costByHour: 22.45 },
+      { id: 162, monthly_salary: null, from: '2026-11-07', costByHour: null },
+    ];
+    const { rederiveFrom } = require('../src/services/dedication-cost');
+    await expect(rederiveFrom('2026-01-01')).resolves.toBe(2);
+    expect(updates).toEqual([
+      { uid: DEDICATION, id: 127, data: { costByHour: 22.45 } },
+      { uid: DEDICATION, id: 160, data: { costByHour: 22.45 } },
+    ]);
+  });
+});
