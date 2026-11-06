@@ -72,6 +72,9 @@ async function proxyUpload(strapi, ctx) {
     const baseUrl = checkBaseUrl(meSettings.invoice_parser_api_url);
     const form = new FormData();
     form.append('file', pdfBuffer, { filename: 'invoice.pdf', contentType: 'application/pdf' });
+    // the tenant is the customer: the parser must never return it as the vendor
+    if (meSettings.name) form.append('customer_name', String(meSettings.name));
+    if (meSettings.nif) form.append('customer_tax_id', String(meSettings.nif));
 
     const response = await axios.post(`${baseUrl}/api/parse`, form, {
       headers: { 'X-API-Key': decryptSecret(meSettings.invoice_parser_api_token), ...form.getHeaders() },

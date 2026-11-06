@@ -101,6 +101,29 @@ describe('invoice parser upload (issues/406)', () => {
     expect(axios.post.mock.calls[0][1].getBuffer().includes(PDF)).toBe(true);
   });
 
+  // 2026-11-06 benchmark: without knowing the customer, the model sometimes
+  // returned the tenant's own NIF as the supplier's, so no contact matched.
+  it('sends the tenant name and NIF as the customer', async () => {
+    getMe.mockResolvedValue({
+      invoice_parser_api_url: 'https://parser.example.org',
+      invoice_parser_api_token: 'token',
+      name: 'Arran de terra SCCL',
+      nif: 'F67427690',
+    });
+
+    await send(pdfForm());
+
+    const body = axios.post.mock.calls[0][1].getBuffer().toString();
+    expect(body).toMatch(/name="customer_name"\r\n\r\nArran de terra SCCL\r\n/);
+    expect(body).toMatch(/name="customer_tax_id"\r\n\r\nF67427690\r\n/);
+  });
+
+  it('leaves the customer fields out when me has no NIF', async () => {
+    await send(pdfForm());
+
+    expect(axios.post.mock.calls[0][1].getBuffer().toString()).not.toMatch(/customer_tax_id/);
+  });
+
   it('still refuses a request without a file', async () => {
     const res = await send(new FormData());
 
