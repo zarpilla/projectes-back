@@ -225,6 +225,9 @@ module.exports = {
       // issues/416: jornadas from 2026 on saved before their year existed in
       // «Anys» kept the 1764 h fallback; their activities and lines follow.
       ['refreshDedicationCosts2026', () => refreshDedicationCosts('2026-01-01'), { runOnce: true }],
+      // issues/416: a line's €/h became the weighted average of its days
+      // (refreshEstimatedHoursPrices already ran with the first-day rule).
+      ['refreshEstimatedHoursPricesWeighted', rederiveAll, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
