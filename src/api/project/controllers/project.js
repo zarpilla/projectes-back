@@ -24,6 +24,7 @@ const { lineTotal, invalidLineValueMessage, assignLinePositions, sortPhasesByPos
 const { touchesDates, projectDatesError } = require('../../../services/project-dates');
 const { BILLING_MODES, priceHoursLines } = require('../../../services/hours-billing');
 const projectSeries = require('../services/project-series');
+const projectTrash = require('../services/project-trash');
 const {
   buildProjectRows,
   aggregateRowsByYear,
@@ -1756,6 +1757,12 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         : await strapi.db.query('api::project.project').findOne({ where, select: ['date_start', 'date_end'] });
       const datesError = projectDatesError(data, stored);
       if (datesError) return ctx.badRequest(datesError);
+    }
+
+    // A project with documents or hours can't go to the trash (services/project-trash.js)
+    if (data.trashed === true) {
+      const trashMessage = await projectTrash.trashError(id);
+      if (trashMessage) return ctx.badRequest(trashMessage);
     }
 
     // One transaction for the phase writes and the core update: if the update
