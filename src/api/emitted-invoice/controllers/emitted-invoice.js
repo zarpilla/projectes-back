@@ -11,7 +11,7 @@
  */
 const _ = require('lodash');
 const fs = require('fs');
-const { stableToken } = require('../../../services/pdf-names');
+const { stableToken, fileNamePart } = require('../../../services/pdf-names');
 const { documentPdfPath } = require('../../../services/document-pdf-path');
 const moment = require('moment');
 const sharp = require('sharp');
@@ -467,7 +467,10 @@ module.exports = createCoreController('api::emitted-invoice.emitted-invoice', ({
     // keyed with a server secret: /uploads is public, and an md5 of the type,
     // code and id was computable by anyone who knew them (issues/374)
     const hash = stableToken(myInvoice.options.data.invoice.name, invoice.code, docUid, id);
-    const docName = `./public/uploads/documents/${myInvoice.options.data.invoice.name}-${invoice.contact?.name}-${invoice.code}-H${hash}.pdf`;
+    // every piece made safe for a path and a URL (issues/414)
+    const docName = `./public/uploads/documents/${[myInvoice.options.data.invoice.name, invoice.contact?.name, invoice.code]
+      .map(fileNamePart)
+      .join('-')}-H${hash}.pdf`;
     await myInvoice.generate(docName);
 
     // Update the document's pdf path. `strapi.db.query().update()` still runs the

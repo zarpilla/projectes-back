@@ -27,4 +27,18 @@ function stableToken(...parts) {
   return crypto.createHmac('sha256', key).update(parts.join('-')).digest('hex').slice(0, 32);
 }
 
-module.exports = { randomToken, stableToken };
+/**
+ * A document's type, contact name or code as a piece of its PDF file name
+ * (issues/414). The name is both a path on disk and a URL: `/` or `\\` made
+ * the write fail (and the unhandled stream error took the API down), `#` and
+ * `?` cut the URL the browser opened, and a stray `%` doesn't decode — so the
+ * PDF tab answered 404 «Not Found». Those characters and control characters
+ * become `-`; everything else stays as it was, so the PDFs that already had
+ * a safe name keep it.
+ */
+function fileNamePart(value) {
+  // eslint-disable-next-line no-control-regex
+  return String(value).replace(/[/\\#?%<>:"|*\u0000-\u001f\u007f]+/g, '-');
+}
+
+module.exports = { randomToken, stableToken, fileNamePart };

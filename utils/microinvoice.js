@@ -753,23 +753,23 @@ module.exports = class Microinvoice {
         _path = output.path;
       }
 
-      _stream = fs.createWriteStream(output);
-
-      this.document.pipe(_stream);
-      this.document.end();
+      _stream = fs.createWriteStream(_path);
     } else {
       this.document.end();
       return this.document;
     }
 
-    return new Promise((resolve, reject) => {
-      this.document.on('end', () => {
-        return resolve();
-      });
-
-      this.document.on('error', () => {
-        return reject();
-      });
+    // Settled by the file, not the document: the document 'end'ed even when
+    // the file could not be opened, the caller handed out the URL of a PDF
+    // that was never written (404), and the stream's unhandled 'error' took
+    // the whole API down (issues/414).
+    const written = new Promise((resolve, reject) => {
+      _stream.on('finish', resolve);
+      _stream.on('error', reject);
+      this.document.on('error', reject);
     });
+    this.document.pipe(_stream);
+    this.document.end();
+    return written;
   }
 };
