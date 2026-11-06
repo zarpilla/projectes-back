@@ -110,6 +110,17 @@ describe('suggest (issues/413)', () => {
     expect(best.lines.map((l) => l.id).sort()).toEqual(['keys:emitted-invoices:1', 'keys:emitted-invoices:2']);
     expect(best.auto).toBe(false);
   });
+
+  it('puts lines of the contact named in the concept that add up before a partial payment of another document', () => {
+    const mixed = candidatesFromForecast([
+      row({ settle: { kind: 'received-expenses', id: 1 }, concept: 'D-1', total_amount: -23.98, datef: '20261001' }),
+      row({ settle: { kind: 'received-expenses', id: 2 }, concept: 'D-2', total_amount: -10.56, datef: '20261002' }),
+      row({ settle: { kind: 'received-expenses', id: 3 }, concept: 'D-3', total_amount: -90, datef: '20261003' }),
+    ]);
+    const s = suggest(movement({ amount: -34.54, concept: 'TRANSF CLIENTA FRUITA DIETES' }), mixed);
+    expect(s.map((x) => x.kind)).toEqual(['lines', 'partial']);
+    expect(s[0].lines.map((l) => l.code).sort()).toEqual(['D-1', 'D-2']);
+  });
 });
 
 describe('autoMatches (issues/413)', () => {

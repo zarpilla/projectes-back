@@ -136,6 +136,15 @@ describe('settleDocument / unsettle (issues/415)', () => {
     ).rejects.toThrow(/no pot superar/);
   });
 
+  it('pays part of a received invoice from a bank charge (negative amount, positive total)', async () => {
+    const r = await settle.settleDocument({ entity_type: 'received-invoices', entity_id: 30, date: '2026-10-20', amount: -100, today: TODAY });
+    expect(r.paid).toBe(false);
+    expect(JSON.parse(doc(RECEIVED, 30).partial_payments)).toEqual([{ id: r.partial_payment_id, date: '2026-10-20', amount: 100 }]);
+    await expect(
+      settle.settleDocument({ entity_type: 'received-invoices', entity_id: 30, date: '2026-10-21', amount: -500, today: TODAY }),
+    ).rejects.toThrow(/no pot superar el que queda pendent de «R-30» \(142.00 €\)/);
+  });
+
   it('unticking puts the document, its expected date and its lines back', async () => {
     await settle.settleDocument({ entity_type: 'emitted-invoices', entity_id: 11, date: '2026-11-05', today: TODAY });
     const v = db.rows[VALIDATION][0];

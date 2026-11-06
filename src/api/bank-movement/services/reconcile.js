@@ -46,6 +46,8 @@ const VALIDATION = 'api::treasury-validation.treasury-validation';
 const TREASURY = 'api::treasury.treasury';
 const EXPENSE = 'api::received-expense.received-expense';
 const CENT = 0.005;
+// «Tria les línies» without a search: executed lines up to this many days from the movement
+const CANDIDATE_DAYS = 60;
 
 class ReconcileError extends Error {}
 
@@ -582,12 +584,16 @@ async function candidates(movementId, q) {
   const fm = forMatching(m);
   const lines = await loadCandidates();
   const query = String(q || '').trim().toLowerCase();
+  const close = (l) => Math.abs(moment(fm.date).diff(moment(l.date), 'days'));
+  // without a search: the executed lines of around the movement's date (not
+  // years-old payments of a similar amount) and every pending document
   const filtered = lines.filter(
     (l) =>
       Math.sign(l.amount) === Math.sign(fm.amount) &&
-      (!query || [l.code, l.contact, l.type, String(Math.abs(l.amount))].some((v) => String(v || '').toLowerCase().includes(query))),
+      (query
+        ? [l.code, l.contact, l.type, String(Math.abs(l.amount))].some((v) => String(v || '').toLowerCase().includes(query))
+        : l.pending || close(l) <= CANDIDATE_DAYS),
   );
-  const close = (l) => Math.abs(moment(fm.date).diff(moment(l.date), 'days'));
   return {
     movement: { ...fm, amount: fm.amount },
     lines: filtered

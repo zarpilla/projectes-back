@@ -279,4 +279,15 @@ describe('reconcile (issues/413)', () => {
     const d = r.movements.find((x) => x.id === done.id);
     expect(d.validations).toEqual([expect.objectContaining({ key: 'received-invoices:7', code: 'R-7', amount: -50 })]);
   });
+  it('candidates: without a search, executed lines near the movement and every pending document; a search finds any', async () => {
+    rows.push(
+      forecastRow({ settle: null, paid: true, validation_key: 'emitted-invoices:50', total_amount: 1200, concept: 'F-2022', datef: '20220415' }),
+      forecastRow({ settle: null, paid: true, validation_key: 'emitted-invoices:51', total_amount: 1100, concept: 'F-NEAR', datef: '20260920' }),
+      forecastRow({ settle: { kind: 'emitted-invoices', id: 52 }, total_amount: 900, concept: 'F-OLD-PENDING', datef: '20250301' }),
+    );
+    const m = await addMovement({});
+    const codes = (r) => r.lines.map((l) => l.code);
+    expect(codes(await reconcile.candidates(m.id, ''))).toEqual(['F-42', 'F-NEAR', 'F-OLD-PENDING']);
+    expect(codes(await reconcile.candidates(m.id, 'f-2022'))).toEqual(['F-2022']);
+  });
 });

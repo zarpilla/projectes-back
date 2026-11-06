@@ -81,7 +81,7 @@ function pendingOf(doc) {
  * @param {string} p.entity_type one of DOCUMENT_KINDS
  * @param {number} p.entity_id
  * @param {string} p.date YYYY-MM-DD, not after today
- * @param {number} [p.amount] part of what is pending (signed like the total); all of it when left out
+ * @param {number} [p.amount] part of what is pending, either sign (a cash-flow amount works); all of it when left out
  * @param {number} [p.userId] who validates
  * @param {number} [p.bankMovementId] the bank movement it is reconciled with (issues/413)
  * @param {string} [p.today] YYYY-MM-DD, for tests
@@ -107,10 +107,13 @@ async function settleDocument({ entity_type, entity_id, date, amount, userId, ba
 
   let part = pending;
   if (amount !== undefined && amount !== null) {
-    part = round2(Number(amount));
-    if (!Number.isFinite(part) || part === 0 || Math.sign(part) !== Math.sign(pending) || Math.abs(part) > Math.abs(pending) + CENT) {
+    // the size of the part, in the document's direction: a bank movement and a
+    // Tresoreria line are signed by cash flow (a received invoice is negative)
+    // while a document's total is positive (negative for a credit note)
+    part = round2(Math.sign(pending) * Math.abs(Number(amount)));
+    if (!Number.isFinite(part) || part === 0 || Math.abs(part) > Math.abs(pending) + CENT) {
       throw new SettleError(
-        `L'import (${Number(amount).toFixed(2)} €) no pot superar el que queda pendent de «${describe(doc)}» (${pending.toFixed(2)} €)`,
+        `L'import (${Math.abs(Number(amount)).toFixed(2)} €) no pot superar el que queda pendent de «${describe(doc)}» (${Math.abs(pending).toFixed(2)} €)`,
       );
     }
     if (Math.abs(pending - part) <= CENT) part = pending;

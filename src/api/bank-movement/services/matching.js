@@ -155,7 +155,10 @@ function suggest(m, lines, { limit = 5 } = {}) {
 
   if (!exact.length) {
     for (const combo of sums(m, lines, amount)) {
-      out.push({ kind: 'lines', lines: combo, amount, score: 40 - combo.length, auto: false });
+      // lines the concept names (their contact, code or NIF) come before a
+      // partial payment of another document of that contact
+      const named = combo.every((l) => identified(identification(text, l)));
+      out.push({ kind: 'lines', lines: combo, amount, score: 40 - combo.length + (named ? 30 : 0), auto: false });
     }
   }
 
