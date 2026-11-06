@@ -1,0 +1,67 @@
+{
+  "kind": "collectionType",
+  "collectionName": "bank_rules",
+  "info": {
+    "singularName": "bank-rule",
+    "pluralName": "bank-rules",
+    "displayName": "Bank Rule",
+    "description": "What to do with bank movements without a document (issues/413)"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "pattern": {
+      "type": "string",
+      "required": true
+    },
+    "direction": {
+      "type": "enumeration",
+      "enum": [
+        "any",
+        "in",
+        "out"
+      ],
+      "default": "any"
+    },
+    "bank_account": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::bank-account.bank-account"
+    },
+    "action": {
+      "type": "enumeration",
+      "enum": [
+        "annotation",
+        "expense",
+        "ignore"
+      ],
+      "default": "annotation",
+      "required": true
+    },
+    "document_type": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::document-type.document-type"
+    },
+    "contact": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::contact.contact"
+    },
+    "project": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project.project"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}

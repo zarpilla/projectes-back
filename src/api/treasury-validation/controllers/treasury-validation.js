@@ -7,6 +7,8 @@
  */
 const { createCoreController } = require('@strapi/strapi').factories;
 const { adaptCtxQuery } = require('../../../services/query-adapter');
+const { settleDocument, unsettle, SettleError } = require('../services/settle');
+const { releaseMovement } = require('../../bank-movement/services/reconcile');
 const { isPaymentSubType } = require('../../../services/partial-payments');
 
 // irpf / ss / other, or one partial payment of a document, `payment-<id>`
@@ -48,7 +50,9 @@ module.exports = createCoreController('api::treasury-validation.treasury-validat
       where.sub_type = { $null: true };
     }
 
-    const existing = await strapi.db.query('api::treasury-validation.treasury-validation').findOne({ where });
+    const existing = await strapi.db
+      .query('api::treasury-validation.treasury-validation')
+      .findOne({ where, populate: { bank_movement: { select: ['id'] } } });
 
     const target = typeof validated === 'boolean' ? validated : !existing;
     if (target === !!existing) {
@@ -56,11 +60,15 @@ module.exports = createCoreController('api::treasury-validation.treasury-validat
     }
 
     if (existing) {
-      // Delete validation (unvalidate)
+      // Delete validation (unvalidate). One that marked its document paid
+      // puts it back (issues/415); one from a bank movement leaves the
+      // movement pending again when it was its last one (issues/413).
+      const reverted = await unsettle(existing);
       await strapi.db
         .query('api::treasury-validation.treasury-validation')
         .delete({ where: { id: existing.id } });
-      return { validated: false, message: 'Validation removed' };
+      if (existing.bank_movement) await releaseMovement(existing.bank_movement.id);
+      return { validated: false, reverted, message: 'Validation removed' };
     }
 
     await strapi.db.query('api::treasury-validation.treasury-validation').create({
@@ -75,6 +83,22 @@ module.exports = createCoreController('api::treasury-validation.treasury-validat
     });
 
     return { validated: true, message: 'Movement validated' };
+  },
+
+  /**
+   * POST /api/treasury-validations/settle (issues/415)
+   * Body: { entity_type, entity_id, date }
+   * Marks a pending document collected or paid on `date` and validates it
+   * (services/settle.js).
+   */
+  async settle(ctx) {
+    const { entity_type, entity_id, date } = ctx.request.body || {};
+    try {
+      ctx.body = await settleDocument({ entity_type, entity_id, date, userId: ctx.state.user && ctx.state.user.id });
+    } catch (e) {
+      if (e instanceof SettleError) return ctx.badRequest(e.message);
+      throw e;
+    }
   },
 
   /**
