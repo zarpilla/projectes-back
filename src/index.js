@@ -56,6 +56,7 @@ const { registerAppPermissions } = require('./services/register-app-permissions'
 const { registerReadCacheRoutes } = require('./services/read-cache/routes');
 const { initReadCache } = require('./services/read-cache');
 const { ensureProjectTotals } = require('./api/project/services/project-totals');
+const { rederiveAll } = require('./services/estimated-hours-pricing');
 
 module.exports = {
   /**
@@ -217,6 +218,9 @@ module.exports = {
       ['refreshTotalHoursTotalsPerDayCost', refreshTotalHoursTotals, { runOnce: true }],
       // issues/379: the tickets/docs SSO tenant stops following the editable entity name.
       ['freezeSsoTenant', freezeSsoTenant, { runOnce: true }],
+      // issues/416: a planning line kept the €/h of the day it was saved at;
+      // every line takes its person's working day covering its period.
+      ['refreshEstimatedHoursPrices', rederiveAll, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

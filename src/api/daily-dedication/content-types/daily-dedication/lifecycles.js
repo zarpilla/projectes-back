@@ -4,8 +4,10 @@
 /**
  * daily-dedication lifecycles (v5). Ported from v3 api/daily-dedication/models/daily-dedication.js.
  * Validates no overlapping dedication periods; back-propagates cost_by_hour to activities.
+ * A period change also re-prices the person's planning lines (issues/416).
  */
 const { relationId } = require('../../../../services/relation-input');
+const { rederiveUser } = require('../../../../services/estimated-hours-pricing');
 // A plain Error from a lifecycle surfaces as a bare 500 'Internal Server Error',
 // so the rule that rejected the write never reaches the user. ApplicationError
 // answers 400 with the message, which the views already display.
@@ -65,6 +67,31 @@ module.exports = {
       throw new ApplicationError('daily-dedication overlaps');
     }
     await updateActivitiesPrice(data);
+  },
+
+  async beforeDelete(event) {
+    // the person whose lines must be re-priced once this period is gone
+    const row = await strapi.db
+      .query('api::daily-dedication.daily-dedication')
+      .findOne({ where: event.params.where, populate: { users_permissions_user: { select: ['id'] } } });
+    event.params._user = relationId(row && row.users_permissions_user);
+  },
+
+  // A period's cost changed, or the period itself moved: every planning line
+  // of the person may now fall on another period's rate (issues/416).
+  async afterCreate(event) {
+    await rederiveUser(relationId(event.result && event.result.users_permissions_user));
+  },
+
+  async afterUpdate(event) {
+    await rederiveUser(
+      relationId(event.result && event.result.users_permissions_user) ??
+        relationId(event.params.data && event.params.data.users_permissions_user),
+    );
+  },
+
+  async afterDelete(event) {
+    await rederiveUser(event.params._user ?? relationId(event.result && event.result.users_permissions_user));
   },
 };
 
