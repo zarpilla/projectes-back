@@ -23,6 +23,7 @@ const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDo
 const { lineTotal, invalidLineValueMessage, assignLinePositions, sortPhasesByPosition } = require('../../../services/budget-line');
 const { touchesDates, projectDatesError } = require('../../../services/project-dates');
 const { BILLING_MODES, priceHoursLines } = require('../../../services/hours-billing');
+const { rederiveRows } = require('../../../services/estimated-hours-pricing');
 const projectSeries = require('../services/project-series');
 const projectTrash = require('../services/project-trash');
 const {
@@ -2130,6 +2131,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     return createdPhase;
   },
   updatePhases: async (id, entity, phases, deletedPhases, deletedIncomes, deletedExpenses, deletedHours) => {
+    // the estimated-hours rows this save writes, re-priced at the end (issues/416)
+    const writtenHours = [];
     for await (const income of deletedIncomes.filter((i) => i)) {
       await strapi.db.query('api::phase-income.phase-income').deleteMany({ where: { id: income } });
     }
@@ -2236,13 +2239,15 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           if (income.estimated_hours) {
             for await (const estimated_hours of income.estimated_hours) {
               if (!estimated_hours.id) {
-                await strapi.db.query('api::estimated-hour.estimated-hour').create({
+                const created = await strapi.db.query('api::estimated-hour.estimated-hour').create({
                   data: { ...estimated_hours, phase_income: income.id },
                 });
+                writtenHours.push(created.id);
               } else if (estimated_hours.dirty) {
                 await strapi.db
                   .query('api::estimated-hour.estimated-hour')
                   .update({ where: { id: estimated_hours.id }, data: estimated_hours });
+                writtenHours.push(estimated_hours.id);
               }
             }
 
@@ -2293,6 +2298,11 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         await saveLinePositions('api::phase-expense.phase-expense', movedExpenses);
       }
     }
+
+    // The lines just saved are priced with their person's working day that
+    // covers the line's period, not the rate of the day the form sent
+    // (issues/416).
+    await rederiveRows(writtenHours);
   },
   createPhasesForAllProjects: async (ctx) => {
     return; // Disabled in v3; the ETL (Phase 7) handles phase creation.
