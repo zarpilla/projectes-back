@@ -27,6 +27,7 @@ const { PROJECT_GRAPH_FOR_TOTALS_POPULATE } = require('../../services/projectFin
 const { resolveComponentRefs } = require('../../../../services/component-refs');
 const { liveChildrenWhere } = require('../../services/motherChildren');
 const projectTotals = require('../../services/project-totals');
+const projectSeries = require('../../services/project-series');
 
 module.exports = {
   async afterFindMany(event) {
@@ -181,7 +182,20 @@ module.exports = {
     }
   },
 
+  // a numbered project deleted for good gives its number back when it was the
+  // series' last one (services/project-series.js)
+  async beforeDelete(event) {
+    const where = event.params && event.params.where;
+    if (!where || (where.id === undefined && where.documentId === undefined)) return;
+    event.state.deleted = await strapi.db.query('api::project.project').findOne({
+      where,
+      select: ['id', 'serie_number', 'trashed'],
+      populate: { project_serie: { select: ['id'] } },
+    });
+  },
+
   async afterDelete(event) {
+    await projectSeries.releaseDeletedProject(event.state && event.state.deleted);
     const result = event.result;
     if (result.mother) {
       const motherId = relationId(result.mother);

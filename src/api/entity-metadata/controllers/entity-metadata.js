@@ -131,6 +131,14 @@ const ENTITY_FIELD_TRANSLATIONS = {
   pickup: { pickup: 'Recollida a la finca', city: 'Població' },
   'route-pickup-notice': { pickup: 'Recollida (magatzem)', message: 'Avís' },
   'vat-type': { value: '% IVA' },
+  'project-serie': {
+    name: 'Codi',
+    prefix: 'Caràcter inicial',
+    suffix: 'Caràcter final',
+    leading_zeros: "Zeros a l'esquerra",
+    last_number: 'Últim número',
+    active: 'Activa',
+  },
   product: { base: 'Preu base', vat: '% IVA' },
   // Models 303 i 390: lines of these types go to boxes 30/31 (or 38/39)
   'expense-type': { capital_goods: "Béns d'inversió" },
@@ -192,6 +200,15 @@ const FIELD_HELP = {
   'document-type': {
     type: "Si és un tipus de factura d'ingrés o de despesa.",
   },
+  // «Sèries de projecte»: «[2026-001] Nom del projecte»
+  'project-serie': {
+    name: 'P. ex. 2026. Els projectes de la sèrie es diuen «2026-001 Nom», «2026-002 Nom»…',
+    prefix: 'Opcional, p. ex. «[» o «(»: «[2026-001] Nom».',
+    suffix: 'Opcional, p. ex. «]» o «)».',
+    leading_zeros: 'Xifres del número: 3 → 001.',
+    last_number: "El número de l'últim projecte. El següent en tindrà un més; es pot canviar per continuar una numeració. Si s'esborra l'últim projecte, el seu número es torna a fer servir.",
+    active: 'Desmarcada: no surt per triar en els projectes nous.',
+  },
 };
 
 // Fields left out of the admin screens. Route rates: the tiers of the old rate
@@ -239,6 +256,7 @@ const FIELD_ORDER = {
   pickup: ['name', 'alias', 'city', 'pickup', 'message'],
   'route-pickup-notice': ['name', 'routes', 'pickup', 'message'],
   'activity-type': ['name', 'global', 'project'],
+  'project-serie': ['name', 'prefix', 'suffix', 'leading_zeros', 'last_number', 'active'],
   'route-rate': ['name', 'routes', 'pickup', 'delivery_type', 'less10', 'more10', 'from10to20',
     'from20to30', 'from30to40', 'from40to50', 'from50to60', 'additional60', 'pickup_point'],
 };
@@ -265,6 +283,7 @@ const ADMIN_ENTITIES = {
   'project-type': 'project-types',
   region: 'regions',
   'project-scope': 'project-scopes',
+  'project-serie': 'project-series',
   sector: 'sectors',
   serie: 'series',
   'social-entity': 'social-entities',
@@ -304,6 +323,7 @@ const DISPLAY_NAMES = {
   'project-type': { displayName: 'Tipus de projecte', displayNameSingular: 'Tipus de projecte' },
   region: { displayName: 'Regions', displayNameSingular: 'Regió' },
   'project-scope': { displayName: 'Àmbits de projecte', displayNameSingular: 'Àmbit de projecte' },
+  'project-serie': { displayName: 'Sèries de projecte', displayNameSingular: 'Sèrie de projecte' },
   sector: { displayName: 'Sectors', displayNameSingular: 'Sector' },
   serie: { displayName: 'Sèries', displayNameSingular: 'Sèrie' },
   'social-entity': { displayName: 'Entitats socials', displayNameSingular: 'Entitat social' },

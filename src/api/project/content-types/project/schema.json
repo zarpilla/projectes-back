@@ -16,6 +16,17 @@
       "required": true,
       "unique": true
     },
+    "title": {
+      "type": "string"
+    },
+    "project_serie": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::project-serie.project-serie"
+    },
+    "serie_number": {
+      "type": "integer"
+    },
     "description": {
       "type": "richtext"
     },

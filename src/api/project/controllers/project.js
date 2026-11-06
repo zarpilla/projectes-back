@@ -23,6 +23,7 @@ const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDo
 const { lineTotal, invalidLineValueMessage, assignLinePositions, sortPhasesByPosition } = require('../../../services/budget-line');
 const { touchesDates, projectDatesError } = require('../../../services/project-dates');
 const { BILLING_MODES, priceHoursLines } = require('../../../services/hours-billing');
+const projectSeries = require('../services/project-series');
 const {
   buildProjectRows,
   aggregateRowsByYear,
@@ -1699,9 +1700,14 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       data.billing_mode = (me && me.options && me.options.default_billing_mode) === 'hours' ? 'hours' : 'project';
       if (ctx.request.body && ctx.request.body.data) ctx.request.body.data = data;
     }
-    if (!phaseSets.length) return super.create(ctx);
-    // the project and its phases, or nothing
+    const numbered = projectSeries.requestedSerie(data);
+    if (!phaseSets.length && !numbered) {
+      delete data.serie_number;
+      return super.create(ctx);
+    }
+    // the project, its number and its phases, or nothing
     return strapi.db.transaction(async () => {
+      await projectSeries.numberNewProject(data);
       const created = await super.create(ctx);
       const projectId = created && created.data && created.data.id;
       if (projectId) {
@@ -1757,6 +1763,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     // edits roll back too instead of surviving a 500. db.query and the
     // document service both join the ambient transaction.
     return strapi.db.transaction(async () => {
+      // the code of a numbered project, from its series (services/project-series.js)
+      await projectSeries.numberUpdatedProject(id, data);
       let phasesEdited = false;
       for (const section of sections) {
         const info = data[section.info];
@@ -1836,6 +1844,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
         'mother',
         'region',
         'project_likelihood',
+        'project_serie',
         'documents',
         'project_type',
         'strategies',

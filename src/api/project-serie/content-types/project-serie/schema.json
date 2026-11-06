@@ -1,0 +1,39 @@
+{
+  "kind": "collectionType",
+  "collectionName": "project_series",
+  "info": {
+    "singularName": "project-serie",
+    "pluralName": "project-series",
+    "displayName": "ProjectSeries",
+    "description": "Series that number the projects: [2026-001] Name"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "prefix": {
+      "type": "string"
+    },
+    "suffix": {
+      "type": "string"
+    },
+    "leading_zeros": {
+      "type": "integer",
+      "default": 3
+    },
+    "last_number": {
+      "type": "integer",
+      "default": 0
+    },
+    "active": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}

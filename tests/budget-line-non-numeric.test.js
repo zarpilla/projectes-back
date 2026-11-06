@@ -47,12 +47,19 @@ describe('PUT /projects/:id with a non-numeric line (issues/224)', () => {
       contentType: () => ({ attributes: {} }),
       db: { transaction },
     };
+    // the series' numbering reads the stored project: not what these tests are about
+    jest.doMock('../src/api/project/services/project-series', () => ({
+      requestedSerie: () => undefined,
+      numberNewProject: async () => {},
+      numberUpdatedProject: async () => {},
+    }));
     controller = require('../src/api/project/controllers/project');
   });
 
   afterEach(() => {
     delete global.strapi;
     jest.dontMock('@strapi/strapi');
+    jest.dontMock('../src/api/project/services/project-series');
   });
 
   const ctx = (data) => ({

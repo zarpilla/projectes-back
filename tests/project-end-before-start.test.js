@@ -46,12 +46,19 @@ describe('POST / PUT /projects with the end before the start (issues/212)', () =
       contentType: () => ({ attributes: {} }),
       db: { transaction: async (fn) => fn(), query: () => ({ findOne }) },
     };
+    // the series' numbering reads the stored project: not what these tests are about
+    jest.doMock('../src/api/project/services/project-series', () => ({
+      requestedSerie: () => undefined,
+      numberNewProject: async () => {},
+      numberUpdatedProject: async () => {},
+    }));
     controller = require('../src/api/project/controllers/project');
   });
 
   afterEach(() => {
     delete global.strapi;
     jest.dontMock('@strapi/strapi');
+    jest.dontMock('../src/api/project/services/project-series');
   });
 
   const ctx = (data) => ({

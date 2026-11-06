@@ -306,6 +306,8 @@ async function importSeedPermissions() {
     'project-scope': ['create', 'find', 'findOne', 'update', 'delete'],
     sector: ['create', 'find', 'findOne', 'update', 'delete'],
     serie: ['create', 'find', 'findOne', 'update', 'delete'],
+    // «Sèries de projecte»: the project form reads them, the admin edits them
+    'project-serie': ['create', 'find', 'findOne', 'update', 'delete'],
     'social-entity': ['create', 'find', 'findOne', 'update', 'delete'],
     strategy: ['create', 'find', 'findOne', 'update', 'delete'],
     year: ['create', 'find', 'findOne', 'update', 'delete'],
