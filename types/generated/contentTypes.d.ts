@@ -475,6 +475,118 @@ export interface ApiBankAccountBankAccount extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiBankImportBankImport extends Struct.CollectionTypeSchema {
+  collectionName: 'bank_imports';
+  info: {
+    description: 'An uploaded Norma 43 statement (issues/413)';
+    displayName: 'Bank Import';
+    pluralName: 'bank-imports';
+    singularName: 'bank-import';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    bank_account: Schema.Attribute.Relation<'manyToOne', 'api::bank-account.bank-account'>;
+    closing_balance: Schema.Attribute.Decimal;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    date_from: Schema.Attribute.Date;
+    date_to: Schema.Attribute.Date;
+    file_name: Schema.Attribute.String;
+    imported_by: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.user'>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::bank-import.bank-import'> &
+      Schema.Attribute.Private;
+    movements: Schema.Attribute.Relation<'oneToMany', 'api::bank-movement.bank-movement'>;
+    movements_auto: Schema.Attribute.Integer;
+    movements_duplicate: Schema.Attribute.Integer;
+    movements_new: Schema.Attribute.Integer;
+    opening_balance: Schema.Attribute.Decimal;
+    publishedAt: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
+export interface ApiBankMovementBankMovement extends Struct.CollectionTypeSchema {
+  collectionName: 'bank_movements';
+  info: {
+    description: 'A movement of a bank statement, reconciled with Tresoreria (issues/413)';
+    displayName: 'Bank Movement';
+    pluralName: 'bank-movements';
+    singularName: 'bank-movement';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    amount: Schema.Attribute.Decimal & Schema.Attribute.Required;
+    auto: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    bank_account: Schema.Attribute.Relation<'manyToOne', 'api::bank-account.bank-account'>;
+    bank_import: Schema.Attribute.Relation<'manyToOne', 'api::bank-import.bank-import'>;
+    common_concept: Schema.Attribute.String;
+    concept: Schema.Attribute.Text;
+    created_records: Schema.Attribute.JSON;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    date: Schema.Attribute.Date & Schema.Attribute.Required;
+    document: Schema.Attribute.String;
+    hash: Schema.Attribute.String & Schema.Attribute.Unique;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::bank-movement.bank-movement'> &
+      Schema.Attribute.Private;
+    match_kind: Schema.Attribute.Enumeration<['lines', 'annotation', 'expense', 'transfer']>;
+    matched_at: Schema.Attribute.DateTime;
+    matched_by: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.user'>;
+    publishedAt: Schema.Attribute.DateTime;
+    reference: Schema.Attribute.String;
+    rule: Schema.Attribute.Relation<'manyToOne', 'api::bank-rule.bank-rule'>;
+    status: Schema.Attribute.Enumeration<['pending', 'matched', 'ignored']> &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<'pending'>;
+    transfer_movement: Schema.Attribute.Relation<'manyToOne', 'api::bank-movement.bank-movement'>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    validations: Schema.Attribute.Relation<'oneToMany', 'api::treasury-validation.treasury-validation'>;
+    value_date: Schema.Attribute.Date;
+  };
+}
+
+export interface ApiBankRuleBankRule extends Struct.CollectionTypeSchema {
+  collectionName: 'bank_rules';
+  info: {
+    description: 'What to do with bank movements without a document (issues/413)';
+    displayName: 'Bank Rule';
+    pluralName: 'bank-rules';
+    singularName: 'bank-rule';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    action: Schema.Attribute.Enumeration<['annotation', 'expense', 'ignore']> &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<'annotation'>;
+    active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    bank_account: Schema.Attribute.Relation<'manyToOne', 'api::bank-account.bank-account'>;
+    contact: Schema.Attribute.Relation<'manyToOne', 'api::contact.contact'>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    direction: Schema.Attribute.Enumeration<['any', 'in', 'out']> & Schema.Attribute.DefaultTo<'any'>;
+    document_type: Schema.Attribute.Relation<'manyToOne', 'api::document-type.document-type'>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::bank-rule.bank-rule'> &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String & Schema.Attribute.Required;
+    pattern: Schema.Attribute.String & Schema.Attribute.Required;
+    project: Schema.Attribute.Relation<'manyToOne', 'api::project.project'>;
+    publishedAt: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
 export interface ApiCityRouteCityRoute extends Struct.CollectionTypeSchema {
   collectionName: 'city_routes';
   info: {
@@ -2410,7 +2522,9 @@ export interface ApiReceivedInvoiceReceivedInvoice extends Struct.CollectionType
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     vat_paid_date: Schema.Attribute.DateTime;
-    vat_special: Schema.Attribute.Enumeration<['none', 'reagp', 'foreign_vat', 'wrong_vat']>;
+    vat_special: Schema.Attribute.Enumeration<
+      ['none', 'reagp', 'foreign_vat', 'wrong_vat', 'not_deductible']
+    >;
   };
 }
 
@@ -2924,6 +3038,7 @@ export interface ApiTreasuryValidationTreasuryValidation extends Struct.Collecti
     draftAndPublish: false;
   };
   attributes: {
+    bank_movement: Schema.Attribute.Relation<'manyToOne', 'api::bank-movement.bank-movement'>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     entity_id: Schema.Attribute.Integer & Schema.Attribute.Required;
@@ -2943,6 +3058,7 @@ export interface ApiTreasuryValidationTreasuryValidation extends Struct.Collecti
       Schema.Attribute.Private;
     notes: Schema.Attribute.Text;
     publishedAt: Schema.Attribute.DateTime;
+    settlement: Schema.Attribute.JSON;
     sub_type: Schema.Attribute.String;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
@@ -3648,6 +3764,9 @@ declare module '@strapi/strapi' {
       'api::activity-type.activity-type': ApiActivityTypeActivityType;
       'api::activity.activity': ApiActivityActivity;
       'api::bank-account.bank-account': ApiBankAccountBankAccount;
+      'api::bank-import.bank-import': ApiBankImportBankImport;
+      'api::bank-movement.bank-movement': ApiBankMovementBankMovement;
+      'api::bank-rule.bank-rule': ApiBankRuleBankRule;
       'api::city-route.city-route': ApiCityRouteCityRoute;
       'api::city.city': ApiCityCity;
       'api::config.config': ApiConfigConfig;

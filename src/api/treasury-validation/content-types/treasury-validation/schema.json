@@ -38,6 +38,15 @@
     },
     "notes": {
       "type": "text"
+    },
+    "settlement": {
+      "type": "json"
+    },
+    "bank_movement": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::bank-movement.bank-movement",
+      "inversedBy": "validations"
     }
   }
 }

@@ -110,4 +110,6 @@ module.exports = {
   storedPayments,
   sumPayments,
   isPaymentSubType,
+  newPaymentId: newId,
+  round2,
 };

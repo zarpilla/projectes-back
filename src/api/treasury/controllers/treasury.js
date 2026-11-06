@@ -91,10 +91,17 @@ const getValidationKey = (entityType, entityId, subType = null) => {
 // can change while the document is «Modificable», and which is not validated
 // (it hasn't moved through the bank yet). A document without partial payments
 // is the one movement `row`.
+//
+// What is pending carries `settle` (the document's kind and id): its
+// validation check marks the document collected or paid (issues/415). A draft
+// invoice isn't an invoice yet and has none. The contact's NIF is there for
+// «Conciliació», which looks for it in the bank's concept (issues/413).
 const pushDocumentMovements = (treasury, row, doc, { kind, sign, labels, pendingDate, validationMap }) => {
+  const settle = doc.state === 'draft' ? null : { kind, id: doc.id };
+  row = { ...row, contact_nif: (doc.contact && doc.contact.nif) || null };
   const split = splitPayments(doc);
   if (!split) {
-    treasury.push(row);
+    treasury.push(row.paid ? row : { ...row, settle });
     return;
   }
   const total = Number(doc.total) || 0;
@@ -127,6 +134,7 @@ const pushDocumentMovements = (treasury, row, doc, { kind, sign, labels, pending
       signed_vat: vatShare(split.pending),
       validation_key: null,
       is_validated: false,
+      settle,
     });
   }
 };

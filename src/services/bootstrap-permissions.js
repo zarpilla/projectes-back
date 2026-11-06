@@ -237,7 +237,7 @@ async function importSeedPermissions() {
     'task-template': ['create', 'find', 'findOne', 'update', 'delete'],
     'task-state': ['find', 'findOne'],
     treasury: ['create', 'find', 'forecast', 'invoicingForecast', 'irpf', 'vatModels', 'vatModelsClassify', 'vatModelsFile', 'vatModelsUnfile', 'vatModelsReceipt', 'vatModelsFinalProrrata', 'vatModelsAeatFile', 'updateMovementDates', 'findOne', 'update', 'delete'],
-    'treasury-validation': ['toggle', 'find', 'findByKey', 'delete'],
+    'treasury-validation': ['toggle', 'settle', 'find', 'findByKey', 'delete'],
     'kanban-view': ['create', 'find', 'findOne', 'update', 'delete'],
     justifications: ['create', 'find', 'findOne', 'update', 'delete'],
     'workday-log': ['create', 'find', 'findOne', 'update', 'delete'],
@@ -290,6 +290,10 @@ async function importSeedPermissions() {
     'face-queue': ['find', 'findOne', 'create', 'update', 'delete', 'checkStatus', 'verifySetup'],
     'pivot-table-view': ['find', 'findOne', 'create', 'update', 'delete'],
     'bank-accounts': ['find', 'findOne', 'create', 'update', 'delete'],
+    // «Tresoreria › Conciliació» (issues/413)
+    'bank-movement': ['find', 'findOne', 'import', 'reconciliation', 'auto', 'candidates', 'accept', 'createRecord', 'transfer', 'ignore', 'undo'],
+    'bank-import': ['find', 'findOne'],
+    'bank-rule': ['find', 'findOne', 'create', 'update', 'delete'],
     incidences: ['create', 'find', 'findOne', 'update', 'delete', 'infoAll'],
     'vat-type': ['find', 'findOne', 'create', 'update', 'delete'],
     // «Logos» (Administració): the supporters shown on the login page and the menu

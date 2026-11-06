@@ -19,6 +19,11 @@ module.exports = {
       handler: 'treasury-validation.toggle',
     },
     {
+      method: 'POST',
+      path: '/treasury-validations/settle',
+      handler: 'treasury-validation.settle',
+    },
+    {
       method: 'GET',
       path: '/treasury-validations/:entity_type/:entity_id/:sub_type?',
       handler: 'treasury-validation.findByKey',

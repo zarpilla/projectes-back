@@ -1,0 +1,56 @@
+{
+  "kind": "collectionType",
+  "collectionName": "bank_imports",
+  "info": {
+    "singularName": "bank-import",
+    "pluralName": "bank-imports",
+    "displayName": "Bank Import",
+    "description": "An uploaded Norma 43 statement (issues/413)"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "file_name": {
+      "type": "string"
+    },
+    "bank_account": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::bank-account.bank-account"
+    },
+    "date_from": {
+      "type": "date"
+    },
+    "date_to": {
+      "type": "date"
+    },
+    "opening_balance": {
+      "type": "decimal"
+    },
+    "closing_balance": {
+      "type": "decimal"
+    },
+    "movements_new": {
+      "type": "integer"
+    },
+    "movements_duplicate": {
+      "type": "integer"
+    },
+    "movements_auto": {
+      "type": "integer"
+    },
+    "imported_by": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "movements": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::bank-movement.bank-movement",
+      "mappedBy": "bank_import"
+    }
+  }
+}
