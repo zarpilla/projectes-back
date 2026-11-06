@@ -50,6 +50,30 @@ const stripDirty = (value, depth = 0) => {
   return value;
 };
 
+/** The phase payloads the form sends, with their v3 control fields. */
+const PHASE_SECTIONS = [
+  {
+    flag: '_project_phases_updated',
+    phases: 'project_phases',
+    info: 'project_phases_info',
+    entity: 'project-phases',
+  },
+  {
+    flag: '_project_original_phases_updated',
+    phases: 'project_original_phases',
+    info: 'project_original_phases_info',
+    entity: 'project-original-phases',
+  },
+];
+
+// What a row copied from another one (a duplicated project's lines) must not
+// keep: its identity, and the bookkeeping the client or Strapi put on it.
+const ROW_IDENTITY_KEYS = [
+  'id', 'documentId', 'createdAt', 'updatedAt', 'publishedAt', 'createdBy', 'updatedBy', 'locale',
+  'created_at', 'updated_at', 'created_by', 'updated_by', 'published_at', 'dirty', '_uuid',
+];
+const freshRow = (row) => _.omit(row, ROW_IDENTITY_KEYS);
+
 const doProjectInfoCalculations = async (data, id) => {
   if (!id || !data) {
     return;
@@ -1648,8 +1672,20 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
    */
   async create(ctx) {
     const data = (ctx.request.body && ctx.request.body.data) || {};
-    for (const key of ['project_phases', 'project_original_phases']) {
-      stripDirty(data[key]);
+    // «Duplicar projecte» posts the whole form, with the control fields of the
+    // update (`project_phases_info`, `_project_phases_updated`...) that v5's
+    // input validation rejects: «Invalid key project_phases_info» (2026-11-06).
+    // And its phases still carry the source's documentIds, which the core
+    // create would take as links to the SOURCE's rows. They are taken out of
+    // the request and created here, as new rows, once the project exists.
+    const phaseSets = [];
+    for (const { flag, phases, info, entity } of PHASE_SECTIONS) {
+      if (Array.isArray(data[phases]) && data[phases].length) {
+        phaseSets.push({ entity, phases: stripDirty(data[phases]) });
+      }
+      delete data[phases];
+      delete data[flag];
+      delete data[info];
     }
     // End before start is refused (issues/212)
     const datesError = projectDatesError(data);
@@ -1663,7 +1699,22 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       data.billing_mode = (me && me.options && me.options.default_billing_mode) === 'hours' ? 'hours' : 'project';
       if (ctx.request.body && ctx.request.body.data) ctx.request.body.data = data;
     }
-    return super.create(ctx);
+    if (!phaseSets.length) return super.create(ctx);
+    // the project and its phases, or nothing
+    return strapi.db.transaction(async () => {
+      const created = await super.create(ctx);
+      const projectId = created && created.data && created.data.id;
+      if (projectId) {
+        for (const { entity, phases } of phaseSets) {
+          for (const [index, phase] of phases.entries()) {
+            await strapi
+              .controller('api::project.project')
+              .createPhaseWithNested(projectId, entity, { ...phase, position: Number.isInteger(phase.position) ? phase.position : index });
+          }
+        }
+      }
+      return created;
+    });
   },
 
   /**
@@ -1680,20 +1731,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     const data = (ctx.request.body && ctx.request.body.data) || {};
     const id = numericId(ctx);
 
-    const sections = [
-      {
-        flag: '_project_phases_updated',
-        phases: 'project_phases',
-        info: 'project_phases_info',
-        entity: 'project-phases',
-      },
-      {
-        flag: '_project_original_phases_updated',
-        phases: 'project_original_phases',
-        info: 'project_original_phases_info',
-        entity: 'project-original-phases',
-      },
-    ];
+    const sections = PHASE_SECTIONS;
 
     // A non-numeric quantity / price is the caller's error, not a 500 (issues/224)
     for (const section of sections) {
@@ -2004,9 +2042,10 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     const { incomes, expenses, ...phaseData } = phase;
 
     // Create the phase
+    const position = Number.isInteger(phaseData.position) ? phaseData.position : undefined;
     const createdPhase = await strapi.db
       .query(PHASE_ENTITY_UIDS[entity])
-      .create({ data: { project: projectId, name: phaseData.name } });
+      .create({ data: { project: projectId, name: phaseData.name, ...(position === undefined ? {} : { position }) } });
 
     console.log('  - Phase created with id:', createdPhase.id);
 
@@ -2014,7 +2053,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     if (incomes && incomes.length > 0) {
       console.log('  - Creating', incomes.length, 'incomes');
       for (const income of incomes) {
-        const { estimated_hours, ...incomeData } = income;
+        // a duplicated project's line: a new row, not the source's (2026-11-06)
+        const { estimated_hours, ...incomeData } = freshRow(income);
 
         // Calculate total_amount
         incomeData.total_amount = lineTotal(incomeData);
@@ -2040,7 +2080,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
           console.log('    - Creating', estimated_hours.length, 'estimated_hours for income');
           for (const hour of estimated_hours) {
             await strapi.db.query('api::estimated-hour.estimated-hour').create({
-              data: { ...hour, phase_income: createdIncome.id },
+              data: { ...freshRow(hour), phase_income: createdIncome.id },
             });
           }
         }
@@ -2050,7 +2090,8 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
     // Create expenses
     if (expenses && expenses.length > 0) {
       console.log('  - Creating', expenses.length, 'expenses');
-      for (const expense of expenses) {
+      for (const source of expenses) {
+        const expense = freshRow(source);
         // Calculate total_amount
         expense.total_amount = lineTotal(expense);
 
