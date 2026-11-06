@@ -57,4 +57,19 @@ function filterProjects(projects, { states = null, types = null, likelihoods = n
   );
 }
 
-module.exports = { FILTER_RELATIONS, filterProjects, parseIdList, relationId };
+// a populated relation as { id, name }, or null
+const namedRef = (r) => (r && r.id ? { id: r.id, name: r.name } : null);
+
+// A project as the treasury screens list it (issues/309). Type and scope let
+// Tresoreria filter by several projects, types or scopes in the browser
+// (issues/416); the forecast already populates both.
+const forecastProjectOption = (p) => ({
+  id: p.id,
+  name: p.name,
+  project_state: namedRef(p.project_state),
+  project_type: namedRef(p.project_type),
+  project_scope: namedRef(p.project_scope),
+  mother: namedRef(p.mother),
+});
+
+module.exports = { FILTER_RELATIONS, filterProjects, parseIdList, relationId, namedRef, forecastProjectOption };

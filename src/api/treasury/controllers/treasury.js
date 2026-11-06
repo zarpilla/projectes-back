@@ -36,7 +36,7 @@ const { getMe } = require('../../../services/me-settings');
 const { getReadCache } = require('../../../services/read-cache');
 const { queryTables } = require('../../../services/query-tables');
 const { COLUMNS: PROJECT_TOTALS_COLUMNS } = require('../../project/services/project-totals');
-const { FILTER_RELATIONS, filterProjects, parseIdList } = require('../services/project-filter');
+const { FILTER_RELATIONS, filterProjects, parseIdList, namedRef, forecastProjectOption } = require('../services/project-filter');
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { groupPayrollRows } = require('../services/payroll-groups');
 const { irpfSummary } = require('../services/irpf-summary');
@@ -143,16 +143,6 @@ const pushDocumentMovements = (treasury, row, doc, { kind, sign, labels, pending
 const { walkBalances, sortRows, round2 } = require('../services/balances');
 const { treasuryDisplayDate } = require('../services/display-date');
 
-// a populated relation as { id, name }, or null
-const namedRef = (r) => (r && r.id ? { id: r.id, name: r.name } : null);
-
-// A project as the treasury screens list it (issues/309).
-const forecastProjectOption = (p) => ({
-  id: p.id,
-  name: p.name,
-  project_state: p.project_state ? { id: p.project_state.id, name: p.project_state.name } : null,
-  mother: p.mother ? { id: p.mother.id, name: p.mother.name } : null,
-});
 
 // What the forecast reads, kept in memory without any filter: the query-string
 // filters (states, types, likelihoods, account, year, periodification) are

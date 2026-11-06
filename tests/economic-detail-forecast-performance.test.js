@@ -252,7 +252,8 @@ describe('forecast projects', () => {
     const body = await actions.forecast(ctx);
 
     expect(body.projects).toEqual([
-      { id: 5, name: 'Fill', project_state: { id: 1, name: 'Aprovat' }, mother: { id: 4, name: 'Mare' } },
+      // type and scope for Tresoreria's multi filter (issues/416)
+      { id: 5, name: 'Fill', project_state: { id: 1, name: 'Aprovat' }, project_type: null, project_scope: null, mother: { id: 4, name: 'Mare' } },
     ]);
   });
 });
