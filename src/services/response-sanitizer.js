@@ -84,6 +84,7 @@ const PROJECT_FINANCES = [
   'structural_expenses_pct',
   'total_estimated_hours_price',
   'total_real_hours_price',
+  'total_real_hours_billed',
   'grantable_amount',
   'grantable_amount_total',
   'grantable_cofinancing_pct',
@@ -207,7 +208,8 @@ function rulesFor({ member = false, selfId = null, permissions = [], ownOrders =
     },
     'api::phase-income.phase-income': { drop: LINE_AMOUNTS, nestedOnly: true },
     'api::phase-expense.phase-expense': { drop: LINE_AMOUNTS, nestedOnly: true },
-    'api::estimated-hour.estimated-hour': { drop: LINE_AMOUNTS, nestedOnly: true },
+    // issues/421: `price` is the billing price/hour of the row
+    'api::estimated-hour.estimated-hour': { drop: [...LINE_AMOUNTS, 'price'], nestedOnly: true },
     'budget-line.budget-line': { drop: LINE_AMOUNTS, nestedOnly: true },
     'budget-line.simple-income': { drop: LINE_AMOUNTS, nestedOnly: true },
     'budget-line.simple-expense': { drop: LINE_AMOUNTS, nestedOnly: true },

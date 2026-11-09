@@ -14,6 +14,8 @@ const {
   hoursOfLine,
   hoursPricing,
   priceHoursLines,
+  rowPrice,
+  billedHours,
 } = require('../src/services/hours-billing');
 
 describe('hours billing pricing (issues/371)', () => {
@@ -60,6 +62,53 @@ describe('hours billing pricing (issues/371)', () => {
   it('leaves lines without estimated hours as typed', () => {
     expect(hoursPricing({ quantity: 1, amount: 300, estimated_hours: [] }, 'hours', 45)).toBe(null);
     expect(hoursPricing({ quantity: 1, amount: 300 }, 'hours', 45)).toBe(null);
+  });
+
+  // issues/421: a planning row can carry its own price/hour; empty = the project's
+  describe('own price per planning row (issues/421)', () => {
+    it('an empty price follows the project, a set one wins (0 too)', () => {
+      expect(rowPrice({ price: null }, 40)).toBe(40);
+      expect(rowPrice({ price: '' }, 40)).toBe(40);
+      expect(rowPrice({}, 40)).toBe(40);
+      expect(rowPrice({ price: '55.5' }, 40)).toBe(55.5);
+      expect(rowPrice({ price: 0 }, 40)).toBe(0);
+    });
+
+    it('prices the line as the sum of hours × each row price', () => {
+      const line = { quantity: 1, amount: 0, estimated_hours: [{ quantity: 10, price: 60 }, { quantity: 10, price: null }] };
+      expect(hoursPricing(line, 'hours', 40)).toEqual({ quantity: 20, amount: 50, total_amount: 1000 });
+    });
+
+    it('keeps the amount at 4 decimals', () => {
+      const line = { estimated_hours: [{ quantity: 1, price: 10 }, { quantity: 2, price: 20 }] };
+      // (10 + 40) / 3 = 16.6667 a hour
+      expect(hoursPricing(line, 'hours', 0)).toEqual({ quantity: 3, amount: 16.6667, total_amount: 50 });
+    });
+
+    it('a line with no hours yet takes the project price', () => {
+      const line = { estimated_hours: [{ quantity: 0, price: 70 }] };
+      expect(hoursPricing(line, 'hours', 40)).toEqual({ quantity: 0, amount: 40, total_amount: 0 });
+    });
+
+    it('priceHoursLines reads the row prices', async () => {
+      const update = jest.fn();
+      let asked;
+      global.strapi = {
+        db: {
+          query: () => ({
+            findMany: async (q) => {
+              asked = q;
+              return [{ id: 4, quantity: 10, amount: 40, total_amount: 400, estimated_hours: [{ quantity: 10, price: 45 }] }];
+            },
+            update,
+          }),
+        },
+      };
+      expect(await priceHoursLines(7, { mode: 'hours', pricePerHour: 40 })).toBe(1);
+      expect(asked.populate.estimated_hours.select).toContain('price');
+      expect(update).toHaveBeenCalledWith({ where: { id: 4 }, data: { quantity: 10, amount: 45, total_amount: 450 } });
+      delete global.strapi;
+    });
   });
 
   describe('priceHoursLines', () => {
@@ -167,5 +216,104 @@ describe('project controller and billing mode (issues/371)', () => {
   it('a save that touches neither phases nor billing does not query the lines', async () => {
     await controller.update(ctx({ name: 'P-1' }));
     expect(incomeUpdate).not.toHaveBeenCalled();
+  });
+});
+
+// issues/421: the billing price of a planning row is a finance figure, like its cost
+describe('planning row price for a user without full access (issues/421)', () => {
+  it('is dropped with the amounts', () => {
+    const { rulesFor } = require('../src/services/response-sanitizer');
+    const rule = rulesFor({ selfId: 3, permissions: ['projects'] })['api::estimated-hour.estimated-hour'];
+    expect(rule.drop).toEqual(expect.arrayContaining(['amount', 'total_amount', 'price']));
+  });
+});
+
+// issues/421 «Per facturar»: the hours worked, priced at the planning line of
+// the same person covering the day, else at the project price
+describe('billedHours (issues/421)', () => {
+  const phases = [
+    {
+      incomes: [
+        {
+          estimated_hours: [
+            { users_permissions_user: { id: 1 }, from: '2026-01-01', to: '2026-06-30', price: 60 },
+            { users_permissions_user: { id: 1 }, from: '2026-07-01', to: '2026-12-31', price: null },
+            { users_permissions_user: 2, from: '2026-01-01', to: '2026-12-31', price: '70' },
+          ],
+        },
+      ],
+    },
+  ];
+  const yearOf = (day) => (day ? day.slice(0, 4) : '9999');
+
+  it('prices each activity at the covering row of its person, else the project price', () => {
+    const activities = [
+      { date: '2026-03-02', hours: 10, users_permissions_user: { id: 1 } }, // 60
+      { date: '2026-08-03', hours: 10, users_permissions_user: { id: 1 } }, // row without price → 40
+      { date: '2026-05-04', hours: 2, users_permissions_user: { id: 2 } }, // 70
+      { date: '2026-05-04', hours: 5, users_permissions_user: { id: 3 } }, // no row → 40
+      { date: '2027-01-04', hours: 1, users_permissions_user: { id: 1 } }, // outside → 40
+    ];
+    expect(billedHours({ activities, phases, pricePerHour: 40, yearOf })).toEqual({
+      total: 600 + 400 + 140 + 200 + 40,
+      byYear: { 2026: 1340, 2027: 40 },
+    });
+  });
+
+  it('undated or person-less activities take the project price; no hours bill nothing', () => {
+    const activities = [
+      { date: null, hours: 2, users_permissions_user: { id: 1 } },
+      { date: new Date('2026-03-02T00:00:00Z'), hours: 1, users_permissions_user: null },
+      { date: '2026-03-02', hours: 0, users_permissions_user: { id: 1 } },
+    ];
+    expect(billedHours({ activities, phases, pricePerHour: 40, yearOf })).toEqual({
+      total: 120,
+      byYear: { 9999: 80, 2026: 40 },
+    });
+  });
+});
+
+describe('project totals carry the billed hours «Per hores» (issues/421)', () => {
+  let controller;
+  const activities = [
+    { id: 1, date: '2026-03-02', hours: 10, cost_by_hour: 20, users_permissions_user: { id: 1 } },
+    { id: 2, date: '2026-03-03', hours: 5, cost_by_hour: 20, users_permissions_user: { id: 2 } },
+  ];
+  beforeEach(() => {
+    jest.resetModules();
+    jest.doMock('@strapi/strapi', () => ({
+      factories: { createCoreController: (_uid, build) => build({ strapi: global.strapi }) },
+    }));
+    jest.doMock('../src/services/calendars', () => ({ getDailyDedications: async () => [], getFestives: async () => [] }));
+    jest.doMock('../src/services/me-settings', () => ({ getMe: async () => ({ options: {} }) }));
+    global.strapi = {
+      db: { query: (uid) => ({ findMany: async () => (uid === 'api::activity.activity' ? activities : []), findOne: async () => null, count: async () => 0 }) },
+    };
+    controller = require('../src/api/project/controllers/project');
+  });
+  afterEach(() => {
+    delete global.strapi;
+    jest.dontMock('@strapi/strapi');
+    jest.dontMock('../src/services/calendars');
+    jest.dontMock('../src/services/me-settings');
+  });
+
+  const project = (mode) => ({
+    id: 5,
+    billing_mode: mode,
+    invoice_hours_price: 40,
+    project_phases: [{ id: 1, incomes: [{ id: 3, estimated_hours: [{ users_permissions_user: { id: 1 }, from: '2026-01-01', to: '2026-12-31', price: 60 }] }], expenses: [] }],
+    project_original_phases: [],
+  });
+
+  it('adds total_real_hours_billed to the totals and to each year', async () => {
+    const data = await controller.calculateProject(project('hours'), 5);
+    expect(data.total_real_hours_billed).toBe(10 * 60 + 5 * 40);
+    expect(data.allByYear.find((y) => y.year === '2026').total_real_hours_billed).toBe(800);
+  });
+
+  it('a project billed per project has none', async () => {
+    const data = await controller.calculateProject(project('project'), 5);
+    expect(data.total_real_hours_billed).toBe(undefined);
   });
 });

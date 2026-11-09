@@ -22,6 +22,9 @@
     "amount": {
       "type": "decimal"
     },
+    "price": {
+      "type": "decimal"
+    },
     "total_amount": {
       "type": "decimal"
     },
