@@ -57,6 +57,7 @@ const { registerReadCacheRoutes } = require('./services/read-cache/routes');
 const { initReadCache } = require('./services/read-cache');
 const { ensureProjectTotals } = require('./api/project/services/project-totals');
 const { rederiveAll } = require('./services/estimated-hours-pricing');
+const { settlePastIrpf } = require('./services/settle-past-irpf');
 const { rederiveFrom: refreshDedicationCosts } = require('./services/dedication-cost');
 
 module.exports = {
@@ -228,6 +229,8 @@ module.exports = {
       // issues/416: a line's €/h became the weighted average of its days
       // (refreshEstimatedHoursPrices already ran with the first-day rule).
       ['refreshEstimatedHoursPricesWeighted', rederiveAll, { runOnce: true }],
+      // issues/419: IRPF gets «Salda»; what was shown as paid before is settled on its date.
+      ['settlePastIrpf', () => settlePastIrpf(), { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
