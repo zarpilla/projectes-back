@@ -21,8 +21,8 @@ const { round2 } = require('./balances');
  * on its own date while that is still ahead, and once it has passed (left out
  * of a settlement, or entered after it) on the next model 111 date, so it adds
  * up into the next declaration. Before 419 «paid» was guessed from the dates
- * and the payroll's paid state; the run-once settle-past-irpf.js stamped what
- * was paid then.
+ * and the payroll's paid state; nothing is settled automatically on deploy
+ * (user decision 2026-11-09): the tenants settle past quarters with «Salda».
  */
 
 const DAY = 'YYYY-MM-DD';

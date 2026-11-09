@@ -2,8 +2,8 @@
 
 /**
  * issues/419 (2026-11-09): «Salda» on the IRPF page stamps irpf_paid_date on
- * the documents ticked (POST /treasuries/irpf/settle); the run-once
- * settlePastIrpf settles what was shown as paid before.
+ * the documents ticked (POST /treasuries/irpf/settle). Nothing is settled
+ * automatically on deploy (user decision 2026-11-09).
  */
 
 const mockLogRawUpdate = jest.fn(async () => {});
@@ -135,44 +135,5 @@ describe('POST /treasuries/irpf/settle (issues/419)', () => {
     const ctx = { request: { body: { payrolls: [1] } }, badRequest: jest.fn((m) => ({ status: 400, m })) };
     await actions.irpfSettle(ctx);
     expect(ctx.badRequest).toHaveBeenCalled();
-  });
-});
-
-describe('settlePastIrpf (issues/419)', () => {
-  const { settlePastIrpf } = require('../src/services/settle-past-irpf');
-
-  it('settles what was shown as paid, on its payment date', async () => {
-    const rows = {
-      'api::received-invoice.received-invoice': [
-        { id: 1, emitted: '2026-02-10', total_irpf: 150 }, // due 2026-04-20: past
-        { id: 2, emitted: '2026-08-10', total_irpf: 70 }, // due 2026-10-20: past
-        { id: 3, emitted: '2026-10-02', total_irpf: 30 }, // due 2027-01-20: ahead
-        { id: 4, emitted: '2026-01-10', total_irpf: 9, irpf_paid_date: '2026-04-15' }, // kept
-      ],
-      'api::received-expense.received-expense': [{ id: 10, emitted: '2026-03-31', total_irpf: 19 }],
-      'api::payroll.payroll': [
-        { id: 20, paid: true, irpf_base: 200, irpf_date: '2026-04-18', year: { year: 2026 }, month: { month: 3 } },
-        { id: 21, paid: false, irpf_base: 210, irpf_date: '2026-07-20', year: { year: 2026 }, month: { month: 4 } }, // unpaid: stays
-        { id: 22, paid: true, irpf_base: 50, irpf_date: null, year: { year: 2026 }, month: { month: 5 } }, // 20 July
-        { id: 23, paid: true, irpf_base: 60, irpf_date: '2027-01-20', year: { year: 2026 }, month: { month: 10 } }, // ahead
-      ],
-    };
-    mockStrapi(rows);
-    const counts = await settlePastIrpf('2026-11-09');
-    expect(counts).toEqual({
-      'api::received-invoice.received-invoice': 2,
-      'api::received-expense.received-expense': 1,
-      'api::payroll.payroll': 2,
-    });
-    const settled = (uid) => rows[uid].map((r) => r.irpf_paid_date || null);
-    expect(settled('api::received-invoice.received-invoice')).toEqual(['2026-04-20', '2026-10-20', null, '2026-04-15']);
-    expect(settled('api::received-expense.received-expense')).toEqual(['2026-04-20']);
-    expect(settled('api::payroll.payroll')).toEqual(['2026-04-18', null, '2026-07-20', null]);
-    // a second run changes nothing
-    await expect(settlePastIrpf('2026-11-09')).resolves.toEqual({
-      'api::received-invoice.received-invoice': 0,
-      'api::received-expense.received-expense': 0,
-      'api::payroll.payroll': 0,
-    });
   });
 });
