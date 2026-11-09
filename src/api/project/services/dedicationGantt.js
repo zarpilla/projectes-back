@@ -135,7 +135,9 @@ async function plannedHoursRows(p, phases, targetYear, dailyDedications, festive
 // `rows: false` leaves out the per-day rows (`dedications`), only needed by
 // the Excel export: 12 of the 12.2 MB of the response on resilience
 // (issues/309). The screen asks for them when «Exporta» is clicked.
-async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', year, view = 'month', rows = true }) {
+// scopeIds: only the projects with one of these àmbits; 0 stands for «Sense
+// àmbit». Empty or missing = every àmbit (issues/410).
+async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', year, view = 'month', rows = true, scopeIds = [] }) {
   const targetYear = year || parseInt(moment().format('YYYY'), 10);
   const phaseType = hoursType === 'previstes' ? 'project_phases' : 'project_original_phases';
 
@@ -163,10 +165,17 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
       },
       project_type: true,
       project_likelihood: true,
+      project_scope: true,
     },
   });
 
-  const projectList = projectsCollection.filter((p) => p.trashed !== true);
+  const scopeList = (scopeIds || []).map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
+  const scopeFilter = scopeList.length ? new Set(scopeList) : null;
+  const projectList = projectsCollection.filter(
+    (p) =>
+      p.trashed !== true &&
+      (!scopeFilter || scopeFilter.has(p.project_scope && p.project_scope.id ? p.project_scope.id : 0)),
+  );
 
   // 2) Users (leaders) with their daily dedications.
   const users = await strapi.db
@@ -233,16 +242,17 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
     projectMeta[p.name] = {
       type: p.project_type && p.project_type.name ? p.project_type.name : '-',
       likelihood: p.project_likelihood && p.project_likelihood.name ? p.project_likelihood.name : '-',
+      scope: p.project_scope && p.project_scope.name ? p.project_scope.name : '-',
     };
   }
-  const EMPTY_META = { type: '-', likelihood: '-' };
+  const EMPTY_META = { type: '-', likelihood: '-', scope: '-' };
 
   // Helper: add hours to a project entry, promoting it to object form on first
   // touch so it carries type/likelihood for the tooltip breakdown.
   function addProjectHours(entry, name, hrs) {
     if (!entry.projects[name]) {
       const meta = projectMeta[name] || EMPTY_META;
-      entry.projects[name] = { hours: 0, type: meta.type, likelihood: meta.likelihood };
+      entry.projects[name] = { hours: 0, type: meta.type, likelihood: meta.likelihood, scope: meta.scope };
     }
     entry.projects[name].hours += hrs;
   }
@@ -377,6 +387,7 @@ async function buildDedicationGantt({ projectStateIds, hoursType = 'previstes', 
             project: name,
             type: info.type,
             likelihood: info.likelihood,
+            scope: info.scope,
             hours: info.hours,
           });
         }

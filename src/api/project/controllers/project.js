@@ -512,6 +512,15 @@ async function economicDetailComputed(ctx) {
   return _.sortBy(response, ECONOMIC_DETAIL_ORDER);
 }
 
+// «Àmbit» filter of the dedication Gantts: scopes=1,2,0 (0 = «Sense àmbit»), issues/410
+function parseScopeIds(raw) {
+  if (raw === undefined || raw === null || raw === '') return [];
+  return String(raw)
+    .split(',')
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => !isNaN(n));
+}
+
 module.exports = createCoreController('api::project.project', ({ strapi }) => ({
   /**
    * find override — ports the v3 afterFind hook (removed in v5): aggregates
@@ -1048,6 +1057,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       year,
       view,
       rows: ctx.query.rows !== 'false',
+      scopeIds: parseScopeIds(ctx.query.scopes),
     });
   },
 
@@ -1080,6 +1090,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
       projectStateIds,
       year,
       view,
+      scopeIds: parseScopeIds(ctx.query.scopes),
     });
   },
 
