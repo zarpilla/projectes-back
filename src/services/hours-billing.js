@@ -8,6 +8,10 @@
  * report that reads lineTotal(line) keeps working unchanged. Lines without
  * estimated hours (materials, a fixed fee) keep what the user typed.
  *
+ * issues/421: a planning row (estimated hours) can carry its own price/hour
+ * (`price`); empty means the project's. The line then stores the weighted
+ * price: amount = Σ hours × row price / Σ hours, at 4 decimals.
+ *
  * Only the current plan (project_phases) is priced; the original plan is a
  * snapshot and stays as it was. A line already invoiced or collected (paid, or
  * linked to an invoice or an income) keeps its amount: it is what the
@@ -65,11 +69,21 @@ const hoursOfLine = (line) => round4(((line && line.estimated_hours) || []).redu
 const linkedId = (v) => (v && typeof v === 'object' ? v.id : v);
 const isInvoiced = (line) => !!(line.paid || linkedId(line.invoice) || linkedId(line.income));
 
+// the price/hour of a planning row: its own, or the project's when empty
+const rowPrice = (row, pricePerHour) => {
+  const own = row ? row.price : null;
+  if (own === null || own === undefined || own === '' || !Number.isFinite(Number(own))) return Number(pricePerHour) || 0;
+  return Number(own);
+};
+
 const hoursPricing = (line, mode, pricePerHour) => {
   if (effectiveBillingMode(mode) !== 'hours') return null;
   if (!line || !Array.isArray(line.estimated_hours) || !line.estimated_hours.length) return null;
   if (isInvoiced(line)) return null;
-  const priced = { quantity: hoursOfLine(line), amount: round4(Number(pricePerHour) || 0) };
+  const quantity = hoursOfLine(line);
+  const total = line.estimated_hours.reduce((s, row) => s + hoursOfRow(row) * rowPrice(row, pricePerHour), 0);
+  const amount = quantity ? total / quantity : Number(pricePerHour) || 0;
+  const priced = { quantity, amount: round4(amount) };
   priced.total_amount = lineTotal(priced);
   return priced;
 };
@@ -88,7 +102,7 @@ const priceHoursLines = async (projectId, { mode, pricePerHour } = {}) => {
     where: { project_phase: { project: { id: projectId } } },
     select: ['id', 'quantity', 'amount', 'total_amount', 'paid'],
     populate: {
-      estimated_hours: { select: ['id', 'quantity', 'quantity_type', 'from', 'to'] },
+      estimated_hours: { select: ['id', 'quantity', 'quantity_type', 'from', 'to', 'price'] },
       invoice: { select: ['id'] },
       income: { select: ['id'] },
     },
@@ -112,4 +126,5 @@ module.exports = {
   hoursOfLine,
   hoursPricing,
   priceHoursLines,
+  rowPrice,
 };

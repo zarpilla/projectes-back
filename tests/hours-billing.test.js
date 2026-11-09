@@ -14,6 +14,7 @@ const {
   hoursOfLine,
   hoursPricing,
   priceHoursLines,
+  rowPrice,
 } = require('../src/services/hours-billing');
 
 describe('hours billing pricing (issues/371)', () => {
@@ -60,6 +61,53 @@ describe('hours billing pricing (issues/371)', () => {
   it('leaves lines without estimated hours as typed', () => {
     expect(hoursPricing({ quantity: 1, amount: 300, estimated_hours: [] }, 'hours', 45)).toBe(null);
     expect(hoursPricing({ quantity: 1, amount: 300 }, 'hours', 45)).toBe(null);
+  });
+
+  // issues/421: a planning row can carry its own price/hour; empty = the project's
+  describe('own price per planning row (issues/421)', () => {
+    it('an empty price follows the project, a set one wins (0 too)', () => {
+      expect(rowPrice({ price: null }, 40)).toBe(40);
+      expect(rowPrice({ price: '' }, 40)).toBe(40);
+      expect(rowPrice({}, 40)).toBe(40);
+      expect(rowPrice({ price: '55.5' }, 40)).toBe(55.5);
+      expect(rowPrice({ price: 0 }, 40)).toBe(0);
+    });
+
+    it('prices the line as the sum of hours × each row price', () => {
+      const line = { quantity: 1, amount: 0, estimated_hours: [{ quantity: 10, price: 60 }, { quantity: 10, price: null }] };
+      expect(hoursPricing(line, 'hours', 40)).toEqual({ quantity: 20, amount: 50, total_amount: 1000 });
+    });
+
+    it('keeps the amount at 4 decimals', () => {
+      const line = { estimated_hours: [{ quantity: 1, price: 10 }, { quantity: 2, price: 20 }] };
+      // (10 + 40) / 3 = 16.6667 a hour
+      expect(hoursPricing(line, 'hours', 0)).toEqual({ quantity: 3, amount: 16.6667, total_amount: 50 });
+    });
+
+    it('a line with no hours yet takes the project price', () => {
+      const line = { estimated_hours: [{ quantity: 0, price: 70 }] };
+      expect(hoursPricing(line, 'hours', 40)).toEqual({ quantity: 0, amount: 40, total_amount: 0 });
+    });
+
+    it('priceHoursLines reads the row prices', async () => {
+      const update = jest.fn();
+      let asked;
+      global.strapi = {
+        db: {
+          query: () => ({
+            findMany: async (q) => {
+              asked = q;
+              return [{ id: 4, quantity: 10, amount: 40, total_amount: 400, estimated_hours: [{ quantity: 10, price: 45 }] }];
+            },
+            update,
+          }),
+        },
+      };
+      expect(await priceHoursLines(7, { mode: 'hours', pricePerHour: 40 })).toBe(1);
+      expect(asked.populate.estimated_hours.select).toContain('price');
+      expect(update).toHaveBeenCalledWith({ where: { id: 4 }, data: { quantity: 10, amount: 45, total_amount: 450 } });
+      delete global.strapi;
+    });
   });
 
   describe('priceHoursLines', () => {
@@ -167,5 +215,14 @@ describe('project controller and billing mode (issues/371)', () => {
   it('a save that touches neither phases nor billing does not query the lines', async () => {
     await controller.update(ctx({ name: 'P-1' }));
     expect(incomeUpdate).not.toHaveBeenCalled();
+  });
+});
+
+// issues/421: the billing price of a planning row is a finance figure, like its cost
+describe('planning row price for a user without full access (issues/421)', () => {
+  it('is dropped with the amounts', () => {
+    const { rulesFor } = require('../src/services/response-sanitizer');
+    const rule = rulesFor({ selfId: 3, permissions: ['projects'] })['api::estimated-hour.estimated-hour'];
+    expect(rule.drop).toEqual(expect.arrayContaining(['amount', 'total_amount', 'price']));
   });
 });

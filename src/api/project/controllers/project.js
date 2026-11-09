@@ -2431,6 +2431,7 @@ module.exports = createCoreController('api::project.project', ({ strapi }) => ({
               users_permissions_user: estimated_hours.users_permissions_user,
               quantity: estimated_hours.quantity,
               amount: estimated_hours.amount,
+              price: estimated_hours.price,
               total_amount: estimated_hours.total_amount,
               comment: estimated_hours.comment,
               from: estimated_hours.from,
