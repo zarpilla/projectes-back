@@ -122,6 +122,8 @@ describe('payroll lines grouped in Tresoreria (issues/347)', () => {
   it('gives one IRPF line per payment date, whatever the months (and a net line per month)', async () => {
     const q3 = (id, username, month, paid) => payroll(id, username, {
       month: { month }, net_date: `2026-0${month}-28`, paid_date: paid ? `2026-0${month}-28` : null, paid, irpf_date: '2026-10-20', ss_base: 0,
+      // IRPF settled with «Salda» on the IRPF page (issues/419)
+      irpf_paid_date: paid ? '2026-10-19' : null,
     });
     stubStrapi({
       'api::year.year': [{ id: 1, year: 2026, deductible_vat_pct: 100 }],
@@ -133,7 +135,7 @@ describe('payroll lines grouped in Tresoreria (issues/347)', () => {
     });
     const { treasury } = await forecast();
     const irpf = treasury.filter((r) => r.type === 'IRPF Nòmina');
-    // paid and unpaid payrolls stay apart: two lines for the quarter, not five
+    // settled and unsettled IRPF stay apart: two lines for the quarter, not five
     expect(irpf).toHaveLength(2);
     const paid = irpf.find((r) => r.paid);
     expect(paid).toMatchObject({

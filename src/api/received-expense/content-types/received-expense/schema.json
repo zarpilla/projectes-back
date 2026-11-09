@@ -117,6 +117,9 @@
     "vat_paid_date": {
       "type": "datetime"
     },
+    "irpf_paid_date": {
+      "type": "date"
+    },
     "deductible_vat_pct": {
       "type": "decimal"
     },

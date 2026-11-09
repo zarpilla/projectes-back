@@ -59,6 +59,9 @@
     "irpf_date": {
       "type": "date"
     },
+    "irpf_paid_date": {
+      "type": "date"
+    },
     "ss_base": {
       "type": "decimal"
     },

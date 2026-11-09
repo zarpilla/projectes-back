@@ -39,7 +39,9 @@ const { COLUMNS: PROJECT_TOTALS_COLUMNS } = require('../../project/services/proj
 const { FILTER_RELATIONS, filterProjects, parseIdList, namedRef, forecastProjectOption } = require('../services/project-filter');
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { groupPayrollRows } = require('../services/payroll-groups');
-const { irpfSummary } = require('../services/irpf-summary');
+const { irpfSummary, irpfMovement, quarterPaymentDate } = require('../services/irpf-summary');
+const { settleIrpf, IrpfSettleError } = require('../services/irpf-settle');
+const { vatSummary } = require('../services/vat-summary');
 const { computeVatModels, fileReturn, unfileReturn, attachReceipt, setFinalProrrata, buildFile, VatReturnError, VatReturnNotFound, AeatFileError } = require('../services/vat-returns');
 const { classifyDocuments, VatClassifyError } = require('../services/vat-classify');
 const { addExpectedVat, applyExpectedVatPct, vatPaymentDate } = require('../services/vat-forecast');
@@ -193,6 +195,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     const year = ctx.query.year;
     const bankAccountFilterIds = ctx.query.bank_account_id;
     const periodification = ctx.query.periodification; // "no", "real", or "prevista"
+    // IRPF rows: due or settled (issues/419)
+    const todayDay = moment().format('YYYY-MM-DD');
 
     const treasury = [];
     // const treasuryData = [];
@@ -901,11 +905,10 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           type: 'IRPF Factura',
           concept: e.code,
           total_amount: -1 * e.total_irpf,
-          date: moment(e.emitted, 'YYYY-MM-DD').endOf('quarter').add(20, 'day'),
+          // on its settlement, or due (the next model 111 once late, issues/419)
+          date: moment(irpfMovement(e.emitted ? quarterPaymentDate(e.emitted) : null, e.irpf_paid_date, todayDay).date, 'YYYY-MM-DD'),
           date_error: e.emitted === null,
-          paid:
-            moment(e.emitted, 'YYYY-MM-DD').endOf('quarter').add(20, 'day').format('YYYY-MM-DD') <
-            moment().format('YYYY-MM-DD'),
+          paid: !!e.irpf_paid_date,
           contact: e.contact && e.contact.name ? e.contact.name : '-',
           to: `/document/${e.id}/received-invoices`,
           bank_account: me.bank_account_irpf && me.bank_account_irpf.name ? me.bank_account_irpf.name : null,
@@ -1008,12 +1011,10 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           type: 'IRPF Factura',
           concept: e.code,
           total_amount: -1 * e.total_irpf,
-          date: moment(e.emitted, 'YYYY-MM-DD').endOf('quarter').add(20, 'day'),
+          // on its settlement, or due (the next model 111 once late, issues/419)
+          date: moment(irpfMovement(e.emitted ? quarterPaymentDate(e.emitted) : null, e.irpf_paid_date, todayDay).date, 'YYYY-MM-DD'),
           date_error: e.emitted === null,
-          // Executed once its date has passed, as for received invoices (issues/242).
-          paid:
-            moment(e.emitted, 'YYYY-MM-DD').endOf('quarter').add(20, 'day').format('YYYY-MM-DD') <
-            moment().format('YYYY-MM-DD'),
+          paid: !!e.irpf_paid_date,
           contact: e.contact && e.contact.name ? e.contact.name : '-',
           to: `/document/${e.id}/received-expenses`,
           bank_account: me.bank_account_irpf && me.bank_account_irpf.name ? me.bank_account_irpf.name : null,
@@ -1106,9 +1107,10 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           type: 'IRPF Nòmina',
           concept: payrollConcept(e),
           total_amount: e.irpf_base ? -1 * e.irpf_base : 0,
-          date: moment(e.irpf_date, 'YYYY-MM-DD'),
-          date_error: e.irpf_date === null,
-          paid: e.paid,
+          // on its settlement, or due on its IRPF date (the next model 111 once late, issues/419)
+          date: moment(irpfMovement(e.irpf_date || null, e.irpf_paid_date, todayDay).date, 'YYYY-MM-DD'),
+          date_error: e.irpf_date === null && !e.irpf_paid_date,
+          paid: !!e.irpf_paid_date,
           contact:
             e.users_permissions_user && e.users_permissions_user.username
               ? e.users_permissions_user.username
@@ -1399,26 +1401,76 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     const year = parseInt(ctx.query.year, 10) || moment().year();
     const from = `${year}-01-01`;
     const to = `${year}-12-31`;
-    const documentWhere = { emitted: { $gte: from, $lte: to }, total_irpf: { $ne: 0, $notNull: true } };
-    const documentSelect = ['id', 'code', 'emitted', 'total_base', 'total_irpf'];
-    const [receivedInvoices, receivedExpenses, payrolls] = await Promise.all([
-      strapi.db.query('api::received-invoice.received-invoice').findMany({
-        select: documentSelect,
-        where: documentWhere,
-        populate: { contact: { select: ['id', 'name'] } },
-      }),
-      strapi.db.query('api::received-expense.received-expense').findMany({
-        select: documentSelect,
-        where: documentWhere,
-        populate: { contact: { select: ['id', 'name'] }, document_type: { select: ['id', 'name'] } },
-      }),
-      strapi.db.query('api::payroll.payroll').findMany({
-        select: ['id', 'emitted', 'paid', 'total_base', 'irpf_base', 'irpf_date'],
-        where: { year: { year }, irpf_base: { $ne: 0, $notNull: true } },
-        populate: { year: true, month: true, users_permissions_user: { select: ['id', 'username'] } },
-      }),
+    const withIrpf = { total_irpf: { $ne: 0, $notNull: true } };
+    const documentSelect = ['id', 'code', 'emitted', 'total_base', 'total_irpf', 'irpf_paid_date'];
+    const payrollSelect = ['id', 'emitted', 'paid', 'total_base', 'irpf_base', 'irpf_date', 'irpf_paid_date'];
+    const payrollPopulate = { year: true, month: true, users_permissions_user: { select: ['id', 'username'] } };
+    const query = (uid, where, populate, select = documentSelect) => strapi.db.query(uid).findMany({ select, where, populate });
+    const invoiceUid = 'api::received-invoice.received-invoice';
+    const expenseUid = 'api::received-expense.received-expense';
+    const contact = { contact: { select: ['id', 'name'] } };
+    const typedContact = { ...contact, document_type: { select: ['id', 'name'] } };
+    const [receivedInvoices, receivedExpenses, payrolls, earlierInvoices, earlierExpenses, earlierPayrolls] = await Promise.all([
+      query(invoiceUid, { ...withIrpf, emitted: { $gte: from, $lte: to } }, contact),
+      query(expenseUid, { ...withIrpf, emitted: { $gte: from, $lte: to } }, typedContact),
+      query('api::payroll.payroll', { year: { year }, irpf_base: { $ne: 0, $notNull: true } }, payrollPopulate, payrollSelect),
+      // not settled from the years before (issues/419)
+      query(invoiceUid, { ...withIrpf, emitted: { $lt: from }, irpf_paid_date: { $null: true } }, contact),
+      query(expenseUid, { ...withIrpf, emitted: { $lt: from }, irpf_paid_date: { $null: true } }, typedContact),
+      query(
+        'api::payroll.payroll',
+        { year: { year: { $lt: year } }, irpf_base: { $ne: 0, $notNull: true }, irpf_paid_date: { $null: true } },
+        payrollPopulate,
+        payrollSelect,
+      ),
     ]);
-    ctx.body = irpfSummary({ receivedInvoices, receivedExpenses, payrolls }, year, moment().format('YYYY-MM-DD'));
+    ctx.body = irpfSummary({ receivedInvoices, receivedExpenses, payrolls }, year, moment().format('YYYY-MM-DD'), {
+      receivedInvoices: earlierInvoices,
+      receivedExpenses: earlierExpenses,
+      payrolls: earlierPayrolls,
+    });
+  },
+
+  /**
+   * POST /api/treasuries/irpf/settle — «Salda» on the IRPF page (issues/419):
+   * { receivedInvoices, receivedExpenses, payrolls: [id], irpf_paid_date }.
+   */
+  async irpfSettle(ctx) {
+    try {
+      ctx.body = await settleIrpf(ctx.request.body || {});
+    } catch (e) {
+      if (e instanceof IrpfSettleError) return ctx.badRequest(e.message);
+      throw e;
+    }
+  },
+
+  /**
+   * GET /api/treasuries/vat?year=YYYY — IVA › «Saldo i documents» (issues/418):
+   * the documents with VAT of the year, settled or not, per quarter.
+   */
+  async vat(ctx) {
+    const year = parseInt(ctx.query.year, 10) || moment().year();
+    const from = `${year}-01-01`;
+    const to = `${year}-12-31`;
+    const withVat = { total_vat: { $ne: 0, $notNull: true } };
+    const select = ['id', 'code', 'emitted', 'total', 'total_base', 'total_vat', 'vat_paid_date', 'deductible_vat_pct'];
+    const contact = { contact: { select: ['id', 'name'] } };
+    const lists = {
+      emittedInvoices: ['api::emitted-invoice.emitted-invoice', [...select, 'state'], contact],
+      receivedIncomes: ['api::received-income.received-income', select, contact],
+      receivedInvoices: ['api::received-invoice.received-invoice', select, contact],
+      receivedExpenses: ['api::received-expense.received-expense', select, { ...contact, document_type: { select: ['id', 'name'] } }],
+    };
+    const keys = Object.keys(lists);
+    const load = (where) =>
+      Promise.all(keys.map((k) => strapi.db.query(lists[k][0]).findMany({ select: lists[k][1], where, populate: lists[k][2] })));
+    const [ofYear, earlier, years] = await Promise.all([
+      load({ ...withVat, emitted: { $gte: from, $lte: to } }),
+      load({ ...withVat, emitted: { $lt: from }, vat_paid_date: { $null: true } }),
+      strapi.db.query('api::year.year').findMany({ select: ['id', 'year', 'deductible_vat_pct'] }),
+    ]);
+    const byKey = (lists2) => Object.fromEntries(keys.map((k, i) => [k, lists2[i]]));
+    ctx.body = vatSummary(byKey(ofYear), years, year, byKey(earlier));
   },
 
   /**
