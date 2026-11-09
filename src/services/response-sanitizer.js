@@ -84,6 +84,7 @@ const PROJECT_FINANCES = [
   'structural_expenses_pct',
   'total_estimated_hours_price',
   'total_real_hours_price',
+  'total_real_hours_billed',
   'grantable_amount',
   'grantable_amount_total',
   'grantable_cofinancing_pct',

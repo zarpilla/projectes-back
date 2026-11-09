@@ -117,7 +117,51 @@ const priceHoursLines = async (projectId, { mode, pricePerHour } = {}) => {
   return written;
 };
 
+// a date as 'YYYY-MM-DD' (the database gives a string, a Date in some drivers)
+const dayOf = (d) => {
+  if (!d) return null;
+  if (d instanceof Date) return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  const s = String(d).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+};
+const idOf = (v) => (v && typeof v === 'object' ? v.id : v) || null;
+
+/**
+ * issues/421 «Per facturar»: what the hours worked so far bill. Each activity
+ * is priced at the planning row (current plan) of the same person whose dates
+ * cover its day, else at the project's price/hour. Returns the total and the
+ * amount per year, with the years of the summary (`yearOf(day)`, the undated
+ * bucket for an activity without date).
+ */
+const billedHours = ({ activities, phases, pricePerHour, yearOf }) => {
+  const rows = [];
+  for (const phase of phases || []) {
+    for (const line of (phase && phase.incomes) || []) {
+      for (const row of (line && line.estimated_hours) || []) {
+        rows.push({ user: idOf(row.users_permissions_user), from: dayOf(row.from), to: dayOf(row.to), price: rowPrice(row, pricePerHour) });
+      }
+    }
+  }
+  const byYear = {};
+  let total = 0;
+  for (const a of activities || []) {
+    const hours = Number(a && a.hours) || 0;
+    if (!hours) continue;
+    const day = dayOf(a.date);
+    const user = idOf(a.users_permissions_user);
+    const row = user && day ? rows.find((r) => r.user === user && (!r.from || r.from <= day) && (!r.to || day <= r.to)) : null;
+    const amount = hours * (row ? row.price : Number(pricePerHour) || 0);
+    const year = yearOf(day);
+    byYear[year] = (byYear[year] || 0) + amount;
+    total += amount;
+  }
+  const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
+  for (const y of Object.keys(byYear)) byYear[y] = round2(byYear[y]);
+  return { total: round2(total), byYear };
+};
+
 module.exports = {
+  billedHours,
   BILLING_MODES,
   isInvoiced,
   effectiveBillingMode,

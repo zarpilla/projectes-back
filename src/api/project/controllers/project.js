@@ -14,7 +14,7 @@ const {
 const { numericId } = require('../../../middlewares/v3-compat');
 const { getDailyDedications, getFestives } = require('../../../services/calendars');
 const { getMe } = require('../../../services/me-settings');
-const { fiscalYearStartMonth } = require('../../../services/fiscal-year');
+const { fiscalYearStartMonth, fiscalYearOf } = require('../../../services/fiscal-year');
 const { documentsOfProject, mergeDocuments, refreshLineWarnings } = require('../../../services/refresh-line-warnings');
 const { loadActivitiesByProjectMonth } = require('../services/economic-detail-activities');
 const { getReadCache } = require('../../../services/read-cache');
@@ -22,7 +22,7 @@ const { queryTables } = require('../../../services/query-tables');
 const { LINKED_POPULATE, mergeLinkedDocuments } = require('../services/projectDocuments');
 const { lineTotal, invalidLineValueMessage, assignLinePositions, sortPhasesByPosition } = require('../../../services/budget-line');
 const { touchesDates, projectDatesError } = require('../../../services/project-dates');
-const { BILLING_MODES, priceHoursLines } = require('../../../services/hours-billing');
+const { BILLING_MODES, priceHoursLines, billedHours, effectiveBillingMode } = require('../../../services/hours-billing');
 const { rederiveRows } = require('../../../services/estimated-hours-pricing');
 const projectSeries = require('../services/project-series');
 const projectTrash = require('../services/project-trash');
@@ -34,6 +34,7 @@ const {
   calculateEstimatedTotals,
   getProjectDefaultYear,
   buildPlannedHoursByMonth,
+  UNDATED_YEAR,
 } = require('../services/projectFinancials');
 
 /**
@@ -118,6 +119,24 @@ const doProjectInfoCalculations = async (data, id) => {
   const rows = await buildProjectRows(data, financialsCtx);
 
   data.allByYear = aggregateRowsByYear(rows);
+
+  // «Per hores»: what the hours worked bill, at each planning line's price (issues/421)
+  if (effectiveBillingMode(data.billing_mode) === 'hours' && !data.is_mother) {
+    const worked = await strapi.db.query('api::activity.activity').findMany({
+      where: { project: id },
+      select: ['id', 'date', 'hours'],
+      populate: { users_permissions_user: { select: ['id'] } },
+    });
+    const startMonth = financialsCtx.fiscalYearStartMonth;
+    const billed = billedHours({
+      activities: worked,
+      phases: Array.isArray(data.project_phases) ? data.project_phases : [],
+      pricePerHour: data.invoice_hours_price,
+      yearOf: (day) => (day && fiscalYearOf(day, startMonth)) || UNDATED_YEAR,
+    });
+    for (const y of data.allByYear) y.total_real_hours_billed = billed.byYear[y.year] || 0;
+    data.total_real_hours_billed = billed.total;
+  }
   // Lines the form must flag: they put a "9999" year in the periodification (issues/015).
   data.undatedLines = findUndatedLines(data);
 
