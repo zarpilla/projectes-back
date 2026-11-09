@@ -40,10 +40,15 @@ function periodKeyFromDate(dateStr, view) {
 // mirroring buildDedicationGantt but using logged hours instead of estimated
 // hours. Returns the same { leaders, periods, cells, dedications } contract
 // consumed by DedicationGanttChart.vue.
-async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' }) {
+// scopeIds: only the hours of projects with one of these àmbits; 0 stands for
+// «Sense àmbit» (projects without one and hours without a project). Empty or
+// missing = every àmbit (issues/410).
+async function buildRealDedicationGantt({ projectStateIds, year, view = 'month', scopeIds = [] }) {
   const targetYear = year || parseInt(moment().format('YYYY'), 10);
   const safeView = view === 'week' ? 'week' : 'month';
   const stateIds = projectStateIds.map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
+  const scopeList = (scopeIds || []).map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
+  const scopeFilter = scopeList.length ? new Set(scopeList) : null;
 
   // 1) Activities logged within the target year, on projects in the selected
   //    states. Extends the project-side knex pattern in dedicationGantt.js to
@@ -71,7 +76,7 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
         : {}),
     },
     populate: {
-      project: { populate: { project_type: true, project_likelihood: true } },
+      project: { populate: { project_type: true, project_likelihood: true, project_scope: true } },
       users_permissions_user: true,
     },
   });
@@ -144,6 +149,8 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
   for (let i = 0; i < activities.length; i++) {
     const a = activities[i];
     if (!a.date || !a.hours) continue;
+    const scope = a.project && a.project.project_scope ? a.project.project_scope : null;
+    if (scopeFilter && !scopeFilter.has(scope && scope.id ? scope.id : 0)) continue;
 
     const user = a.users_permissions_user;
     const userId = user && user.id ? user.id : null;
@@ -161,6 +168,7 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
       a.project && a.project.project_likelihood && a.project.project_likelihood.name
         ? a.project.project_likelihood.name
         : '-';
+    const scopeName = scope && scope.name ? scope.name : '-';
 
     // Row for the Excel export (sparse shape consistent with dedicationGantt).
     dedications.push({
@@ -188,6 +196,7 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
         hours: 0,
         type: typeName,
         likelihood: likelihoodName,
+        scope: scopeName,
       };
     }
     entry.projects[projectName].hours += a.hours;
@@ -291,6 +300,7 @@ async function buildRealDedicationGantt({ projectStateIds, year, view = 'month' 
             project: name,
             type: info.type,
             likelihood: info.likelihood,
+            scope: info.scope,
             hours: info.hours,
           });
         }
