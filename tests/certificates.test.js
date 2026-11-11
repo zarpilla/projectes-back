@@ -65,8 +65,21 @@ describe('inspectPkcs12', () => {
         issuer: { commonName: 'AC Prova', organization: 'Prova' },
         notBefore: '2026-03-01T00:00:00.000Z',
         notAfter: '2027-03-01T00:00:00.000Z',
+        pem: expect.stringMatching(/^-----BEGIN CERTIFICATE-----\n[A-Za-z0-9+/=\n]+\n-----END CERTIFICATE-----\n$/),
       },
     });
+  });
+
+  it('gives the public part as PEM, the same certificate FACe identifies by its JWT (no private key)', () => {
+    const buffer = makePkcs12();
+    const { certificate } = inspectPkcs12(buffer, PASSWORD);
+    expect(certificate.pem).not.toMatch(/PRIVATE KEY/);
+    // FACe's username = SHA1 of the "clean PEM" (utils/face-jwt.js)
+    const clean = certificate.pem.replace(/-----(BEGIN|END) CERTIFICATE-----|\n/g, '');
+    const p12 = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(buffer.toString('binary')), PASSWORD);
+    const [bag] = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag];
+    const der = forge.util.encode64(forge.asn1.toDer(forge.pki.certificateToAsn1(bag.cert)).getBytes());
+    expect(clean).toBe(der);
   });
 
   it('reports a wrong password', () => {
