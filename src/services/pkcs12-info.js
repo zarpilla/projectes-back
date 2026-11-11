@@ -48,7 +48,15 @@ function describeName(name) {
   };
 }
 
-/** Holder, NIF, issuer and validity of a forge certificate. */
+/**
+ * The public part of the certificate, PEM encoded: what the FACe integrators
+ * portal asks for to register who signs the API calls. Not a secret.
+ */
+function certificatePem(cert) {
+  return forge.pki.certificateToPem(cert).replace(/\r\n/g, '\n');
+}
+
+/** Holder, NIF, issuer, validity and public part (PEM) of a forge certificate. */
 function describeCertificate(cert) {
   const organizationIdentifier = attribute(cert.subject, OID_ORGANIZATION_IDENTIFIER);
   const serialNumber = attribute(cert.subject, OID_SERIAL_NUMBER);
@@ -61,6 +69,7 @@ function describeCertificate(cert) {
     issuer: describeName(cert.issuer),
     notBefore: cert.validity.notBefore.toISOString(),
     notAfter: cert.validity.notAfter.toISOString(),
+    pem: certificatePem(cert),
   };
 }
 
