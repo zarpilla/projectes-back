@@ -152,6 +152,10 @@ allow(api('incidence'), [...READ, 'update', 'delete'], LOGISTICS);
 allow(api('incidence'), ['infoAll'], ORDERS_ADMIN);
 // the causes to pick from (issues/431); written by admins only
 allow(api('incidence-category'), READ, LOGISTICS);
+// «Consulta i autorització nou punt d'entrega» (issues/357): everyone in
+// logistics asks and reads her own (controller); the office marks them answered
+allow(api('delivery-point-request'), [...READ, 'create'], LOGISTICS);
+allow(api('delivery-point-request'), ['update', 'delete'], ORDERS_ADMIN);
 allow(api('contact'), [...READ, 'create', 'update', 'forOrders', 'withorders'], LOGISTICS);
 // The drivers keep these (issues/163): «Punts d'entrega» lets them unify and
 // delete points, and «Poblacions i rutes» / «Rutes i dies» let them add towns,

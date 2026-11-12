@@ -1646,7 +1646,8 @@ const SERVER_ONLY_FIELDS = {
 // Mail volume (issues/394): each «Contacta» message and each new incidence
 // sends a mail to the office. Users without full access get a cap per hour.
 // ---------------------------------------------------------------------------
-const MAIL_LIMITS = { contact: 10, incidence: 30 };
+// pointRequest: «Consulta i autorització nou punt d'entrega» (issues/357)
+const MAIL_LIMITS = { contact: 10, incidence: 30, pointRequest: 10 };
 const HOUR = 60 * 60 * 1000;
 const sentMails = new Map();
 
@@ -1664,6 +1665,7 @@ function countMails(kind, userId, n, now = Date.now()) {
 
 function limitMails(ctx, action, userId) {
   if (action === 'api::form-submission.form-submission.create') countMails('contact', userId, 1);
+  if (action === 'api::delivery-point-request.delivery-point-request.create') countMails('pointRequest', userId, 1);
   if (action === `${ORDER}.create` || action === `${ORDER}.update`) {
     const incidences = payloadOf(ctx).incidences;
     if (Array.isArray(incidences)) {

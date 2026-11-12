@@ -809,6 +809,41 @@ export interface ApiDedicationTypeDedicationType extends Struct.CollectionTypeSc
   };
 }
 
+export interface ApiDeliveryPointRequestDeliveryPointRequest extends Struct.CollectionTypeSchema {
+  collectionName: 'delivery_point_requests';
+  info: {
+    displayName: 'DeliveryPointRequest';
+    pluralName: 'delivery-point-requests';
+    singularName: 'delivery-point-request';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    address: Schema.Attribute.String & Schema.Attribute.Required;
+    answered: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    answered_date: Schema.Attribute.DateTime;
+    answered_user: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.user'>;
+    city: Schema.Attribute.String & Schema.Attribute.Required;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    estimated_weight: Schema.Attribute.String;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::delivery-point-request.delivery-point-request'
+    > &
+      Schema.Attribute.Private;
+    notes: Schema.Attribute.Text;
+    publishedAt: Schema.Attribute.DateTime;
+    schedule: Schema.Attribute.Text & Schema.Attribute.Required;
+    trade_name: Schema.Attribute.String;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    user: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.user'>;
+  };
+}
+
 export interface ApiDeliveryTypeDeliveryType extends Struct.CollectionTypeSchema {
   collectionName: 'delivery_types';
   info: {
@@ -3835,6 +3870,7 @@ declare module '@strapi/strapi' {
       'api::contact.contact': ApiContactContact;
       'api::daily-dedication.daily-dedication': ApiDailyDedicationDailyDedication;
       'api::dedication-type.dedication-type': ApiDedicationTypeDedicationType;
+      'api::delivery-point-request.delivery-point-request': ApiDeliveryPointRequestDeliveryPointRequest;
       'api::delivery-type.delivery-type': ApiDeliveryTypeDeliveryType;
       'api::diet.diet': ApiDietDiet;
       'api::document-change-log.document-change-log': ApiDocumentChangeLogDocumentChangeLog;
