@@ -774,7 +774,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       }
       const provider = contacts[0];
 
-      const invoiceHeader = [{ label: 'COMANDA', value: order.id.toString().padStart(4, '0') }];
+      // as big as the delivery date below (issues/432)
+      const invoiceHeader = [{ label: 'COMANDA', value: order.id.toString().padStart(4, '0'), fontSize: 20 }];
 
       let more = order.contact?.notes
         ? order.contact.notes + '\n'
