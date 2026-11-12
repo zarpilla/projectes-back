@@ -11,6 +11,7 @@ const { adaptCtxQuery } = require('../../../services/query-adapter');
 const { statsDateRange } = require('../../../services/stats-date-range');
 const { setCurrentUserId } = require('../utils/updater');
 const { numericId } = require('../../../middlewares/v3-compat');
+const { categoryIdOf, categoryRefusal } = require('../utils/category');
 
 // What the v3 default `populate=*` gives, plus the author of every reply: `*`
 // reaches the incidence_response component but not the user relation inside
@@ -19,11 +20,28 @@ const USER_FIELDS = { fields: ['id', 'username', 'fullname'] };
 const FIND_ONE_POPULATE = {
   created_user: USER_FIELDS,
   closed_user: USER_FIELDS,
+  category: { fields: ['id', 'name'] },
   order: true,
   incidence_response: { populate: { user: USER_FIELDS } },
 };
 
 const STATE_LABELS = { open: 'Oberta', wip: 'En procés', closed: 'Tancada' };
+
+const personName = (user) => (user && (user.fullname || user.username)) || 'Desconegut';
+
+/**
+ * The replies of an incidence for the export (issues/431), one per line:
+ * «Usuària de la interacció - data de la interacció - missatge de la interacció».
+ */
+function repliesText(replies) {
+  return (replies || [])
+    .filter((reply) => reply && reply.text)
+    .map((reply) => {
+      const date = reply.response_date ? moment(reply.response_date).format('YYYY-MM-DD HH:mm') : '';
+      return [personName(reply.user), date, String(reply.text).replace(/\s*\n\s*/g, ' ').trim()].join(' - ');
+    })
+    .join('\n');
+}
 
 const idOf = (value) => (value && typeof value === 'object' ? value.id : value);
 
@@ -101,6 +119,14 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
   async update(ctx) {
     const body = ctx.request.body || {};
     const payload = body.data && typeof body.data === 'object' ? body.data : body;
+    // the cause can be corrected, not removed (issues/431)
+    if ('category' in payload) {
+      if (categoryIdOf(payload.category) === null) delete payload.category;
+      else {
+        const refusal = await categoryRefusal([{ id: numericId(ctx), category: payload.category }]);
+        if (refusal) return ctx.badRequest(refusal);
+      }
+    }
     if (Array.isArray(payload.incidence_response)) {
       payload.incidence_response = await appendedReplies(
         numericId(ctx),
@@ -114,6 +140,18 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
     }
     // Delegate to the core update with the enriched params.
     return super.update(ctx);
+  },
+
+  /**
+   * POST /api/incidences (admins): a new incidence needs its category too (issues/431).
+   */
+  async create(ctx) {
+    const body = ctx.request.body || {};
+    const payload = body.data && typeof body.data === 'object' ? body.data : body;
+    const { id, ...fields } = payload;
+    const refusal = await categoryRefusal([fields]);
+    if (refusal) return ctx.badRequest(refusal);
+    return super.create(ctx);
   },
 
   /**
@@ -147,7 +185,9 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
       populate: {
         created_user: true,
         closed_user: true,
-        order: { populate: { owner: true, route: true } },
+        category: true,
+        incidence_response: { populate: { user: true } },
+        order: { populate: { owner: true, route: true, contact: true } },
       },
       limit,
       orderBy: sort.includes(':')
@@ -175,6 +215,11 @@ module.exports = createCoreController('api::incidence.incidence', ({ strapi }) =
         closed_user: incidence.closed_user?.fullname || incidence.closed_user?.username || null,
         description: incidence.description,
         order_id: incidence.order?.id || null,
+        // issues/431: the cause, the delivery point and the replies, for the export
+        category: incidence.category?.name || 'Sense categoria',
+        category_id: incidence.category?.id || null,
+        establishment: incidence.order?.contact?.trade_name || incidence.order?.contact_trade_name || incidence.order?.contact?.name || '',
+        replies: repliesText(incidence.incidence_response),
         year: createdAt ? `${createdAt.year()}` : null,
         month: createdAt ? `${createdAt.month() + 1}` : null,
       };

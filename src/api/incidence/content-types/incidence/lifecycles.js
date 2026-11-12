@@ -105,6 +105,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null, replyCoun
       },
       created_user: true,
       closed_user: true,
+      category: true,
       incidence_response: { populate: { user: true } },
     },
   });
@@ -185,6 +186,7 @@ async function sendIncidenceEmail(incidence, action, updaterId = null, replyCoun
     <b>Propietari Comanda:</b> ${orderOwner ? esc(orderOwner.fullname || orderOwner.username) : 'N/A'} ${orderOwner && orderOwner.email ? `(${esc(orderOwner.email)})` : ''}<br>
     <b>Punt d'entrega:</b> ${esc(deliveryPoint)}<br>
     <b>Estat:</b> ${esc(stateLabels[fullIncidence.state] || fullIncidence.state)}<br>
+    ${fullIncidence.category ? `<b>Categoria:</b> ${esc(fullIncidence.category.name)}<br>` : ''}
     <b>Descripció:</b> ${esc(fullIncidence.description || 'N/A')}<br>
     ${fullIncidence.created_user ? `<b>Creat per:</b> ${esc(fullIncidence.created_user.fullname || fullIncidence.created_user.username)}<br>` : ''}
     ${fullIncidence.closed_date ? `<b>Data Tancament:</b> ${new Date(fullIncidence.closed_date).toLocaleString('ca-ES')}<br>` : ''}

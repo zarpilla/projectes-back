@@ -194,7 +194,8 @@ const CONTACT_NAME_FIELDS = ['id', 'documentId', 'name', 'trade_name'];
 // What a member or the logistics staff write on an incidence (issues/190): the
 // incidence stays on its order, and who opened and closed it is recorded by
 // the server (order-incidences.js on create, scopeIncidenceUpdate here).
-const INCIDENCE_FIELDS = ['description', 'state', 'incidence_response'];
+// and its category (issues/431)
+const INCIDENCE_FIELDS = ['description', 'state', 'incidence_response', 'category'];
 
 // A member deletes an incidence of her order while it is open and less than a
 // day old, like the Incidències screen lets her.

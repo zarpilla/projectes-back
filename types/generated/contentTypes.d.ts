@@ -1162,6 +1162,7 @@ export interface ApiEstimatedHourEstimatedHour extends Struct.CollectionTypeSche
       Schema.Attribute.Private;
     monthly_quantity: Schema.Attribute.Decimal;
     phase_income: Schema.Attribute.Relation<'manyToOne', 'api::phase-income.phase-income'>;
+    price: Schema.Attribute.Decimal;
     publishedAt: Schema.Attribute.DateTime;
     quantity: Schema.Attribute.Decimal;
     quantity_type: Schema.Attribute.Enumeration<['total', 'week', 'month']>;
@@ -1329,6 +1330,30 @@ export interface ApiHomeMenuHomeMenu extends Struct.SingleTypeSchema {
   };
 }
 
+export interface ApiIncidenceCategoryIncidenceCategory extends Struct.CollectionTypeSchema {
+  collectionName: 'incidence_categories';
+  info: {
+    displayName: 'IncidenceCategory';
+    pluralName: 'incidence-categories';
+    singularName: 'incidence-category';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::incidence-category.incidence-category'> &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String & Schema.Attribute.Required;
+    order: Schema.Attribute.Integer;
+    publishedAt: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
 export interface ApiIncidenceIncidence extends Struct.CollectionTypeSchema {
   collectionName: 'incidences';
   info: {
@@ -1340,6 +1365,7 @@ export interface ApiIncidenceIncidence extends Struct.CollectionTypeSchema {
     draftAndPublish: false;
   };
   attributes: {
+    category: Schema.Attribute.Relation<'manyToOne', 'api::incidence-category.incidence-category'>;
     closed_date: Schema.Attribute.DateTime;
     closed_user: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
     created_user: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
@@ -1816,6 +1842,7 @@ export interface ApiPayrollPayroll extends Struct.CollectionTypeSchema {
     emitted: Schema.Attribute.Date;
     irpf_base: Schema.Attribute.Decimal;
     irpf_date: Schema.Attribute.Date;
+    irpf_paid_date: Schema.Attribute.Date;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::payroll.payroll'> & Schema.Attribute.Private;
     month: Schema.Attribute.Relation<'oneToOne', 'api::month.month'>;
@@ -2139,6 +2166,35 @@ export interface ApiProjectScopeProjectScope extends Struct.CollectionTypeSchema
   };
 }
 
+export interface ApiProjectSerieProjectSerie extends Struct.CollectionTypeSchema {
+  collectionName: 'project_series';
+  info: {
+    description: 'Series that number the projects: [2026-001] Name';
+    displayName: 'ProjectSeries';
+    pluralName: 'project-series';
+    singularName: 'project-serie';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    last_number: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    leading_zeros: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<3>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::project-serie.project-serie'> &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String & Schema.Attribute.Required & Schema.Attribute.Unique;
+    prefix: Schema.Attribute.String;
+    publishedAt: Schema.Attribute.DateTime;
+    suffix: Schema.Attribute.String;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
 export interface ApiProjectStateProjectState extends Struct.CollectionTypeSchema {
   collectionName: 'project_states';
   info: {
@@ -2258,6 +2314,7 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     >;
     project_phases: Schema.Attribute.Relation<'oneToMany', 'api::project-phase.project-phase'>;
     project_scope: Schema.Attribute.Relation<'oneToOne', 'api::project-scope.project-scope'>;
+    project_serie: Schema.Attribute.Relation<'manyToOne', 'api::project-serie.project-serie'>;
     project_state: Schema.Attribute.Relation<'oneToOne', 'api::project-state.project-state'>;
     project_type: Schema.Attribute.Relation<'oneToOne', 'api::project-type.project-type'>;
     publishedAt: Schema.Attribute.DateTime;
@@ -2268,10 +2325,12 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     received_incomes: Schema.Attribute.Relation<'oneToMany', 'api::received-income.received-income'>;
     received_invoices: Schema.Attribute.Relation<'oneToMany', 'api::received-invoice.received-invoice'>;
     region: Schema.Attribute.Relation<'oneToOne', 'api::region.region'>;
+    serie_number: Schema.Attribute.Integer;
     strategies: Schema.Attribute.Relation<'manyToMany', 'api::strategy.strategy'>;
     structural_expenses: Schema.Attribute.Boolean;
     structural_expenses_pct: Schema.Attribute.Decimal;
     tickets: Schema.Attribute.Relation<'oneToMany', 'api::ticket.ticket'>;
+    title: Schema.Attribute.String;
     trashed: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     treasury_annotations: Schema.Attribute.Relation<'oneToMany', 'api::treasury.treasury'>;
     updatedAt: Schema.Attribute.DateTime;
@@ -2346,6 +2405,7 @@ export interface ApiReceivedExpenseReceivedExpense extends Struct.CollectionType
     document_type: Schema.Attribute.Relation<'oneToOne', 'api::document-type.document-type'>;
     documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
+    irpf_paid_date: Schema.Attribute.Date;
     lines: Schema.Attribute.Component<'invoice-line.ticket-line', true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::received-expense.received-expense'> &
@@ -2495,6 +2555,7 @@ export interface ApiReceivedInvoiceReceivedInvoice extends Struct.CollectionType
     document_concept: Schema.Attribute.String;
     documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
+    irpf_paid_date: Schema.Attribute.Date;
     lines: Schema.Attribute.Component<'invoice-line.invoice-line-expenses', true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::received-invoice.received-invoice'> &
@@ -3790,6 +3851,7 @@ declare module '@strapi/strapi' {
       'api::festive.festive': ApiFestiveFestive;
       'api::form-submission.form-submission': ApiFormSubmissionFormSubmission;
       'api::home-menu.home-menu': ApiHomeMenuHomeMenu;
+      'api::incidence-category.incidence-category': ApiIncidenceCategoryIncidenceCategory;
       'api::incidence.incidence': ApiIncidenceIncidence;
       'api::income-type.income-type': ApiIncomeTypeIncomeType;
       'api::integration.api-key': ApiIntegrationApiKey;
@@ -3814,6 +3876,7 @@ declare module '@strapi/strapi' {
       'api::project-original-phase.project-original-phase': ApiProjectOriginalPhaseProjectOriginalPhase;
       'api::project-phase.project-phase': ApiProjectPhaseProjectPhase;
       'api::project-scope.project-scope': ApiProjectScopeProjectScope;
+      'api::project-serie.project-serie': ApiProjectSerieProjectSerie;
       'api::project-state.project-state': ApiProjectStateProjectState;
       'api::project-type.project-type': ApiProjectTypeProjectType;
       'api::project.project': ApiProjectProject;

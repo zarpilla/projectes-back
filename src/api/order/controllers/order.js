@@ -51,6 +51,7 @@ const {
   lateRules,
 } = require('../../../services/late-order');
 const { openLateIncidence } = require('../services/late-incidence');
+const { categoryRefusal } = require('../../incidence/utils/category');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 // collection_point and route_rate: the quick edit picks the rate with them; an
@@ -1106,6 +1107,9 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
     const incidences = Array.isArray(payload.incidences) ? payload.incidences : null;
     if (incidences) delete payload.incidences;
+    // a new incidence needs its category (issues/431)
+    const noCategory = incidences ? await categoryRefusal(incidences) : null;
+    if (noCategory) return ctx.badRequest(noCategory);
 
     // a new delivery point without its data (the quick edit): copy the
     // point's data onto the order (issues/157)

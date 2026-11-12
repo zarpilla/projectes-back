@@ -150,6 +150,8 @@ allow(api('orders-import'), ['create'], LOGISTICS);
 allow('plugin::upload.content-api', ['upload'], LOGISTICS);
 allow(api('incidence'), [...READ, 'update', 'delete'], LOGISTICS);
 allow(api('incidence'), ['infoAll'], ORDERS_ADMIN);
+// the causes to pick from (issues/431); written by admins only
+allow(api('incidence-category'), READ, LOGISTICS);
 allow(api('contact'), [...READ, 'create', 'update', 'forOrders', 'withorders'], LOGISTICS);
 // The drivers keep these (issues/163): «Punts d'entrega» lets them unify and
 // delete points, and «Poblacions i rutes» / «Rutes i dies» let them add towns,

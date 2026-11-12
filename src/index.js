@@ -58,6 +58,7 @@ const { initReadCache } = require('./services/read-cache');
 const { ensureProjectTotals } = require('./api/project/services/project-totals');
 const { rederiveAll } = require('./services/estimated-hours-pricing');
 const { rederiveFrom: refreshDedicationCosts } = require('./services/dedication-cost');
+const { seedIncidenceCategories } = require('./api/incidence/utils/category');
 
 module.exports = {
   /**
@@ -228,6 +229,8 @@ module.exports = {
       // issues/416: a line's €/h became the weighted average of its days
       // (refreshEstimatedHoursPrices already ran with the first-day rule).
       ['refreshEstimatedHoursPricesWeighted', rederiveAll, { runOnce: true }],
+      // issues/431: the Diligència's incidence causes, on the entities with orders.
+      ['seedIncidenceCategories', seedIncidenceCategories, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {
