@@ -1240,6 +1240,7 @@ const updateMultideliveryDiscountForOrders = async (orders, me, ownerFactor = 1)
 // Lives in a service: the order controller has to call it too, because v5
 // validates relation payloads before lifecycles run. See order-incidences.js.
 const { processIncidences } = require('../../services/order-incidences');
+const { alignCollectionDays, followCollectionMove } = require('../../services/collection-group');
 
 const processMultideliveryDiscountForCurrentOrder = async (orderId, data) => {
   // Skip if this is an internal update
@@ -1492,6 +1493,8 @@ module.exports = {
 
     keepInvoicedPrice(data, previousOrder);
     keepCollectionAggregates(data, previousOrder);
+    // a -R has one day: «Prevista» and its pickup day move together (issues/429)
+    alignCollectionDays(data, previousOrder);
 
     await enforceCollectionOrderFields(data, previousOrder);
 
@@ -1676,6 +1679,8 @@ module.exports = {
       // If this is a collection order itself being updated, recalculate its aggregates
       // but don't process it as a regular order (it should never create another collection order)
       if (currentOrder.is_collection_order) {
+        // its orders follow a moved -R, «en bloc» (issues/429)
+        await followCollectionMove(params.id, previousOrder);
         await updateCollectionOrderAggregates(params.id);
         await syncCollectionPickup(params.id, previousOrder);
       } else {

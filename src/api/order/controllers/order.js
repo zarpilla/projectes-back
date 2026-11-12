@@ -52,6 +52,7 @@ const {
 } = require('../../../services/late-order');
 const { openLateIncidence } = require('../services/late-incidence');
 const { categoryRefusal } = require('../../incidence/utils/category');
+const { pickupOrderRefusal, newOrderPickupRefusal } = require('../services/collection-group');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 // collection_point and route_rate: the quick edit picks the rate with them; an
@@ -1045,6 +1046,9 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     if (refusal) return ctx.badRequest(refusal);
     const pickupRefusal = await pickupDateRefusal(payload, ctx.state.user);
     if (pickupRefusal) return ctx.badRequest(pickupRefusal);
+    // picked up before it is delivered (issues/429)
+    const pickupAfter = newOrderPickupRefusal(payload);
+    if (pickupAfter) return ctx.badRequest(pickupAfter.message, pickupAfter.details);
     payload.status = 'pending';
     await applySurchargeSwitch(payload, null);
     const late = await applyLateFlags(payload, ctx.state.user);
@@ -1102,6 +1106,16 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     }
     const pickupRefusal = await pickupDateRefusal(payload, ctx.state.user, stored);
     if (pickupRefusal) return ctx.badRequest(pickupRefusal);
+    // a pickup comes before its delivery, a moved -R included (issues/429)
+    if (judgesDates || 'route' in payload) {
+      const current = await strapi.db.query('api::order.order').findOne({
+        where: { id: numericId(ctx) },
+        select: ['id', 'is_collection_order', 'estimated_delivery_date', 'collection_pickup_date'],
+        populate: { collection_point: { select: ['id'] } },
+      });
+      const pickupAfter = await pickupOrderRefusal(numericId(ctx), payload, current);
+      if (pickupAfter) return ctx.badRequest(pickupAfter.message, pickupAfter.details);
+    }
     await applySurchargeSwitch(payload, stored);
     const late = judgesDates ? await applyLateFlags(payload, ctx.state.user, stored) : null;
 
