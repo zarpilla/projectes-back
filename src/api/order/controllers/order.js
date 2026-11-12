@@ -16,7 +16,6 @@ const { resolvePdfLogo } = require('../../../services/pdf-logo');
 const { randomToken } = require('../../../services/pdf-names');
 const moment = require('moment');
 const { toQueryDay } = require('../../../services/date-fields');
-const { orderLineConcept, invoiceConcept, invoicePdfConcept } = require('../services/invoice-line-concept');
 const sharp = require('sharp');
 const QRCode = require('qrcode');
 const { PDFDocument } = require('pdf-lib');
@@ -26,11 +25,9 @@ const {
   applyFinalPrice,
   applyFinalPriceToAll,
   orderDiscountedPrice,
-  orderInvoiceLine,
 } = require('../services/final-price');
 const { adaptQuery, adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { statsDateRange } = require('../../../services/stats-date-range');
-const { rawExecute } = require('../../../services/raw-sql');
 const { getMe, frontUrlOf } = require('../../../services/me-settings');
 const { numericId } = require('../../../middlewares/v3-compat');
 const { processIncidences } = require('../services/order-incidences');
@@ -53,6 +50,7 @@ const {
 const { openLateIncidence } = require('../services/late-incidence');
 const { categoryRefusal } = require('../../incidence/utils/category');
 const { pickupOrderRefusal, newOrderPickupRefusal } = require('../services/collection-group');
+const { createOrderInvoices, invoicingProject } = require('../services/order-invoices');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 // collection_point and route_rate: the quick edit picks the rate with them; an
@@ -1242,138 +1240,27 @@ async function invoiceRun(ctx) {
   }
   log('CONTACTS_MAPPED');
 
-  // Cache project data with phases
-  const projectCache = {};
-  for (const p of [project]) {
-    const projectData = await strapi.db.query('api::project.project').findOne({
-      where: { id: p },
-      populate: {
-        project_phases: { populate: { incomes: { populate: { invoice: true, income: true } } } },
-      },
-    });
-    if (!projectData?.project_phases?.length) {
-      return ctx.send(
-        { done: false, message: `ERROR. No hi ha fases per al projecte ${projectData?.name}` },
-        500,
-      );
-    }
-    const phase = projectData.project_phases[projectData.project_phases.length - 1];
-    if (!phase.incomes) {
-      return ctx.send(
-        { done: false, message: `ERROR. No hi ha incomes per a la fase del projecte ${projectData.name}` },
-        500,
-      );
-    }
-    projectCache[p] = projectData;
-  }
+  const target = await invoicingProject(project);
+  if (target.error) return ctx.send({ done: false, message: target.error }, 500);
   log('PROJECTS_CACHED');
 
-  // Create invoices per owner in parallel
+  // One draft per owner (services/order-invoices, shared with the monthly run, issues/430)
   log('INVOICE_CREATION_START', `Creating ${uniqueOwners.length} invoices`);
-  const invoicesByOwner = await Promise.all(
-    uniqueOwners.map(async (owner) => {
-      const contact = contactsByOwnerId[owner];
-      const contactOrders = invoiceable.filter((o) => o.owner?.id === owner);
-      const documentConcept = invoiceConcept(contactOrders);
-
-      const invoice = await strapi.service('api::emitted-invoice.emitted-invoice').create({
-        data: {
-          emitted: new Date(),
-          serial: serials[0].id,
-          contact: contact.id,
-          verifactu: verifactuEnabled,
-          payment_method: paymentMethod,
-          document_concept: documentConcept,
-          concept: invoicePdfConcept(contactOrders, pdfConceptText),
-          lines: contactOrders.map((o) => ({
-            concept: orderLineConcept(o),
-            // base and discount from the shared formula (issues/145)
-            ...orderInvoiceLine(o),
-            quantity: 1,
-            price: o.price,
-            vat: 21,
-            irpf: 0,
-          })),
-          projects: [project],
-          publishedAt: new Date(),
-        },
-      });
-      return { invoice, contact, contactOrders, owner };
-    }),
-  );
-  log('INVOICES_CREATED', `${invoicesByOwner.length} invoices created`);
-
-  // Bulk update order status via parameterized raw SQL (lifecycle bypass).
-  // `emitted_invoice` was an FK column on `orders` in v3; in v5 the relation
-  // lives in orders_emitted_invoice_lnk and the column no longer exists, so
-  // the link has to be rewritten separately from the scalar columns.
-  for (const { invoice, contactOrders } of invoicesByOwner) {
-    const ids = contactOrders.map((o) => o.id);
-    if (ids.length === 0) continue;
-    const placeholders = ids.map(() => '?').join(',');
-    await rawExecute(
-      strapi,
-      `UPDATE orders SET emitted_invoice_datetime = NOW(), status = 'invoiced', updated_at = NOW() WHERE id IN (${placeholders})`,
-      ids,
-    );
-    await rawExecute(
-      strapi,
-      `DELETE FROM orders_emitted_invoice_lnk WHERE order_id IN (${placeholders})`,
-      ids,
-    );
-    await rawExecute(
-      strapi,
-      `INSERT INTO orders_emitted_invoice_lnk (order_id, emitted_invoice_id) VALUES ${ids
-        .map(() => '(?, ?)')
-        .join(', ')}`,
-      ids.flatMap((id) => [id, invoice.id]),
-    );
-    // the raw UPDATE skips the change log's middleware (issues/119)
-    const invoicedAt = new Date();
-    await changeLog.logChanges(
-      'api::order.order',
-      contactOrders.map((o) => ({
-        row: { id: o.id },
-        changes: [
-          { field: 'status', from: o.status, to: 'invoiced' },
-          { field: 'emitted_invoice', from: o.emitted_invoice, to: invoice },
-          { field: 'emitted_invoice_datetime', from: o.emitted_invoice_datetime, to: invoicedAt },
-        ],
-      })),
-    );
-  }
-
-  // One income line per invoice on the project's last phase. v3 pushed the
-  // lines into the populated phase and saved the project, and its project
-  // lifecycle wrote them out; in v5 phase incomes are their own collection and
-  // that nested update silently wrote nothing, so every draft from this run
-  // reached the project without its income line. Create the rows directly.
-  //
-  // The amount is the invoice's own base, not a recomputation from the
-  // orders: v3 compounded the multidelivery and pickup discounts here while
-  // the invoice lines add them, so the income drifted from what was billed.
-  for (const p of [project]) {
-    const proj = projectCache[p];
-    const phase = proj.project_phases[proj.project_phases.length - 1];
-    for (const { invoice, contact } of invoicesByOwner) {
-      const amount = Number(invoice.total_base) || 0;
-      await strapi.db.query('api::phase-income.phase-income').create({
-        data: {
-          concept: `Factura #${invoice.code}# - ${contact.trade_name || contact.name}`,
-          quantity: 1,
-          amount,
-          total_amount: amount,
-          date: new Date(),
-          income_type: 1,
-          invoice: invoice.id,
-          paid: false, // pending until the invoice is paid (issues/153)
-          date_estimate_document: new Date(),
-          vat_pct: 21,
-          project_phase: phase.id,
-        },
-      });
-    }
-  }
+  const invoicesByOwner = await createOrderInvoices({
+    groups: uniqueOwners.map((owner) => ({
+      owner,
+      contact: contactsByOwnerId[owner],
+      orders: invoiceable.filter((o) => o.owner?.id === owner),
+    })),
+    project: target.project,
+    phase: target.phase,
+    serialId: serials[0].id,
+    verifactuEnabled,
+    paymentMethod,
+    pdfConceptText,
+    emitted: new Date(),
+    log,
+  });
   log('COMPLETE', `Total time: ${Date.now() - startTime}ms`);
 
   return { orders: orderIds, invoices: invoicesByOwner.map((x) => x.invoice), skipped, timings };

@@ -63,7 +63,12 @@ describe('one discount formula for orders (issues/145)', () => {
   it('the stats and the invoice creation use the shared function', () => {
     const infoAll = controller.slice(controller.indexOf('async infoAll(ctx)'), controller.indexOf('async createCSV(ctx)'));
     expect(infoAll).toContain('price: orderDiscountedPrice(o)');
-    expect(controller).toContain('...orderInvoiceLine(o)');
+    // the invoice lines are built in services/order-invoices.js, shared with the
+    // monthly run (issues/430)
+    const invoices = fs.readFileSync(path.join(__dirname, '../src/api/order/services/order-invoices.js'), 'utf8');
+    expect(invoices).toContain('...orderInvoiceLine(order)');
+    expect(controller).toContain('createOrderInvoices(');
     expect(controller).not.toMatch(/discount:\s*\(o\.multidelivery_discount/);
+    expect(invoices).not.toMatch(/discount:\s*\(order\.multidelivery_discount/);
   });
 });

@@ -275,6 +275,9 @@ async function importSeedPermissions() {
     'incidence-category': ['find', 'findOne', 'create', 'update', 'delete'],
     // «Consulta i autorització nou punt d'entrega» (issues/357)
     'delivery-point-request': ['find', 'findOne', 'create', 'update', 'delete'],
+    // the automatic monthly invoicing and the members' notices (issues/430)
+    'auto-invoicing-run': ['find', 'findOne', 'status', 'preview', 'runNow'],
+    'member-notice': ['find', 'update'],
     city: ['find', 'findOne', 'create', 'update', 'delete', 'postcodes'],
     // update: the time slot of a town in a route (issues/314)
     'city-route': ['find', 'findOne', 'create', 'update', 'delete', 'basic'],

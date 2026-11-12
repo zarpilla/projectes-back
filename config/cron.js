@@ -47,6 +47,12 @@ module.exports = {
   '* * * * *': {
     task: () => withCronLock('task-notifications', () => require('../src/api/task/services/notify').processQueue()),
   },
+  // The automatic monthly invoicing (issues/430): runs once a month, on the
+  // second-to-last working day from 14:10 in the tenant's zone, where a project
+  // has «Habilitar facturació automàtica»; checked every 10 minutes.
+  '*/10 * * * *': {
+    task: () => withCronLock('auto-invoicing', () => require('../src/services/monthly-invoicing/run').maybeRun()),
+  },
   // Retry pending FACe submissions every 5 minutes, max 10 attempts (ported in P8.1).
   '*/5 * * * *': {
     task: ({ strapi }) => withCronLock('face-retry-pending', () => strapi.service('api::face-queue.face-queue').cronRetryPending()),

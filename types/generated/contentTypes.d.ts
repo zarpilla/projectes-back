@@ -451,6 +451,35 @@ export interface ApiActivityActivity extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiAutoInvoicingRunAutoInvoicingRun extends Struct.CollectionTypeSchema {
+  collectionName: 'auto_invoicing_runs';
+  info: {
+    displayName: 'AutoInvoicingRun';
+    pluralName: 'auto-invoicing-runs';
+    singularName: 'auto-invoicing-run';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    finished_at: Schema.Attribute.DateTime;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::auto-invoicing-run.auto-invoicing-run'> &
+      Schema.Attribute.Private;
+    month: Schema.Attribute.String & Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    report: Schema.Attribute.JSON;
+    started_at: Schema.Attribute.DateTime;
+    status: Schema.Attribute.Enumeration<['running', 'done', 'partial', 'failed']>;
+    trigger: Schema.Attribute.Enumeration<['cron', 'manual']>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    user: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.user'>;
+  };
+}
+
 export interface ApiBankAccountBankAccount extends Struct.CollectionTypeSchema {
   collectionName: 'bank_accounts';
   info: {
@@ -1697,6 +1726,34 @@ export interface ApiMeMe extends Struct.SingleTypeSchema {
   };
 }
 
+export interface ApiMemberNoticeMemberNotice extends Struct.CollectionTypeSchema {
+  collectionName: 'member_notices';
+  info: {
+    displayName: 'MemberNotice';
+    pluralName: 'member-notices';
+    singularName: 'member-notice';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    kind: Schema.Attribute.String;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::member-notice.member-notice'> &
+      Schema.Attribute.Private;
+    orders: Schema.Attribute.JSON;
+    publishedAt: Schema.Attribute.DateTime;
+    read: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    text: Schema.Attribute.Text;
+    title: Schema.Attribute.String;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    user: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.user'>;
+  };
+}
+
 export interface ApiMonthMonth extends Struct.CollectionTypeSchema {
   collectionName: 'months';
   info: {
@@ -2291,6 +2348,7 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
   attributes: {
     activities: Schema.Attribute.Relation<'oneToMany', 'api::activity.activity'>;
     activity_types: Schema.Attribute.Relation<'oneToMany', 'api::activity-type.activity-type'>;
+    auto_invoicing: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     billing_mode: Schema.Attribute.Enumeration<['project', 'hours']>;
     clients: Schema.Attribute.Relation<'manyToMany', 'api::contact.contact'>;
     createdAt: Schema.Attribute.DateTime;
@@ -3859,6 +3917,7 @@ declare module '@strapi/strapi' {
       'admin::user': AdminUser;
       'api::activity-type.activity-type': ApiActivityTypeActivityType;
       'api::activity.activity': ApiActivityActivity;
+      'api::auto-invoicing-run.auto-invoicing-run': ApiAutoInvoicingRunAutoInvoicingRun;
       'api::bank-account.bank-account': ApiBankAccountBankAccount;
       'api::bank-import.bank-import': ApiBankImportBankImport;
       'api::bank-movement.bank-movement': ApiBankMovementBankMovement;
@@ -3897,6 +3956,7 @@ declare module '@strapi/strapi' {
       'api::legal-form.legal-form': ApiLegalFormLegalForm;
       'api::logo.logo': ApiLogoLogo;
       'api::me.me': ApiMeMe;
+      'api::member-notice.member-notice': ApiMemberNoticeMemberNotice;
       'api::month.month': ApiMonthMonth;
       'api::order.order': ApiOrderOrder;
       'api::orders-import.orders-import': ApiOrdersImportOrdersImport;

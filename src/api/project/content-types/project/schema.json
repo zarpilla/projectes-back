@@ -310,6 +310,10 @@
     "trashed": {
       "type": "boolean",
       "default": false
+    },
+    "auto_invoicing": {
+      "type": "boolean",
+      "default": false
     }
   }
 }
