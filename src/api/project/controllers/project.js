@@ -185,46 +185,6 @@ const doProjectInfoCalculations = async (data, id) => {
   data.total_expenses_vat = data.total_estimated_expenses_vat;
   data.total_expenses_hours = data.total_estimated_hours;
 
-  // Handle structural expenses if applicable
-  if (data.structural_expenses === true) {
-    const indirects = await strapi.db.query('api::project.project').findMany({
-      where: { structural_expenses_pct: { $gt: 0 }, trashed: false },
-    });
-
-    const indirectIncomesOriginal = _.sumBy(
-      indirects.map((i) => ({
-        indirect: (i.structural_expenses_pct / 100) * (i.total_original_incomes || i.total_incomes || 0),
-      })),
-      'indirect',
-    );
-
-    const indirectIncomesEstimated = _.sumBy(
-      indirects.map((i) => ({
-        indirect: (i.structural_expenses_pct / 100) * (i.total_estimated_incomes || i.total_incomes || 0),
-      })),
-      'indirect',
-    );
-
-    const indirectIncomesReal = _.sumBy(
-      indirects.map((i) => ({
-        indirect: (i.structural_expenses_pct / 100) * (i.total_real_incomes || 0),
-      })),
-      'indirect',
-    );
-
-    data.total_original_incomes += indirectIncomesOriginal;
-    data.original_incomes_expenses += indirectIncomesOriginal;
-
-    data.total_estimated_incomes += indirectIncomesEstimated;
-    data.estimated_incomes_expenses += indirectIncomesEstimated;
-
-    data.total_real_incomes += indirectIncomesReal;
-    data.total_real_incomes_expenses += indirectIncomesReal;
-
-    // Update backwards compatibility fields
-    data.total_incomes += indirectIncomesEstimated;
-  }
-
   // Backwards compatibility fields
   data.balance =
     data.total_estimated_incomes - data.total_estimated_expenses - data.total_estimated_hours_price;
