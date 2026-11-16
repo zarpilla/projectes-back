@@ -67,14 +67,14 @@ function effectiveRoutes({ townRoutes = [], rows = [], allRoutes = [] }) {
 /** The town's active routes, in the routes' order: { town, routes }. */
 async function townRoutesOf(point, lookups) {
   const town = point && !isBlank(point.city) ? String(point.city).trim() : null;
-  if (!town) return { town: null, routes: [] };
+  if (!town) return { town: null, routes: [], known: false };
   const cityIds = new Set((await lookups.cities()).filter((c) => norm(c.name) === norm(town)).map((c) => c.id));
-  if (!cityIds.size) return { town, routes: [] };
+  if (!cityIds.size) return { town, routes: [], known: false };
   const routeIds = new Set(
     (await lookups.cityRoutes()).filter((cr) => cityIds.has(idOf(cr.city))).map((cr) => idOf(cr.route)),
   );
   const routes = (await lookups.routes()).filter((r) => r.active && routeIds.has(r.id));
-  return { town, routes };
+  return { town, routes, known: true };
 }
 
 /** The point-route rows of a point (route id populated). */
@@ -97,13 +97,13 @@ async function pointRoutesOf(point, lookups = createLookups()) {
     point && typeof point === 'object'
       ? point
       : await strapi.db.query('api::contact.contact').findOne({ where: { id: point }, select: ['id', 'city'] });
-  if (!contact) return { town: null, routes: [], rows: [] };
-  const [{ town, routes: townRoutes }, rows, allRoutes] = await Promise.all([
+  if (!contact) return { town: null, routes: [], rows: [], known: false };
+  const [{ town, routes: townRoutes, known }, rows, allRoutes] = await Promise.all([
     townRoutesOf(contact, lookups),
     pointRouteRows(contact.id),
     lookups.routes(),
   ]);
-  return { town, routes: effectiveRoutes({ townRoutes, rows, allRoutes }), rows };
+  return { town, routes: effectiveRoutes({ townRoutes, rows, allRoutes }), rows, known };
 }
 
 /**
@@ -113,9 +113,11 @@ async function pointRoutesOf(point, lookups = createLookups()) {
  */
 async function pointRouteRefusal({ contactId, routeId, date, field = 'ruta' }) {
   if (!contactId || !routeId) return null;
-  const { town, routes } = await pointRoutesOf(contactId);
+  const { town, routes, rows, known } = await pointRoutesOf(contactId);
   const ids = routes.map((r) => r.route.id);
   if (ids.includes(routeId)) return null;
+  // a town missing from «Poblacions» (the form then offers every route): not judged
+  if (!known && !rows.some((r) => r.cancelled && idOf(r.route) === routeId)) return null;
   const day = date ? toQueryDay(date) : null;
   if (day && ids.length) {
     const substitute = await strapi.db.query('api::route-festive.route-festive').findOne({

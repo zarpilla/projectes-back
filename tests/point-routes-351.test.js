@@ -36,7 +36,7 @@ const matches = (row, where = {}) => Object.entries(where).every(([k, cond]) => 
 function stubStrapi() {
   const query = (uid) => ({
     findOne: async ({ where } = {}) => {
-      if (uid === 'api::contact.contact') return { id: where.id, city: [9, 11].includes(where.id) ? 'Vic' : 'Manlleu' };
+      if (uid === 'api::contact.contact') return { id: where.id, city: { 9: 'Vic', 11: 'Vic', 12: 'Sant Enlloc' }[where.id] || 'Manlleu' };
       if (uid === 'api::route.route') return ROUTES.find((r) => r.id === where.id) || null;
       if (uid === 'api::route-festive.route-festive') return CLOSURES.find((c) => matches(c, where)) || null;
       if (uid === 'plugin::users-permissions.user') {
@@ -181,6 +181,13 @@ describe("a member's order on a route of the point", () => {
     // another point of the same town keeps the Monday route, and not the extraordinary one
     expect(await refusal({ contactId: 11, routeId: 1, date: '2026-11-23' })).toBeNull();
     expect(await refusal({ contactId: 11, routeId: 3, date: '2026-11-26' })).toMatch(/DIJOUS/);
+  });
+
+  it('of a town missing from «Poblacions» is not judged, but a cancelled route still is', async () => {
+    POINT_ROUTES = [{ id: 1, contact: { id: 12 }, route: { id: 2 }, cancelled: true }];
+    const refusal = load();
+    expect(await refusal({ contactId: 12, routeId: 1, date: '2026-11-23' })).toBeNull();
+    expect(await refusal({ contactId: 12, routeId: 2, date: '2026-11-25' })).toMatch(/DIMECRES/);
   });
 
   it("on the substitute of a closure of one of the point's routes, on its day (issues/355)", async () => {
