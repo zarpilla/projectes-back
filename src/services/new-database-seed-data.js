@@ -154,7 +154,7 @@ const ME = {
   face_test_endpoint: 'https://se-api.face.gob.es/providers',
   face_real_endpoint: 'https://api.face.gob.es/providers',
   options: {
-    structural_expenses: true,
+    structuralExpenses: false, // issues/420: off; the attribute is camelCase (structural_expenses was ignored)
     treasury: true,
     user_has_cost_by_hour: true,
     show_estimated_hours_in_phases: true,
