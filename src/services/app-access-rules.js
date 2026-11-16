@@ -161,6 +161,10 @@ allow(api('delivery-point-request'), ['update', 'delete'], ORDERS_ADMIN);
 allow(api('auto-invoicing-run'), [...READ, 'status', 'preview', 'runNow'], ORDERS_ADMIN);
 allow(api('member-notice'), ['find', 'update'], LOGISTICS);
 allow(api('contact'), [...READ, 'create', 'update', 'forOrders', 'withorders'], LOGISTICS);
+// a delivery point's own routes (issues/351): everyone in logistics reads them
+// (the order form offers them); the office sets them
+allow(api('point-route'), READ, LOGISTICS);
+allow(api('point-route'), WRITE, ORDERS_ADMIN);
 // The drivers keep these (issues/163): «Punts d'entrega» lets them unify and
 // delete points, and «Poblacions i rutes» / «Rutes i dies» let them add towns,
 // link them to routes and close routes (canEdit there is orders_admin or

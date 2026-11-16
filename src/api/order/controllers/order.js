@@ -38,6 +38,7 @@ const changeLog = require('../../../services/change-log');
 const { orderTotals, TOTALS_SELECT } = require('../services/order-totals');
 const { currentOrderVolumeDiscount } = require('../services/volume-discount');
 const { relationId } = require('../../../services/relation-input');
+const { pointRouteRefusal, pointRoutesOf } = require('../../../services/point-routes');
 const {
   closingOf,
   isAfternoonPickupCutoff,
@@ -238,6 +239,65 @@ async function pickupDateRefusal(payload, user, stored = null) {
     `Les recollides s'han d'informar abans de les ${rules.routeClosingHour} h del dia laborable anterior.`
   );
 }
+
+const numericRelation = (value) => {
+  const id = relationId(value);
+  return typeof id === 'number' ? id : null;
+};
+
+/**
+ * Why a member can't send an order on its route, or null (issues/351): the
+ * route has to be one of the delivery point's (its town's, less the ones the
+ * office cancelled there, plus the extraordinary ones), and a farm pickup's
+ * route one of the collection point's. The office and the staff put any
+ * route. On an update only a changed route, point or date is judged: the form
+ * sends them with every save, and an order keeps the route it already had.
+ */
+async function routeRefusal(payload, user, stored = null) {
+  if (!payload) return null;
+  const pick = (key) => (key in payload ? payload[key] : stored ? stored[key] : undefined);
+  const checks = [
+    { point: 'contact', route: 'route', field: 'ruta' },
+    { point: 'collection_point', route: 'collection_pickup_route', field: 'ruta de recollida' },
+  ];
+  const changed = (check) => {
+    if (!stored) return true;
+    const sameDay = toQueryDay(pick('estimated_delivery_date')) === toQueryDay(stored.estimated_delivery_date);
+    return (
+      numericRelation(pick(check.point)) !== numericRelation(stored[check.point]) ||
+      numericRelation(pick(check.route)) !== numericRelation(stored[check.route]) ||
+      (check.route === 'route' && !sameDay)
+    );
+  };
+  const pending = checks.filter(
+    (c) => numericRelation(pick(c.point)) && numericRelation(pick(c.route)) && changed(c),
+  );
+  if (!pending.length) return null;
+  if (await exemptFromDateRules(user)) return null;
+  for (const check of pending) {
+    const refusal = await pointRouteRefusal({
+      contactId: numericRelation(pick(check.point)),
+      routeId: numericRelation(pick(check.route)),
+      date: check.route === 'route' ? pick('estimated_delivery_date') : pick('collection_pickup_date'),
+      field: check.field,
+    });
+    if (refusal) return refusal;
+  }
+  return null;
+}
+
+/** The fields routeRefusal compares with on an update. */
+const storedForRoutes = (id) =>
+  strapi.db.query('api::order.order').findOne({
+    where: { id },
+    select: ['id', 'estimated_delivery_date', 'collection_pickup_date', 'is_collection_order'],
+    populate: {
+      contact: { select: ['id'] },
+      route: { select: ['id'] },
+      collection_point: { select: ['id'] },
+      collection_pickup_route: { select: ['id'] },
+    },
+  });
 
 /**
  * Whether the farm pickup of an order is on an afternoon route: «Ruta de
@@ -965,7 +1025,9 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
   /**
    * GET /api/orders/collection-point-routes
-   * Returns active routes serving the city of a collection-point contact.
+   * The routes a farm pickup at a collection point can go on: the point's
+   * routes (its town's, less the cancelled ones, plus the extraordinary ones,
+   * the main one first, issues/351), active.
    */
   async collectionPointRoutes(ctx) {
     const { collection_point } = ctx.query;
@@ -975,33 +1037,37 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     try {
       const cpContact = await strapi.db
         .query('api::contact.contact')
-        .findOne({ where: { id: collection_point } });
-      if (!cpContact?.city) return [];
-
-      const cities = await strapi.db
-        .query('api::city.city')
-        .findMany({ where: { name: cpContact.city }, limit: 1 });
-      if (!cities.length) return [];
-
-      const cityRoutes = await strapi.db
-        .query('api::city-route.city-route')
-        .findMany({ where: { city: cities[0].id }, populate: { route: true } });
-      if (!cityRoutes.length) return [];
-
-      const routeIds = cityRoutes
-        .map((cr) => (typeof cr.route === 'object' ? cr.route?.id : cr.route))
-        .filter((rid) => rid != null && typeof rid === 'number');
-      if (!routeIds.length) return [];
-
-      const routes = await strapi.db
-        .query('api::route.route')
-        .findMany({ where: { id: { $in: routeIds }, active: true } });
-      // when it passes by the farm's town, to tell a morning pickup from an
-      // afternoon one (issues/314, 315)
-      return (routes || []).map((route) => {
-        const town = cityRoutes.find((cr) => (typeof cr.route === 'object' ? cr.route?.id : cr.route) === route.id);
-        return { ...route, pickup_time_from: (town && town.time_from) || route.time_from || null };
-      });
+        .findOne({ where: { id: collection_point }, select: ['id', 'city'] });
+      if (!cpContact) return [];
+      const { routes } = await pointRoutesOf(cpContact);
+      if (!routes.length) return [];
+      const ids = routes.map((r) => r.route.id);
+      const full = await strapi.db.query('api::route.route').findMany({ where: { id: { $in: ids }, active: true } });
+      const byId = new Map((full || []).map((r) => [r.id, r]));
+      // the town's time slot of each route, to tell a morning pickup from an
+      // afternoon one (issues/314, 315); an extraordinary route's own one
+      const cities = cpContact.city
+        ? await strapi.db.query('api::city.city').findMany({ where: { name: cpContact.city }, select: ['id'] })
+        : [];
+      const links = cities.length
+        ? await strapi.db.query('api::city-route.city-route').findMany({
+            where: { city: { id: { $in: cities.map((c) => c.id) } } },
+            populate: { route: { select: ['id'] } },
+          })
+        : [];
+      return routes
+        .filter((r) => byId.has(r.route.id))
+        .map(({ route, extra, main, row }) => {
+          const full = byId.get(route.id);
+          const town = links.find((cr) => cr.route && cr.route.id === route.id);
+          const own = extra && row && row.time_from;
+          return {
+            ...full,
+            point_extra: extra,
+            point_main: main,
+            pickup_time_from: own || (town && town.time_from) || full.time_from || null,
+          };
+        });
     } catch (error) {
       console.error('Error fetching collection point routes:', error);
       return ctx.badRequest('Error fetching collection point routes');
@@ -1050,6 +1116,9 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     // picked up before it is delivered (issues/429)
     const pickupAfter = newOrderPickupRefusal(payload);
     if (pickupAfter) return ctx.badRequest(pickupAfter.message, pickupAfter.details);
+    // a route of the delivery point (issues/351)
+    const wrongRoute = await routeRefusal(payload, ctx.state.user);
+    if (wrongRoute) return ctx.badRequest(wrongRoute);
     payload.status = 'pending';
     await applySurchargeSwitch(payload, null);
     const late = await applyLateFlags(payload, ctx.state.user);
@@ -1117,6 +1186,14 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       const pickupAfter = await pickupOrderRefusal(numericId(ctx), payload, current);
       if (pickupAfter) return ctx.badRequest(pickupAfter.message, pickupAfter.details);
     }
+    // a route of the delivery point (issues/351)
+    if (['route', 'contact', 'estimated_delivery_date', 'collection_point', 'collection_pickup_route'].some((k) => k in payload)) {
+      const routesStored = await storedForRoutes(numericId(ctx));
+      if (routesStored && !routesStored.is_collection_order) {
+        const wrongRoute = await routeRefusal(payload, ctx.state.user, routesStored);
+        if (wrongRoute) return ctx.badRequest(wrongRoute);
+      }
+    }
     await applySurchargeSwitch(payload, stored);
     const late = judgesDates ? await applyLateFlags(payload, ctx.state.user, stored) : null;
 
@@ -1149,6 +1226,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 // A property of the factory: Strapi only calls the factory itself.
 module.exports.orderRules = {
   missingOrderFields,
+  routeRefusal,
   deliveryDateRefusal,
   pickupDateRefusal,
   applyLateFlags,

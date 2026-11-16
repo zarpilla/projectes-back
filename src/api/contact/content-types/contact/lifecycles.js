@@ -86,5 +86,7 @@ module.exports = {
     if (refs.some(Boolean)) {
       throw new ApplicationError('You cannot delete this contact');
     }
+    // its route settings go with it (issues/351)
+    await strapi.db.query('api::point-route.point-route').deleteMany({ where: { contact: id } });
   },
 };

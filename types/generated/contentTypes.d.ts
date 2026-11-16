@@ -2097,6 +2097,38 @@ export interface ApiPivotTableViewPivotTableView extends Struct.CollectionTypeSc
   };
 }
 
+export interface ApiPointRoutePointRoute extends Struct.CollectionTypeSchema {
+  collectionName: 'point_routes';
+  info: {
+    description: 'A route setting of one delivery point (issues/351): extraordinary, main or cancelled';
+    displayName: 'PointRoute';
+    pluralName: 'point-routes';
+    singularName: 'point-route';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    cancelled: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    contact: Schema.Attribute.Relation<'manyToOne', 'api::contact.contact'>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    extra: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::point-route.point-route'> &
+      Schema.Attribute.Private;
+    main: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    publishedAt: Schema.Attribute.DateTime;
+    route: Schema.Attribute.Relation<'manyToOne', 'api::route.route'>;
+    time_from: Schema.Attribute.Time;
+    time_from_2: Schema.Attribute.Time;
+    time_to: Schema.Attribute.Time;
+    time_to_2: Schema.Attribute.Time;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
 export interface ApiProductProduct extends Struct.CollectionTypeSchema {
   collectionName: 'products';
   info: {
@@ -3966,6 +3998,7 @@ declare module '@strapi/strapi' {
       'api::phase-income.phase-income': ApiPhaseIncomePhaseIncome;
       'api::pickup.pickup': ApiPickupPickup;
       'api::pivot-table-view.pivot-table-view': ApiPivotTableViewPivotTableView;
+      'api::point-route.point-route': ApiPointRoutePointRoute;
       'api::product.product': ApiProductProduct;
       'api::project-document.project-document': ApiProjectDocumentProjectDocument;
       'api::project-likelihood.project-likelihood': ApiProjectLikelihoodProjectLikelihood;
