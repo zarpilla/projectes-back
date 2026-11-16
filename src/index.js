@@ -12,6 +12,7 @@ const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoi
 const { ensureRefsIndex } = require('./services/integrations/refs');
 const { normalizeComponentTypes } = require('./services/normalize-component-types');
 const { backfillActivityCosts } = require('./services/backfill-activity-costs');
+const { dropPickupOrderMultidelivery } = require('./services/drop-pickup-order-multidelivery');
 const { mergeInvalidPeriodificationYears } = require('./services/merge-invalid-periodification-years');
 const { ensureResetPasswordUrl } = require('./services/ensure-reset-password-url');
 const { ensureAuthEmailTemplates } = require('./services/ensure-auth-email-templates');
@@ -231,6 +232,9 @@ module.exports = {
       ['refreshEstimatedHoursPricesWeighted', rederiveAll, { runOnce: true }],
       // issues/431: the Diligència's incidence causes, on the entities with orders.
       ['seedIncidenceCategories', seedIncidenceCategories, { runOnce: true }],
+      // issues/438: open pickup orders (-R), and orders whose only other order of
+      // the day was a -R, lose the multidelivery discount; invoiced ones stay.
+      ['dropPickupOrderMultidelivery', dropPickupOrderMultidelivery, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

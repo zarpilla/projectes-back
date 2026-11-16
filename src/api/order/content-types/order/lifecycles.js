@@ -219,8 +219,10 @@ const checkMultidelivery = async (id, date, contactId, currentStatus) => {
     populate: { emitted_invoice: { select: ['id'] } },
   });
 
+  // A pickup order (-R) is not a delivery to the point: it never counts
+  // towards a multidelivery group (issues/438).
   const others = ordersOfDateAndContact.filter(
-    (o) => o.id.toString() !== id.toString() && o.status !== 'cancelled',
+    (o) => o.id.toString() !== id.toString() && o.status !== 'cancelled' && !o.is_collection_order,
   );
 
   return {
@@ -1242,7 +1244,32 @@ const updateMultideliveryDiscountForOrders = async (orders, me, ownerFactor = 1)
 const { processIncidences } = require('../../services/order-incidences');
 const { alignCollectionDays, followCollectionMove } = require('../../services/collection-group');
 
+/**
+ * A pickup order (-R) never has a multidelivery discount (issues/438): with
+ * the farm's pickup discount (99,9 %) on top the line went negative. One that
+ * is not on an invoice yet loses it, delivered or not; an invoiced one keeps
+ * the amount it was invoiced with.
+ */
+const isCollectionOrder = (order) => !!(order && order.is_collection_order);
+
+const dropCollectionOrderMultidelivery = async (orderId, data) => {
+  if (!Number(data.multidelivery_discount) || data.status === 'invoiced' || relationId(data.emitted_invoice)) return;
+  // the row the update merged in has its invoice unpopulated
+  if (orderId) {
+    const stored = await strapi.db
+      .query('api::order.order')
+      .findOne({ where: { id: orderId }, populate: { emitted_invoice: { select: ['id'] } } });
+    if (stored && relationId(stored.emitted_invoice)) return;
+  }
+  data.multidelivery_discount = 0;
+};
+
 const processMultideliveryDiscountForCurrentOrder = async (orderId, data) => {
+  if (isCollectionOrder(data)) {
+    await dropCollectionOrderMultidelivery(orderId, data);
+    return;
+  }
+
   // Skip if this is an internal update
   if (data._internal) {
     return;
@@ -1300,6 +1327,11 @@ const processMultideliveryDiscountForCurrentOrder = async (orderId, data) => {
 const processMultideliveryDiscountForOtherOrders = async (orderId, currentData, previousOrder = null) => {
   // Skip if this is an internal update
   if (currentData._internal) {
+    return;
+  }
+
+  // a pickup order (-R) is in no multidelivery group (issues/438)
+  if (isCollectionOrder(currentData) || isCollectionOrder(previousOrder)) {
     return;
   }
 
@@ -1791,5 +1823,13 @@ Object.defineProperty(module.exports, 'collectionOrderHelpers', {
     checkTransferNeededForCollectionOrder,
     calculateTransferRoute,
     calculateEstimatedDeliveryDate,
+  },
+});
+
+// For the tests of the multidelivery passes (issues/438). Non-enumerable, as above.
+Object.defineProperty(module.exports, 'multideliveryHelpers', {
+  value: {
+    processMultideliveryDiscountForCurrentOrder,
+    processMultideliveryDiscountForOtherOrders,
   },
 });

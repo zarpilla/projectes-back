@@ -939,8 +939,11 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     // a cancelled order never counts, for a new order either: the preview
     // promised a discount the save then dropped (issues/235)
     const others = ordersOfDateAndContact.filter(
-      (o) => (!id || String(o.id) !== String(id)) && o.status !== 'cancelled',
+      (o) => (!id || String(o.id) !== String(id)) && o.status !== 'cancelled' && !o.is_collection_order,
     );
+    // a pickup order (-R) neither gets the discount nor gives it (issues/438)
+    const self = id ? ordersOfDateAndContact.find((o) => String(o.id) === String(id)) : null;
+    const isCollectionOrder = !!(self && self.is_collection_order);
 
     const volumeDiscount = await currentOrderVolumeDiscount(
       id,
@@ -955,7 +958,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
     return {
       multidelivery_discount:
-        others.length + pendingSameContact > 0 ? ownerFactor * (me.orders_options?.multidelivery_discount || 0) : 0,
+        !isCollectionOrder && others.length + pendingSameContact > 0 ? ownerFactor * (me.orders_options?.multidelivery_discount || 0) : 0,
       ...(volumeDiscount === undefined ? {} : { volume_discount: volumeDiscount }),
     };
   },
