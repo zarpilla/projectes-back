@@ -18,8 +18,9 @@
  * An order already on an invoice never enters another one.
  *
  * Drafts dated the last day of the month, one per member, on the logistics
- * project whose dates cover that day and has «Habilitar facturació
- * automàtica». A member whose draft would be wrong (an order without price,
+ * project of the month's quarter («4T 2026 - Logística», the rule of
+ * quarter-project.js, the same as «Facturar»), which must have «Habilitar
+ * facturació automàtica». A member whose draft would be wrong (an order without price,
  * no contact to invoice) gets none: she is told in Avisos, the office in the
  * report. What only needs a look (a price of 0, an order of an earlier month
  * not delivered yet) is noted on the draft and in the report.
@@ -62,17 +63,6 @@ function dueRun(now, rules) {
   const day = invoicingDayOf(month, rules);
   const start = moment(`${day} ${RUN_HOUR}:${RUN_MINUTE}`, 'YYYY-MM-DD H:m');
   return { due: !wall.isBefore(start), month, day, at: `${day} ${String(RUN_HOUR).padStart(2, '0')}:${String(RUN_MINUTE).padStart(2, '0')}` };
-}
-
-/** The project the month's drafts go to: «Habilitar facturació automàtica» and its dates cover the invoice day. */
-function projectFor(projects, invoiceDay) {
-  const covering = (projects || []).filter((p) => {
-    if (!p || !p.auto_invoicing) return false;
-    const start = p.date_start ? String(p.date_start).slice(0, 10) : null;
-    const end = p.date_end ? String(p.date_end).slice(0, 10) : null;
-    return start && end && start <= invoiceDay && invoiceDay <= end;
-  });
-  return { project: covering[0] || null, others: covering.slice(1) };
 }
 
 const ownerName = (owner) => (owner && (owner.fullname || owner.username)) || 'Sense sòcia';
@@ -198,6 +188,5 @@ module.exports = {
   orderNumber,
   pendingLabel,
   planMonth,
-  projectFor,
   reconcile,
 };

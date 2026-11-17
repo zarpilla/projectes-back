@@ -22,6 +22,7 @@ const { lateRules } = require('../late-order');
 const { currentTimeZone } = require('../time-zone');
 const { createOrderInvoices, invoicingProject, orderLine } = require('../../api/order/services/order-invoices');
 const plan = require('./plan');
+const quarters = require('./quarter-project');
 
 const ORDER = 'api::order.order';
 const RUN = 'api::auto-invoicing-run.auto-invoicing-run';
@@ -57,11 +58,9 @@ async function status(now = new Date()) {
   const rules = await rulesFor(month);
   const due = plan.dueRun(now, rules);
   const invoiceDay = plan.lastDayOf(due.month);
-  const projects = await strapi.db.query('api::project.project').findMany({
-    where: { auto_invoicing: true },
-    select: ['id', 'name', 'date_start', 'date_end', 'auto_invoicing'],
-  });
-  const { project, others } = plan.projectFor(projects, invoiceDay);
+  const projects = await quarters.loadProjects();
+  const found = await quarters.quarterProjectFor(due.month, projects);
+  const project = found.project && found.project.auto_invoicing ? found.project : null;
   const runs = await strapi.db.query(RUN).findMany({
     orderBy: { id: 'desc' },
     limit: 6,
@@ -73,9 +72,16 @@ async function status(now = new Date()) {
     monthName: plan.monthName(due.month),
     runAt: due.at,
     invoiceDay,
+    // the project the drafts go to: the quarter's, with the option on
     project: project ? { id: project.id, name: project.name } : null,
-    otherProjects: others.map((p) => ({ id: p.id, name: p.name })),
-    autoProjects: projects.map((p) => ({ id: p.id, name: p.name, date_start: p.date_start, date_end: p.date_end })),
+    // the quarter and its project with the option or not, its model, the name of a new one
+    quarter: found.quarter,
+    quarterProject: found.project,
+    latestProject: found.latest,
+    newProjectName: found.newName,
+    otherProjects: found.others.filter((p) => p.auto_invoicing).map((p) => ({ id: p.id, name: p.name })),
+    // any project with the option: the entity turned it on
+    autoProjects: projects.filter((p) => p.auto_invoicing && !p.trashed).map((p) => ({ id: p.id, name: p.name })),
     cronDone: Boolean(done),
     runs: runs.map((r) => ({
       id: r.id,
@@ -109,15 +115,17 @@ async function contactsByOwner() {
 async function prepare(month) {
   const invoiceDay = plan.lastDayOf(month);
   const fatal = [];
-  const projects = await strapi.db.query('api::project.project').findMany({
-    where: { auto_invoicing: true },
-    select: ['id', 'name', 'date_start', 'date_end', 'auto_invoicing'],
-  });
-  const { project, others } = plan.projectFor(projects, invoiceDay);
-  if (!project) {
+  const found = await quarters.quarterProjectFor(month);
+  const project = found.project && found.project.auto_invoicing ? found.project : null;
+  const others = found.others.filter((p) => p.auto_invoicing);
+  if (!found.project) {
     fatal.push(
-      `Cap projecte té «Habilitar facturació automàtica» amb unes dates que incloguin el ${moment(invoiceDay).format('DD/MM/YYYY')}. ` +
-        'Activa-ho al projecte de logística del trimestre.',
+      `No hi ha cap projecte de logística per al ${found.quarter.label}. ` +
+        `Crea'l a Logística › Facturar («${found.newName}»).`,
+    );
+  } else if (!project) {
+    fatal.push(
+      `El projecte del ${found.quarter.label}, «${found.project.name}», no té «Habilitar facturació automàtica». Activa-ho al projecte.`,
     );
   }
   const year = invoiceDay.slice(0, 4);
@@ -337,8 +345,9 @@ async function run({ month, trigger = 'manual', user = null, preview = false } =
 
 /** The cron's call: the month's run when it is due and the cron has not run it yet. */
 async function maybeRun(now = new Date()) {
-  // an entity that never turned it on (no project with the option) is left alone
-  const enabled = await strapi.db.query('api::project.project').count({ where: { auto_invoicing: true } });
+  // an entity that never turned it on (no project with the option) is left alone;
+  // one that did is told when the quarter's project is missing or without it
+  const enabled = await strapi.db.query('api::project.project').count({ where: { auto_invoicing: true, $or: [{ trashed: false }, { trashed: null }] } });
   if (!enabled) return null;
   const rules = await rulesFor(moment(now).format('YYYY-MM'));
   const due = plan.dueRun(now, rules);

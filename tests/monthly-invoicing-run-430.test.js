@@ -66,7 +66,7 @@ function setup({ projects, orders, runs = [], contacts }) {
 
 afterEach(() => { delete global.strapi; });
 
-const PROJECT = { id: 2, name: 'Logística T4 2026', auto_invoicing: true, date_start: '2026-10-01', date_end: '2026-12-31' };
+const PROJECT = { id: 2, name: '4T 2026 - Logística', auto_invoicing: true, date_start: '2026-10-01', date_end: '2026-12-31', project_phases: [{ id: 9 }] };
 const o = (id, ownerId, day, extra = {}) => ({ id, owner: { id: ownerId, username: `u${ownerId}` }, estimated_delivery_date: day, status: 'delivered', price: 10, ...extra });
 const CONTACTS = [{ id: 11, name: 'Formatges', users_permissions_user: { id: 1 } }, { id: 12, name: 'Hortes', users_permissions_user: { id: 2 } }];
 
@@ -101,13 +101,43 @@ describe('the monthly run (issues/430)', () => {
     expect(written.runUpdates[0]).toMatchObject({ status: 'partial' });
   });
 
-  it('without a project covering the month: no draft, the office is told', async () => {
-    const { monthly, written } = setup({ projects: [{ ...PROJECT, date_end: '2026-09-30' }], contacts: CONTACTS, orders: [o(1, 1, '2026-10-05')] });
+  it("without the quarter's project: no draft, the office is told", async () => {
+    // the 3T project with the option and dates till December doesn't take October (the dates don't count)
+    const { monthly, written } = setup({
+      projects: [{ ...PROJECT, id: 1, name: '3T 2026 - Logística', date_start: '2026-07-01' }],
+      contacts: CONTACTS,
+      orders: [o(1, 1, '2026-10-05')],
+    });
     const report = await monthly.run({ month: '2026-10' });
     expect(written.groups).toBeNull();
-    expect(report.fatal[0]).toMatch(/Habilitar facturació automàtica/);
+    expect(report.fatal[0]).toBe("No hi ha cap projecte de logística per al 4T 2026. Crea'l a Logística › Facturar («4T 2026 - Logística»).");
     expect(written.runUpdates[0]).toMatchObject({ status: 'failed' });
     expect(written.mails[0].html).toContain("No s'ha generat cap esborrany");
+  });
+
+  it("with the quarter's project without the option: no draft, the office is told", async () => {
+    const { monthly, written } = setup({
+      projects: [{ ...PROJECT, id: 1, name: '3T 2026 - Logística' }, { ...PROJECT, auto_invoicing: false }],
+      contacts: CONTACTS,
+      orders: [o(1, 1, '2026-10-05')],
+    });
+    const report = await monthly.run({ month: '2026-10' });
+    expect(written.groups).toBeNull();
+    expect(report.fatal[0]).toMatch(/«4T 2026 - Logística», no té «Habilitar facturació automàtica»/);
+  });
+
+  it('the status: the quarter, its project and the name of a new one', async () => {
+    const { monthly } = setup({ projects: [{ ...PROJECT, id: 1, name: '3T 2026 - Logística' }], contacts: CONTACTS, orders: [] });
+    const state = await monthly.status(new Date('2026-11-17T10:00:00Z'));
+    expect(state).toMatchObject({
+      month: '2026-11',
+      project: null,
+      quarterProject: null,
+      quarter: { label: '4T 2026', date_start: '2026-10-01', date_end: '2026-12-31' },
+      latestProject: { id: 1 },
+      newProjectName: '4T 2026 - Logística',
+      autoProjects: [{ id: 1, name: '3T 2026 - Logística' }],
+    });
   });
 
   it('a preview writes nothing', async () => {
@@ -149,7 +179,7 @@ describe('who reaches it (issues/430)', () => {
   it('the office runs it, members read their notices', () => {
     jest.resetModules();
     const { isAllowed } = require('../src/services/app-access-rules');
-    for (const a of ['status', 'preview', 'runNow', 'find']) {
+    for (const a of ['status', 'preview', 'runNow', 'quarterProject', 'createQuarterProject', 'find']) {
       expect(isAllowed(`api::auto-invoicing-run.auto-invoicing-run.${a}`, ['orders_admin'])).toBe(true);
       expect(isAllowed(`api::auto-invoicing-run.auto-invoicing-run.${a}`, ['orders'])).toBe(false);
     }

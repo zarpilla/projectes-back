@@ -158,7 +158,7 @@ allow(api('delivery-point-request'), [...READ, 'create'], LOGISTICS);
 allow(api('delivery-point-request'), ['update', 'delete'], ORDERS_ADMIN);
 // the automatic monthly invoicing (issues/430): the office follows and runs it;
 // a member reads her own notices (controller) and marks them read
-allow(api('auto-invoicing-run'), [...READ, 'status', 'preview', 'runNow'], ORDERS_ADMIN);
+allow(api('auto-invoicing-run'), [...READ, 'status', 'preview', 'runNow', 'quarterProject', 'createQuarterProject'], ORDERS_ADMIN);
 allow(api('member-notice'), ['find', 'update'], LOGISTICS);
 allow(api('contact'), [...READ, 'create', 'update', 'forOrders', 'withorders'], LOGISTICS);
 // a delivery point's own routes (issues/351): everyone in logistics reads them

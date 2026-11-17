@@ -5,8 +5,8 @@
  * part. Second-to-last working day at 14:10; every order expected in the month
  * not cancelled (the user's decision, 2026-11-12) plus the earlier months'
  * ones still not invoiced, under «Serveis pendents mes de …»; one draft per
- * member dated the month's last day, on the project with «Habilitar
- * facturació automàtica» covering that day.
+ * member dated the month's last day, on the quarter's logistics project
+ * with «Habilitar facturació automàtica».
  */
 
 const plan = require('../src/services/monthly-invoicing/plan');
@@ -39,19 +39,7 @@ describe('when it runs (issues/430)', () => {
   });
 });
 
-describe('the project (issues/430)', () => {
-  const projects = [
-    { id: 1, name: 'Logística T3 2026', auto_invoicing: true, date_start: '2026-07-01', date_end: '2026-09-30' },
-    { id: 2, name: 'Logística T4 2026', auto_invoicing: true, date_start: '2026-10-01', date_end: '2026-12-31' },
-    { id: 3, name: 'Altre', auto_invoicing: false, date_start: '2026-01-01', date_end: '2026-12-31' },
-  ];
-  it('is the one with the option whose dates cover the invoice day', () => {
-    expect(plan.projectFor(projects, '2026-10-31').project.id).toBe(2);
-    expect(plan.projectFor(projects, '2026-09-30').project.id).toBe(1);
-    expect(plan.projectFor(projects, '2027-01-31').project).toBeNull();
-    expect(plan.projectFor(projects.slice(2), '2026-10-31').project).toBeNull();
-  });
-});
+// the project of the month: tests/monthly-invoicing-quarter-project-430.test.js
 
 const owner = (id, name) => ({ id, username: name, fullname: name });
 const order = (id, ownerId, day, extra = {}) => ({
