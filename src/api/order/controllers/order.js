@@ -445,6 +445,16 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   async table(ctx) {
     await adaptFinalPriceFilter(ctx.query);
     const opts = adaptQuery(ctx.query);
+    // id breaks the ties (several orders of one delivery point, same route…):
+    // without it MySQL may order equal rows differently on each page, and an
+    // order shows on two pages and is missing from the other (issues/445)
+    const sort = opts.sort ? [...opts.sort] : [];
+    if (!sort.some((s) => s && Object.prototype.hasOwnProperty.call(s, 'id'))) {
+      // the direction of the first sort, nested for a relation ({ owner: { fullname: 'desc' } })
+      let dir = sort[0];
+      while (dir && typeof dir === 'object') dir = Object.values(dir)[0];
+      sort.push({ id: typeof dir === 'string' ? dir : 'asc' });
+    }
     const entities = await strapi.db.query('api::order.order').findMany({
       where: opts.filters || {},
       populate: TABLE_POPULATE.reduce(
@@ -456,7 +466,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       ),
       limit: dbLimit(opts),
       offset: opts.pagination?.start,
-      orderBy: opts.sort,
+      orderBy: sort,
     });
     // The orders list reads this endpoint, and its Preu column renders
     // `finalPrice`. v3 got it from an afterFind hook that ran on every query;
