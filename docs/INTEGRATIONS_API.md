@@ -139,7 +139,7 @@ Les tres operacions d'escriptura responen **200** encara que alguns elements es 
 
 **Ruta i dia:**
 
-- Envieu el dia que voleu l'entrega. La Diligència hi assigna la ruta que passa per la població del punt d'entrega aquell dia. Si aquell dia no en passa cap, o la ruta està tancada, s'assigna el primer dia següent que en passi una. En aquest cas la resposta porta l'avís `DATE_MOVED`.
+- Envieu el dia que voleu l'entrega. La Diligència hi assigna la ruta que passa pel punt d'entrega aquell dia: les de la seva població, menys les que l'oficina hi hagi anul·lat, més les extraordinàries del punt; si n'hi ha més d'una, primer la ruta principal del punt. Si aquell dia no en passa cap, o la ruta està tancada, s'assigna el primer dia següent que en passi una. En aquest cas la resposta porta l'avís `DATE_MOVED`.
 - Les rutes de cada població són les de «Poblacions i rutes». Si l'oficina tanca una ruta i en posa una d'alternativa, també es fa servir l'alternativa.
 - La resposta diu quina ruta i quin dia s'han assignat (`route`, `estimated_delivery_date`).
 - Si torneu a enviar el mateix dia que vau demanar, encara que s'hagués mogut, el resultat és `unchanged`. Si demaneu un altre dia, o canvieu el punt d'entrega a una altra població, la ruta i el dia s'assignen de nou.
@@ -153,7 +153,7 @@ Les tres operacions d'escriptura responen **200** encara que alguns elements es 
   - Quan l'oficina ja l'ha agafada (processada, lliurada, facturada…), queda `ORDER_LOCKED`. En aquest cas cal parlar amb l'oficina.
   - Una comanda anul·lada no es torna a obrir (`ORDER_CANCELLED`): feu-ne una de nova amb un altre `external_id`.
   - Si les dades no canvien, el resultat és `unchanged` sigui quin sigui l'estat.
-- **Si envieu `route`:** la data ha de ser un dia que la ruta surti i no estigui tancada (`DATE_NOT_ON_ROUTE`). Si canvieu la ruta sense data, la data que ja tenia la comanda ha de ser un dia de la ruta nova.
+- **Si envieu `route`:** ha de ser una ruta del punt d'entrega (`ROUTE_NOT_ON_POINT`), i la data ha de ser un dia que la ruta surti i no estigui tancada (`DATE_NOT_ON_ROUTE`). Si canvieu la ruta sense data, la data que ja tenia la comanda ha de ser un dia de la ruta nova.
 - **Recollides a finca:** no es poden fer des de l'API (`FARM_PICKUP_NOT_SUPPORTED`).
 
 ## Anul·lar comandes: `POST /integrations/orders/cancel`
@@ -210,6 +210,7 @@ Torna el que podeu fer servir als altres camps:
 | `DATE_NOT_ALLOWED` | La data és d'avui o d'abans |
 | `TOWN_WITHOUT_ROUTES` | La població del punt d'entrega no té cap ruta. Cal parlar amb l'oficina |
 | `NO_ROUTE_DAY` | Cap ruta de la població surt en els 60 dies següents al dia demanat |
+| `ROUTE_NOT_ON_POINT` | Només si envieu `route`: la ruta no és de les del punt d'entrega (les de la seva població, menys les que l'oficina hi ha anul·lat, més les extraordinàries del punt) |
 | `DATE_NOT_ON_ROUTE` | Només si envieu `route`: la ruta no surt aquell dia o està tancada. Porta `next_route_day`, el pròxim dia obert |
 | `ROUTE_WITHOUT_DAYS` | Només si envieu `route`: la ruta no té cap dia obert |
 | `ORDER_LOCKED` | La comanda ja no està pendent |

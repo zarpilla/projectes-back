@@ -1,0 +1,50 @@
+{
+  "kind": "collectionType",
+  "collectionName": "point_routes",
+  "info": {
+    "singularName": "point-route",
+    "pluralName": "point-routes",
+    "displayName": "PointRoute",
+    "description": "A route setting of one delivery point (issues/351): extraordinary, main or cancelled"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "contact": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::contact.contact"
+    },
+    "route": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::route.route"
+    },
+    "extra": {
+      "type": "boolean",
+      "default": false
+    },
+    "cancelled": {
+      "type": "boolean",
+      "default": false
+    },
+    "main": {
+      "type": "boolean",
+      "default": false
+    },
+    "time_from": {
+      "type": "time"
+    },
+    "time_to": {
+      "type": "time"
+    },
+    "time_from_2": {
+      "type": "time"
+    },
+    "time_to_2": {
+      "type": "time"
+    }
+  }
+}

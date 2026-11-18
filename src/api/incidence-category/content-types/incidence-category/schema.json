@@ -1,0 +1,27 @@
+{
+  "kind": "collectionType",
+  "collectionName": "incidence_categories",
+  "info": {
+    "singularName": "incidence-category",
+    "pluralName": "incidence-categories",
+    "displayName": "IncidenceCategory"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "order": {
+      "type": "integer"
+    },
+    "system_key": {
+      "type": "string",
+      "unique": true,
+      "private": true
+    }
+  }
+}

@@ -12,6 +12,7 @@ const { ensureOrderInvoiceUniqueIndex } = require('./services/ensure-order-invoi
 const { ensureRefsIndex } = require('./services/integrations/refs');
 const { normalizeComponentTypes } = require('./services/normalize-component-types');
 const { backfillActivityCosts } = require('./services/backfill-activity-costs');
+const { dropPickupOrderMultidelivery } = require('./services/drop-pickup-order-multidelivery');
 const { mergeInvalidPeriodificationYears } = require('./services/merge-invalid-periodification-years');
 const { ensureResetPasswordUrl } = require('./services/ensure-reset-password-url');
 const { ensureAuthEmailTemplates } = require('./services/ensure-auth-email-templates');
@@ -58,6 +59,7 @@ const { initReadCache } = require('./services/read-cache');
 const { ensureProjectTotals } = require('./api/project/services/project-totals');
 const { rederiveAll } = require('./services/estimated-hours-pricing');
 const { rederiveFrom: refreshDedicationCosts } = require('./services/dedication-cost');
+const { seedIncidenceCategories, categorizeLateIncidences } = require('./api/incidence/utils/category');
 
 module.exports = {
   /**
@@ -228,6 +230,13 @@ module.exports = {
       // issues/416: a line's €/h became the weighted average of its days
       // (refreshEstimatedHoursPrices already ran with the first-day rule).
       ['refreshEstimatedHoursPricesWeighted', rederiveAll, { runOnce: true }],
+      // issues/431: the Diligència's incidence causes, on the entities with orders.
+      ['seedIncidenceCategories', seedIncidenceCategories, { runOnce: true }],
+      // 2026-11-18: «Comanda registrada fora de temps», where the late orders' incidences go.
+      ['categorizeLateIncidences', categorizeLateIncidences, { runOnce: true }],
+      // issues/438: open pickup orders (-R), and orders whose only other order of
+      // the day was a -R, lose the multidelivery discount; invoiced ones stay.
+      ['dropPickupOrderMultidelivery', dropPickupOrderMultidelivery, { runOnce: true }],
     ];
     for (const [name, handler, options] of fixes) {
       try {

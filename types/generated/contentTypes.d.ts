@@ -451,6 +451,35 @@ export interface ApiActivityActivity extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiAutoInvoicingRunAutoInvoicingRun extends Struct.CollectionTypeSchema {
+  collectionName: 'auto_invoicing_runs';
+  info: {
+    displayName: 'AutoInvoicingRun';
+    pluralName: 'auto-invoicing-runs';
+    singularName: 'auto-invoicing-run';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    finished_at: Schema.Attribute.DateTime;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::auto-invoicing-run.auto-invoicing-run'> &
+      Schema.Attribute.Private;
+    month: Schema.Attribute.String & Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    report: Schema.Attribute.JSON;
+    started_at: Schema.Attribute.DateTime;
+    status: Schema.Attribute.Enumeration<['running', 'done', 'partial', 'failed']>;
+    trigger: Schema.Attribute.Enumeration<['cron', 'manual']>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    user: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.user'>;
+  };
+}
+
 export interface ApiBankAccountBankAccount extends Struct.CollectionTypeSchema {
   collectionName: 'bank_accounts';
   info: {
@@ -809,6 +838,45 @@ export interface ApiDedicationTypeDedicationType extends Struct.CollectionTypeSc
   };
 }
 
+export interface ApiDeliveryPointRequestDeliveryPointRequest extends Struct.CollectionTypeSchema {
+  collectionName: 'delivery_point_requests';
+  info: {
+    displayName: 'DeliveryPointRequest';
+    pluralName: 'delivery-point-requests';
+    singularName: 'delivery-point-request';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    address: Schema.Attribute.String & Schema.Attribute.Required;
+    answer: Schema.Attribute.Text;
+    answered: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    answered_date: Schema.Attribute.DateTime;
+    answered_user: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.user'>;
+    archived: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    city: Schema.Attribute.String & Schema.Attribute.Required;
+    contact: Schema.Attribute.Relation<'manyToOne', 'api::contact.contact'>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    estimated_weight: Schema.Attribute.String;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::delivery-point-request.delivery-point-request'
+    > &
+      Schema.Attribute.Private;
+    notes: Schema.Attribute.Text;
+    publishedAt: Schema.Attribute.DateTime;
+    schedule: Schema.Attribute.Text & Schema.Attribute.Required;
+    status: Schema.Attribute.Enumeration<['approved', 'rejected']>;
+    trade_name: Schema.Attribute.String;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    user: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.user'>;
+  };
+}
+
 export interface ApiDeliveryTypeDeliveryType extends Struct.CollectionTypeSchema {
   collectionName: 'delivery_types';
   info: {
@@ -1162,6 +1230,7 @@ export interface ApiEstimatedHourEstimatedHour extends Struct.CollectionTypeSche
       Schema.Attribute.Private;
     monthly_quantity: Schema.Attribute.Decimal;
     phase_income: Schema.Attribute.Relation<'manyToOne', 'api::phase-income.phase-income'>;
+    price: Schema.Attribute.Decimal;
     publishedAt: Schema.Attribute.DateTime;
     quantity: Schema.Attribute.Decimal;
     quantity_type: Schema.Attribute.Enumeration<['total', 'week', 'month']>;
@@ -1329,6 +1398,31 @@ export interface ApiHomeMenuHomeMenu extends Struct.SingleTypeSchema {
   };
 }
 
+export interface ApiIncidenceCategoryIncidenceCategory extends Struct.CollectionTypeSchema {
+  collectionName: 'incidence_categories';
+  info: {
+    displayName: 'IncidenceCategory';
+    pluralName: 'incidence-categories';
+    singularName: 'incidence-category';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::incidence-category.incidence-category'> &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String & Schema.Attribute.Required;
+    order: Schema.Attribute.Integer;
+    publishedAt: Schema.Attribute.DateTime;
+    system_key: Schema.Attribute.String & Schema.Attribute.Private & Schema.Attribute.Unique;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
 export interface ApiIncidenceIncidence extends Struct.CollectionTypeSchema {
   collectionName: 'incidences';
   info: {
@@ -1340,6 +1434,7 @@ export interface ApiIncidenceIncidence extends Struct.CollectionTypeSchema {
     draftAndPublish: false;
   };
   attributes: {
+    category: Schema.Attribute.Relation<'manyToOne', 'api::incidence-category.incidence-category'>;
     closed_date: Schema.Attribute.DateTime;
     closed_user: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
     created_user: Schema.Attribute.Relation<'oneToOne', 'plugin::users-permissions.user'>;
@@ -1636,6 +1731,34 @@ export interface ApiMeMe extends Struct.SingleTypeSchema {
   };
 }
 
+export interface ApiMemberNoticeMemberNotice extends Struct.CollectionTypeSchema {
+  collectionName: 'member_notices';
+  info: {
+    displayName: 'MemberNotice';
+    pluralName: 'member-notices';
+    singularName: 'member-notice';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    kind: Schema.Attribute.String;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::member-notice.member-notice'> &
+      Schema.Attribute.Private;
+    orders: Schema.Attribute.JSON;
+    publishedAt: Schema.Attribute.DateTime;
+    read: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    text: Schema.Attribute.Text;
+    title: Schema.Attribute.String;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    user: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.user'>;
+  };
+}
+
 export interface ApiMonthMonth extends Struct.CollectionTypeSchema {
   collectionName: 'months';
   info: {
@@ -1816,6 +1939,7 @@ export interface ApiPayrollPayroll extends Struct.CollectionTypeSchema {
     emitted: Schema.Attribute.Date;
     irpf_base: Schema.Attribute.Decimal;
     irpf_date: Schema.Attribute.Date;
+    irpf_paid_date: Schema.Attribute.Date;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::payroll.payroll'> & Schema.Attribute.Private;
     month: Schema.Attribute.Relation<'oneToOne', 'api::month.month'>;
@@ -1973,6 +2097,38 @@ export interface ApiPivotTableViewPivotTableView extends Struct.CollectionTypeSc
     name: Schema.Attribute.String;
     owner_user: Schema.Attribute.Integer;
     publishedAt: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
+export interface ApiPointRoutePointRoute extends Struct.CollectionTypeSchema {
+  collectionName: 'point_routes';
+  info: {
+    description: 'A route setting of one delivery point (issues/351): extraordinary, main or cancelled';
+    displayName: 'PointRoute';
+    pluralName: 'point-routes';
+    singularName: 'point-route';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    cancelled: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    contact: Schema.Attribute.Relation<'manyToOne', 'api::contact.contact'>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    extra: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::point-route.point-route'> &
+      Schema.Attribute.Private;
+    main: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    publishedAt: Schema.Attribute.DateTime;
+    route: Schema.Attribute.Relation<'manyToOne', 'api::route.route'>;
+    time_from: Schema.Attribute.Time;
+    time_from_2: Schema.Attribute.Time;
+    time_to: Schema.Attribute.Time;
+    time_to_2: Schema.Attribute.Time;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
   };
@@ -2139,6 +2295,35 @@ export interface ApiProjectScopeProjectScope extends Struct.CollectionTypeSchema
   };
 }
 
+export interface ApiProjectSerieProjectSerie extends Struct.CollectionTypeSchema {
+  collectionName: 'project_series';
+  info: {
+    description: 'Series that number the projects: [2026-001] Name';
+    displayName: 'ProjectSeries';
+    pluralName: 'project-series';
+    singularName: 'project-serie';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    last_number: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    leading_zeros: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<3>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::project-serie.project-serie'> &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String & Schema.Attribute.Required & Schema.Attribute.Unique;
+    prefix: Schema.Attribute.String;
+    publishedAt: Schema.Attribute.DateTime;
+    suffix: Schema.Attribute.String;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
 export interface ApiProjectStateProjectState extends Struct.CollectionTypeSchema {
   collectionName: 'project_states';
   info: {
@@ -2200,6 +2385,7 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
   attributes: {
     activities: Schema.Attribute.Relation<'oneToMany', 'api::activity.activity'>;
     activity_types: Schema.Attribute.Relation<'oneToMany', 'api::activity-type.activity-type'>;
+    auto_invoicing: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     billing_mode: Schema.Attribute.Enumeration<['project', 'hours']>;
     clients: Schema.Attribute.Relation<'manyToMany', 'api::contact.contact'>;
     createdAt: Schema.Attribute.DateTime;
@@ -2258,6 +2444,7 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     >;
     project_phases: Schema.Attribute.Relation<'oneToMany', 'api::project-phase.project-phase'>;
     project_scope: Schema.Attribute.Relation<'oneToOne', 'api::project-scope.project-scope'>;
+    project_serie: Schema.Attribute.Relation<'manyToOne', 'api::project-serie.project-serie'>;
     project_state: Schema.Attribute.Relation<'oneToOne', 'api::project-state.project-state'>;
     project_type: Schema.Attribute.Relation<'oneToOne', 'api::project-type.project-type'>;
     publishedAt: Schema.Attribute.DateTime;
@@ -2268,10 +2455,12 @@ export interface ApiProjectProject extends Struct.CollectionTypeSchema {
     received_incomes: Schema.Attribute.Relation<'oneToMany', 'api::received-income.received-income'>;
     received_invoices: Schema.Attribute.Relation<'oneToMany', 'api::received-invoice.received-invoice'>;
     region: Schema.Attribute.Relation<'oneToOne', 'api::region.region'>;
+    serie_number: Schema.Attribute.Integer;
     strategies: Schema.Attribute.Relation<'manyToMany', 'api::strategy.strategy'>;
     structural_expenses: Schema.Attribute.Boolean;
     structural_expenses_pct: Schema.Attribute.Decimal;
     tickets: Schema.Attribute.Relation<'oneToMany', 'api::ticket.ticket'>;
+    title: Schema.Attribute.String;
     trashed: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     treasury_annotations: Schema.Attribute.Relation<'oneToMany', 'api::treasury.treasury'>;
     updatedAt: Schema.Attribute.DateTime;
@@ -2346,6 +2535,7 @@ export interface ApiReceivedExpenseReceivedExpense extends Struct.CollectionType
     document_type: Schema.Attribute.Relation<'oneToOne', 'api::document-type.document-type'>;
     documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
+    irpf_paid_date: Schema.Attribute.Date;
     lines: Schema.Attribute.Component<'invoice-line.ticket-line', true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::received-expense.received-expense'> &
@@ -2495,6 +2685,7 @@ export interface ApiReceivedInvoiceReceivedInvoice extends Struct.CollectionType
     document_concept: Schema.Attribute.String;
     documents: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
     emitted: Schema.Attribute.Date;
+    irpf_paid_date: Schema.Attribute.Date;
     lines: Schema.Attribute.Component<'invoice-line.invoice-line-expenses', true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::received-invoice.received-invoice'> &
@@ -3763,6 +3954,7 @@ declare module '@strapi/strapi' {
       'admin::user': AdminUser;
       'api::activity-type.activity-type': ApiActivityTypeActivityType;
       'api::activity.activity': ApiActivityActivity;
+      'api::auto-invoicing-run.auto-invoicing-run': ApiAutoInvoicingRunAutoInvoicingRun;
       'api::bank-account.bank-account': ApiBankAccountBankAccount;
       'api::bank-import.bank-import': ApiBankImportBankImport;
       'api::bank-movement.bank-movement': ApiBankMovementBankMovement;
@@ -3774,6 +3966,7 @@ declare module '@strapi/strapi' {
       'api::contact.contact': ApiContactContact;
       'api::daily-dedication.daily-dedication': ApiDailyDedicationDailyDedication;
       'api::dedication-type.dedication-type': ApiDedicationTypeDedicationType;
+      'api::delivery-point-request.delivery-point-request': ApiDeliveryPointRequestDeliveryPointRequest;
       'api::delivery-type.delivery-type': ApiDeliveryTypeDeliveryType;
       'api::diet.diet': ApiDietDiet;
       'api::document-change-log.document-change-log': ApiDocumentChangeLogDocumentChangeLog;
@@ -3790,6 +3983,7 @@ declare module '@strapi/strapi' {
       'api::festive.festive': ApiFestiveFestive;
       'api::form-submission.form-submission': ApiFormSubmissionFormSubmission;
       'api::home-menu.home-menu': ApiHomeMenuHomeMenu;
+      'api::incidence-category.incidence-category': ApiIncidenceCategoryIncidenceCategory;
       'api::incidence.incidence': ApiIncidenceIncidence;
       'api::income-type.income-type': ApiIncomeTypeIncomeType;
       'api::integration.api-key': ApiIntegrationApiKey;
@@ -3799,6 +3993,7 @@ declare module '@strapi/strapi' {
       'api::legal-form.legal-form': ApiLegalFormLegalForm;
       'api::logo.logo': ApiLogoLogo;
       'api::me.me': ApiMeMe;
+      'api::member-notice.member-notice': ApiMemberNoticeMemberNotice;
       'api::month.month': ApiMonthMonth;
       'api::order.order': ApiOrderOrder;
       'api::orders-import.orders-import': ApiOrdersImportOrdersImport;
@@ -3808,12 +4003,14 @@ declare module '@strapi/strapi' {
       'api::phase-income.phase-income': ApiPhaseIncomePhaseIncome;
       'api::pickup.pickup': ApiPickupPickup;
       'api::pivot-table-view.pivot-table-view': ApiPivotTableViewPivotTableView;
+      'api::point-route.point-route': ApiPointRoutePointRoute;
       'api::product.product': ApiProductProduct;
       'api::project-document.project-document': ApiProjectDocumentProjectDocument;
       'api::project-likelihood.project-likelihood': ApiProjectLikelihoodProjectLikelihood;
       'api::project-original-phase.project-original-phase': ApiProjectOriginalPhaseProjectOriginalPhase;
       'api::project-phase.project-phase': ApiProjectPhaseProjectPhase;
       'api::project-scope.project-scope': ApiProjectScopeProjectScope;
+      'api::project-serie.project-serie': ApiProjectSerieProjectSerie;
       'api::project-state.project-state': ApiProjectStateProjectState;
       'api::project-type.project-type': ApiProjectTypeProjectType;
       'api::project.project': ApiProjectProject;

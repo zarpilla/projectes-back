@@ -8,7 +8,8 @@
  * day after it that one does.
  *
  * - The town's routes are those of «Poblacions i rutes» (city-route) for the
- *   point's town, matched by name, and active, like the order form's
+ *   point's town, changed for the point by the office (issues/351: cancelled
+ *   ones out, extraordinary ones in, the main one first on its day), matched by name, and active, like the order form's
  *   validCityRoutes (a route that also does transfers, is_transfer_route, is
  *   one of them: La Garriga only has such routes); with several on the same
  *   day, the first in the routes' order.
@@ -19,7 +20,7 @@
  */
 const moment = require('moment');
 const { routeRunsOn } = require('../../order/services/route-days');
-const { norm, isBlank } = require('./lookups');
+const { pointRoutesOf } = require('../../../services/point-routes');
 const { reject } = require('./sync-common');
 
 // the order form's SUBSTITUTE_DAYS_BEFORE (front src/domain/routeClosures.js)
@@ -34,19 +35,14 @@ const ymd = (value) => {
   return moment(value).format('YYYY-MM-DD');
 };
 
-/** The town's routes, in the routes' order, for a delivery point: { town, routes }. */
+/**
+ * The delivery point's routes: its town's, less the ones the office cancelled
+ * there, plus the extraordinary ones (issues/351): { town, routes, mainId }.
+ */
 async function townRoutesOf(point, lookups) {
-  const town = point && !isBlank(point.city) ? String(point.city).trim() : null;
-  if (!town) return { town: null, routes: [] };
-  const cityIds = new Set(
-    (await lookups.cities()).filter((c) => norm(c.name) === norm(town)).map((c) => c.id),
-  );
-  if (!cityIds.size) return { town, routes: [] };
-  const routeIds = new Set(
-    (await lookups.cityRoutes()).filter((cr) => cityIds.has(idOf(cr.city))).map((cr) => idOf(cr.route)),
-  );
-  const routes = (await lookups.routes()).filter((r) => r.active && routeIds.has(r.id));
-  return { town, routes };
+  const { town, routes } = await pointRoutesOf(point, lookups);
+  const main = routes.find((r) => r.main);
+  return { town, routes: routes.map((r) => r.route), mainId: main ? main.route.id : null };
 }
 
 async function loadClosures(from, to) {
@@ -65,7 +61,7 @@ async function loadClosures(from, to) {
  * later: { route, date, moved }. `today` is the tenant's day.
  */
 async function assignRouteDay(point, from, { lookups, today }) {
-  const { town, routes } = await townRoutesOf(point, lookups);
+  const { town, routes, mainId } = await townRoutesOf(point, lookups);
   if (!routes.length) {
     reject(
       'TOWN_WITHOUT_ROUTES',
@@ -98,7 +94,9 @@ async function assignRouteDay(point, from, { lookups, today }) {
       : [];
     const candidates = [...running, ...substitutes];
     if (candidates.length) {
-      candidates.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+      // the point's main route first (issues/351), then the routes' order
+      const rank = (r) => (r.id === mainId ? -1 : (order.get(r.id) ?? 0));
+      candidates.sort((a, b) => rank(a) - rank(b));
       return { route: candidates[0], date, moved: date !== from };
     }
   }

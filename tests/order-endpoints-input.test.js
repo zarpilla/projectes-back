@@ -41,6 +41,11 @@ function load() {
   jest.doMock(src('api', 'order', 'services', 'volume-discount'), () => ({
     currentOrderVolumeDiscount: async () => undefined,
   }));
+  // the route checks of a delivery point (issues/351) are tested apart
+  jest.doMock(src('services', 'point-routes'), () => ({
+  ...jest.requireActual(src('services', 'point-routes')),
+  pointRouteRefusal: async () => null,
+  }));
   const ctrl = require(src('api', 'order', 'controllers', 'order'));
   return { ctrl, base, serviceCreate };
 }

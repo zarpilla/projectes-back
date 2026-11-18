@@ -150,7 +150,21 @@ allow(api('orders-import'), ['create'], LOGISTICS);
 allow('plugin::upload.content-api', ['upload'], LOGISTICS);
 allow(api('incidence'), [...READ, 'update', 'delete'], LOGISTICS);
 allow(api('incidence'), ['infoAll'], ORDERS_ADMIN);
+// the causes to pick from (issues/431); written by admins only
+allow(api('incidence-category'), READ, LOGISTICS);
+// «Consulta i autorització nou punt d'entrega» (issues/357): everyone in
+// logistics asks and reads her own (controller); the office marks them answered
+allow(api('delivery-point-request'), [...READ, 'create'], LOGISTICS);
+allow(api('delivery-point-request'), ['update', 'delete'], ORDERS_ADMIN);
+// the automatic monthly invoicing (issues/430): the office follows and runs it;
+// a member reads her own notices (controller) and marks them read
+allow(api('auto-invoicing-run'), [...READ, 'status', 'preview', 'runNow', 'quarterProject', 'createQuarterProject'], ORDERS_ADMIN);
+allow(api('member-notice'), ['find', 'update'], LOGISTICS);
 allow(api('contact'), [...READ, 'create', 'update', 'forOrders', 'withorders'], LOGISTICS);
+// a delivery point's own routes (issues/351): everyone in logistics reads them
+// (the order form offers them); the office sets them
+allow(api('point-route'), READ, LOGISTICS);
+allow(api('point-route'), WRITE, ORDERS_ADMIN);
 // The drivers keep these (issues/163): «Punts d'entrega» lets them unify and
 // delete points, and «Poblacions i rutes» / «Rutes i dies» let them add towns,
 // link them to routes and close routes (canEdit there is orders_admin or

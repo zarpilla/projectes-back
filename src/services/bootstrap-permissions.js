@@ -271,6 +271,15 @@ async function importSeedPermissions() {
     'route-rate': ['find', 'findOne', 'create', 'update', 'delete'],
     // Taules auxiliars › Avisos de dipòsit (issues/313)
     'route-pickup-notice': ['find', 'findOne', 'create', 'update', 'delete'],
+    // Taules auxiliars › Categories d'incidència (issues/431): writes admin-only (isAdmin policy)
+    'incidence-category': ['find', 'findOne', 'create', 'update', 'delete'],
+    // a delivery point's own routes (issues/351): writes office-only (isAdminOrOffice policy)
+    'point-route': ['find', 'findOne', 'create', 'update', 'delete'],
+    // «Consulta i autorització nou punt d'entrega» (issues/357)
+    'delivery-point-request': ['find', 'findOne', 'create', 'update', 'delete'],
+    // the automatic monthly invoicing and the members' notices (issues/430)
+    'auto-invoicing-run': ['find', 'findOne', 'status', 'preview', 'runNow', 'quarterProject', 'createQuarterProject'],
+    'member-notice': ['find', 'update'],
     city: ['find', 'findOne', 'create', 'update', 'delete', 'postcodes'],
     // update: the time slot of a town in a route (issues/314)
     'city-route': ['find', 'findOne', 'create', 'update', 'delete', 'basic'],

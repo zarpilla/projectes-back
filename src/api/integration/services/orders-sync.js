@@ -13,7 +13,8 @@
  *   town that runs that day, or on the first day after it that one does
  *   (route-assignment.js); the day asked is kept on its integration ref, so
  *   sending it again is no change. With a route, the day must be one the
- *   route runs (DATE_NOT_ON_ROUTE). Either way from tomorrow on
+ *   route runs (DATE_NOT_ON_ROUTE) and be one of the point's
+ *   (ROUTE_NOT_ON_POINT, issues/351). Either way from tomorrow on
  *   (deliveryDateRefusal); past the cutoff it is late and pays the surcharge
  *   (applyLateFlags). Without a day, the first one from tomorrow.
  * - Only a pending order changes; one the office has taken is refused
@@ -509,6 +510,9 @@ async function createOrder(item, externalId, ctx) {
   payload.status = 'pending';
   const missingField = orderRules.missingOrderFields(payload);
   if (missingField) reject('INVALID', missingField);
+  // a route sent has to be one of the point's (issues/351)
+  const wrongRoute = await orderRules.routeRefusal(payload, ctx.user);
+  if (wrongRoute) reject('ROUTE_NOT_ON_POINT', wrongRoute, { field: 'route' });
   const late = await orderRules.applyLateFlags(payload, ctx.user);
 
   if (ctx.dryRun) {
@@ -635,6 +639,8 @@ async function updateOrder(item, stored, ctx) {
   }
   if (payload.contact) Object.assign(payload, contactSnapshot(wanted.point));
 
+  const wrongRoute = await orderRules.routeRefusal(payload, ctx.user, stored);
+  if (wrongRoute) reject('ROUTE_NOT_ON_POINT', wrongRoute, { field: 'route' });
   await memberRules.memberOwnOrderUpdate(strapi, stored, payload, ctx.userId, ctx.permissions);
   const late = payload.estimated_delivery_date
     ? await orderRules.applyLateFlags(payload, ctx.user, stored)

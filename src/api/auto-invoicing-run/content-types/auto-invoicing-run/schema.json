@@ -1,0 +1,41 @@
+{
+  "kind": "collectionType",
+  "collectionName": "auto_invoicing_runs",
+  "info": {
+    "singularName": "auto-invoicing-run",
+    "pluralName": "auto-invoicing-runs",
+    "displayName": "AutoInvoicingRun"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "month": {
+      "type": "string",
+      "required": true
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": ["running", "done", "partial", "failed"]
+    },
+    "trigger": {
+      "type": "enumeration",
+      "enum": ["cron", "manual"]
+    },
+    "started_at": {
+      "type": "datetime"
+    },
+    "finished_at": {
+      "type": "datetime"
+    },
+    "report": {
+      "type": "json"
+    },
+    "user": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    }
+  }
+}

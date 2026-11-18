@@ -1,0 +1,36 @@
+{
+  "kind": "collectionType",
+  "collectionName": "member_notices",
+  "info": {
+    "singularName": "member-notice",
+    "pluralName": "member-notices",
+    "displayName": "MemberNotice"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "user": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "text": {
+      "type": "text"
+    },
+    "orders": {
+      "type": "json"
+    },
+    "read": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

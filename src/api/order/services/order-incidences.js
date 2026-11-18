@@ -14,6 +14,8 @@
  * Ported from v3 api/orders/models/orders.js processIncidences.
  */
 
+const { categoryIdOf } = require('../../incidence/utils/category');
+
 const processIncidences = async (orderId, incidences, trackingUser) => {
   try {
     // Get existing incidences for this order
@@ -37,6 +39,9 @@ const processIncidences = async (orderId, incidences, trackingUser) => {
             description: incidence.description,
             state: incidence.state,
           };
+          // the cause can be corrected, not removed (issues/431)
+          const categoryId = categoryIdOf(incidence.category);
+          if (categoryId) updateData.category = categoryId;
 
           // If changing to closed state and not already closed, set closed_date and closed_user
           if (incidence.state === 'closed' && existing.state !== 'closed') {
@@ -57,6 +62,9 @@ const processIncidences = async (orderId, incidences, trackingUser) => {
           description: incidence.description,
           state: incidence.state || 'open',
         };
+        // checked by the order controller (categoryRefusal, issues/431)
+        const categoryId = categoryIdOf(incidence.category);
+        if (categoryId) createData.category = categoryId;
 
         if (trackingUser) {
           createData.created_user = trackingUser.id;

@@ -1,0 +1,72 @@
+{
+  "kind": "collectionType",
+  "collectionName": "delivery_point_requests",
+  "info": {
+    "singularName": "delivery-point-request",
+    "pluralName": "delivery-point-requests",
+    "displayName": "DeliveryPointRequest"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "trade_name": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string",
+      "required": true
+    },
+    "address": {
+      "type": "string",
+      "required": true
+    },
+    "schedule": {
+      "type": "text",
+      "required": true
+    },
+    "estimated_weight": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "text"
+    },
+    "user": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "answered": {
+      "type": "boolean",
+      "default": false
+    },
+    "answered_date": {
+      "type": "datetime"
+    },
+    "answered_user": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": [
+        "approved",
+        "rejected"
+      ]
+    },
+    "answer": {
+      "type": "text"
+    },
+    "archived": {
+      "type": "boolean",
+      "default": false
+    },
+    "contact": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::contact.contact"
+    }
+  }
+}

@@ -35,6 +35,11 @@
     "description": {
       "type": "text"
     },
+    "category": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::incidence-category.incidence-category"
+    },
     "order": {
       "type": "relation",
       "relation": "manyToOne",

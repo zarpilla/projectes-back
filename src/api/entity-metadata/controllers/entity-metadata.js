@@ -128,6 +128,7 @@ const FIELD_TRANSLATIONS = {
 
 // Labels of one table that differ from FIELD_TRANSLATIONS.
 const ENTITY_FIELD_TRANSLATIONS = {
+  'incidence-category': { order: 'Ordre' },
   pickup: { pickup: 'Recollida a la finca', city: 'Població' },
   'route-pickup-notice': { pickup: 'Recollida (magatzem)', message: 'Avís' },
   'vat-type': { value: '% IVA' },
@@ -151,6 +152,11 @@ const ENUM_LABELS = {
 
 // Help under a field of the admin form.
 const FIELD_HELP = {
+  // issues/431
+  'incidence-category': {
+    name: 'La causa que es tria en obrir una incidència (obligatòria).',
+    order: 'Posició a la llista: les més petites primer.',
+  },
   'expense-type': {
     capital_goods: "Marcat: l'IVA de les factures rebudes d'aquest tipus va a les caselles de béns d'inversió del model 303 (30/31).",
   },
@@ -223,6 +229,8 @@ const HIDDEN_FIELDS = {
   strategy: ['code_name'],
   // the table lists the holidays for everyone, those with no person (issues/310)
   festive: ['users_permissions_user'],
+  // the server's key for «Comanda registrada fora de temps» (late-order incidences)
+  'incidence-category': ['system_key'],
 };
 
 // Fields the admin form asks for although the schema doesn't require them.
@@ -241,6 +249,7 @@ const OPTION_FILTERS = {
 const LIST_VIEWS = {
   // the holidays for everyone, newest first; the people's own are not listed (issues/310)
   festive: { query: '_where[users_permissions_user_null]=true', sort: ['date', 'desc'] },
+  'incidence-category': { sort: ['order', 'asc'] },
 };
 
 // To-many relations the admin form edits (the others are edited from the other side).
@@ -296,6 +305,8 @@ const ADMIN_ENTITIES = {
   'festive-type': 'festive-types',
   'route-rate': 'route-rates',
   'route-pickup-notice': 'route-pickup-notices',
+  // issues/431: admins only (not in OFFICE_ENTITIES)
+  'incidence-category': 'incidence-categories',
   // issues/159: tables that needed the Strapi admin
   pickup: 'pickups',
   'delivery-type': 'delivery-types',
@@ -336,6 +347,7 @@ const DISPLAY_NAMES = {
   'route-rate': { displayName: 'Tarifes de ruta', displayNameSingular: 'Tarifa de ruta' },
   pickup: { displayName: 'Punts de recollida', displayNameSingular: 'Punt de recollida' },
   'route-pickup-notice': { displayName: 'Avisos de dipòsit', displayNameSingular: 'Avís de dipòsit' },
+  'incidence-category': { displayName: "Categories d'incidència", displayNameSingular: "Categoria d'incidència" },
   'delivery-type': { displayName: 'Tipus de lliurament', displayNameSingular: 'Tipus de lliurament' },
   city: { displayName: 'Poblacions', displayNameSingular: 'Població' },
   product: { displayName: 'Productes', displayNameSingular: 'Producte' },

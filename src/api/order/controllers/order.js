@@ -16,7 +16,6 @@ const { resolvePdfLogo } = require('../../../services/pdf-logo');
 const { randomToken } = require('../../../services/pdf-names');
 const moment = require('moment');
 const { toQueryDay } = require('../../../services/date-fields');
-const { orderLineConcept, invoiceConcept, invoicePdfConcept } = require('../services/invoice-line-concept');
 const sharp = require('sharp');
 const QRCode = require('qrcode');
 const { PDFDocument } = require('pdf-lib');
@@ -26,11 +25,9 @@ const {
   applyFinalPrice,
   applyFinalPriceToAll,
   orderDiscountedPrice,
-  orderInvoiceLine,
 } = require('../services/final-price');
 const { adaptQuery, adaptCtxQuery, dbLimit } = require('../../../services/query-adapter');
 const { statsDateRange } = require('../../../services/stats-date-range');
-const { rawExecute } = require('../../../services/raw-sql');
 const { getMe, frontUrlOf } = require('../../../services/me-settings');
 const { numericId } = require('../../../middlewares/v3-compat');
 const { processIncidences } = require('../services/order-incidences');
@@ -41,6 +38,7 @@ const changeLog = require('../../../services/change-log');
 const { orderTotals, TOTALS_SELECT } = require('../services/order-totals');
 const { currentOrderVolumeDiscount } = require('../services/volume-discount');
 const { relationId } = require('../../../services/relation-input');
+const { pointRouteRefusal, pointRoutesOf } = require('../../../services/point-routes');
 const {
   closingOf,
   isAfternoonPickupCutoff,
@@ -51,6 +49,9 @@ const {
   lateRules,
 } = require('../../../services/late-order');
 const { openLateIncidence } = require('../services/late-incidence');
+const { categoryRefusal } = require('../../incidence/utils/category');
+const { pickupOrderRefusal, newOrderPickupRefusal } = require('../services/collection-group');
+const { createOrderInvoices, invoicingProject } = require('../services/order-invoices');
 
 // Whitelist of relations needed by OrdersTable.vue (omits emitted_invoice: ~96% of payload).
 // collection_point and route_rate: the quick edit picks the rate with them; an
@@ -238,6 +239,65 @@ async function pickupDateRefusal(payload, user, stored = null) {
     `Les recollides s'han d'informar abans de les ${rules.routeClosingHour} h del dia laborable anterior.`
   );
 }
+
+const numericRelation = (value) => {
+  const id = relationId(value);
+  return typeof id === 'number' ? id : null;
+};
+
+/**
+ * Why a member can't send an order on its route, or null (issues/351): the
+ * route has to be one of the delivery point's (its town's, less the ones the
+ * office cancelled there, plus the extraordinary ones), and a farm pickup's
+ * route one of the collection point's. The office and the staff put any
+ * route. On an update only a changed route, point or date is judged: the form
+ * sends them with every save, and an order keeps the route it already had.
+ */
+async function routeRefusal(payload, user, stored = null) {
+  if (!payload) return null;
+  const pick = (key) => (key in payload ? payload[key] : stored ? stored[key] : undefined);
+  const checks = [
+    { point: 'contact', route: 'route', field: 'ruta' },
+    { point: 'collection_point', route: 'collection_pickup_route', field: 'ruta de recollida' },
+  ];
+  const changed = (check) => {
+    if (!stored) return true;
+    const sameDay = toQueryDay(pick('estimated_delivery_date')) === toQueryDay(stored.estimated_delivery_date);
+    return (
+      numericRelation(pick(check.point)) !== numericRelation(stored[check.point]) ||
+      numericRelation(pick(check.route)) !== numericRelation(stored[check.route]) ||
+      (check.route === 'route' && !sameDay)
+    );
+  };
+  const pending = checks.filter(
+    (c) => numericRelation(pick(c.point)) && numericRelation(pick(c.route)) && changed(c),
+  );
+  if (!pending.length) return null;
+  if (await exemptFromDateRules(user)) return null;
+  for (const check of pending) {
+    const refusal = await pointRouteRefusal({
+      contactId: numericRelation(pick(check.point)),
+      routeId: numericRelation(pick(check.route)),
+      date: check.route === 'route' ? pick('estimated_delivery_date') : pick('collection_pickup_date'),
+      field: check.field,
+    });
+    if (refusal) return refusal;
+  }
+  return null;
+}
+
+/** The fields routeRefusal compares with on an update. */
+const storedForRoutes = (id) =>
+  strapi.db.query('api::order.order').findOne({
+    where: { id },
+    select: ['id', 'estimated_delivery_date', 'collection_pickup_date', 'is_collection_order'],
+    populate: {
+      contact: { select: ['id'] },
+      route: { select: ['id'] },
+      collection_point: { select: ['id'] },
+      collection_pickup_route: { select: ['id'] },
+    },
+  });
 
 /**
  * Whether the farm pickup of an order is on an afternoon route: «Ruta de
@@ -784,7 +844,8 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       }
       const provider = contacts[0];
 
-      const invoiceHeader = [{ label: 'COMANDA', value: order.id.toString().padStart(4, '0') }];
+      // as big as the delivery date below (issues/432)
+      const invoiceHeader = [{ label: 'COMANDA', value: order.id.toString().padStart(4, '0'), fontSize: 20 }];
 
       let more = order.contact?.notes
         ? order.contact.notes + '\n'
@@ -948,8 +1009,11 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     // a cancelled order never counts, for a new order either: the preview
     // promised a discount the save then dropped (issues/235)
     const others = ordersOfDateAndContact.filter(
-      (o) => (!id || String(o.id) !== String(id)) && o.status !== 'cancelled',
+      (o) => (!id || String(o.id) !== String(id)) && o.status !== 'cancelled' && !o.is_collection_order,
     );
+    // a pickup order (-R) neither gets the discount nor gives it (issues/438)
+    const self = id ? ordersOfDateAndContact.find((o) => String(o.id) === String(id)) : null;
+    const isCollectionOrder = !!(self && self.is_collection_order);
 
     const volumeDiscount = await currentOrderVolumeDiscount(
       id,
@@ -964,14 +1028,16 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
     return {
       multidelivery_discount:
-        others.length + pendingSameContact > 0 ? ownerFactor * (me.orders_options?.multidelivery_discount || 0) : 0,
+        !isCollectionOrder && others.length + pendingSameContact > 0 ? ownerFactor * (me.orders_options?.multidelivery_discount || 0) : 0,
       ...(volumeDiscount === undefined ? {} : { volume_discount: volumeDiscount }),
     };
   },
 
   /**
    * GET /api/orders/collection-point-routes
-   * Returns active routes serving the city of a collection-point contact.
+   * The routes a farm pickup at a collection point can go on: the point's
+   * routes (its town's, less the cancelled ones, plus the extraordinary ones,
+   * the main one first, issues/351), active.
    */
   async collectionPointRoutes(ctx) {
     const { collection_point } = ctx.query;
@@ -981,33 +1047,37 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     try {
       const cpContact = await strapi.db
         .query('api::contact.contact')
-        .findOne({ where: { id: collection_point } });
-      if (!cpContact?.city) return [];
-
-      const cities = await strapi.db
-        .query('api::city.city')
-        .findMany({ where: { name: cpContact.city }, limit: 1 });
-      if (!cities.length) return [];
-
-      const cityRoutes = await strapi.db
-        .query('api::city-route.city-route')
-        .findMany({ where: { city: cities[0].id }, populate: { route: true } });
-      if (!cityRoutes.length) return [];
-
-      const routeIds = cityRoutes
-        .map((cr) => (typeof cr.route === 'object' ? cr.route?.id : cr.route))
-        .filter((rid) => rid != null && typeof rid === 'number');
-      if (!routeIds.length) return [];
-
-      const routes = await strapi.db
-        .query('api::route.route')
-        .findMany({ where: { id: { $in: routeIds }, active: true } });
-      // when it passes by the farm's town, to tell a morning pickup from an
-      // afternoon one (issues/314, 315)
-      return (routes || []).map((route) => {
-        const town = cityRoutes.find((cr) => (typeof cr.route === 'object' ? cr.route?.id : cr.route) === route.id);
-        return { ...route, pickup_time_from: (town && town.time_from) || route.time_from || null };
-      });
+        .findOne({ where: { id: collection_point }, select: ['id', 'city'] });
+      if (!cpContact) return [];
+      const { routes } = await pointRoutesOf(cpContact);
+      if (!routes.length) return [];
+      const ids = routes.map((r) => r.route.id);
+      const full = await strapi.db.query('api::route.route').findMany({ where: { id: { $in: ids }, active: true } });
+      const byId = new Map((full || []).map((r) => [r.id, r]));
+      // the town's time slot of each route, to tell a morning pickup from an
+      // afternoon one (issues/314, 315); an extraordinary route's own one
+      const cities = cpContact.city
+        ? await strapi.db.query('api::city.city').findMany({ where: { name: cpContact.city }, select: ['id'] })
+        : [];
+      const links = cities.length
+        ? await strapi.db.query('api::city-route.city-route').findMany({
+            where: { city: { id: { $in: cities.map((c) => c.id) } } },
+            populate: { route: { select: ['id'] } },
+          })
+        : [];
+      return routes
+        .filter((r) => byId.has(r.route.id))
+        .map(({ route, extra, main, row }) => {
+          const full = byId.get(route.id);
+          const town = links.find((cr) => cr.route && cr.route.id === route.id);
+          const own = extra && row && row.time_from;
+          return {
+            ...full,
+            point_extra: extra,
+            point_main: main,
+            pickup_time_from: own || (town && town.time_from) || full.time_from || null,
+          };
+        });
     } catch (error) {
       console.error('Error fetching collection point routes:', error);
       return ctx.badRequest('Error fetching collection point routes');
@@ -1053,6 +1123,12 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     if (refusal) return ctx.badRequest(refusal);
     const pickupRefusal = await pickupDateRefusal(payload, ctx.state.user);
     if (pickupRefusal) return ctx.badRequest(pickupRefusal);
+    // picked up before it is delivered (issues/429)
+    const pickupAfter = newOrderPickupRefusal(payload);
+    if (pickupAfter) return ctx.badRequest(pickupAfter.message, pickupAfter.details);
+    // a route of the delivery point (issues/351)
+    const wrongRoute = await routeRefusal(payload, ctx.state.user);
+    if (wrongRoute) return ctx.badRequest(wrongRoute);
     payload.status = 'pending';
     await applySurchargeSwitch(payload, null);
     const late = await applyLateFlags(payload, ctx.state.user);
@@ -1110,11 +1186,32 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
     }
     const pickupRefusal = await pickupDateRefusal(payload, ctx.state.user, stored);
     if (pickupRefusal) return ctx.badRequest(pickupRefusal);
+    // a pickup comes before its delivery, a moved -R included (issues/429)
+    if (judgesDates || 'route' in payload) {
+      const current = await strapi.db.query('api::order.order').findOne({
+        where: { id: numericId(ctx) },
+        select: ['id', 'is_collection_order', 'estimated_delivery_date', 'collection_pickup_date'],
+        populate: { collection_point: { select: ['id'] } },
+      });
+      const pickupAfter = await pickupOrderRefusal(numericId(ctx), payload, current);
+      if (pickupAfter) return ctx.badRequest(pickupAfter.message, pickupAfter.details);
+    }
+    // a route of the delivery point (issues/351)
+    if (['route', 'contact', 'estimated_delivery_date', 'collection_point', 'collection_pickup_route'].some((k) => k in payload)) {
+      const routesStored = await storedForRoutes(numericId(ctx));
+      if (routesStored && !routesStored.is_collection_order) {
+        const wrongRoute = await routeRefusal(payload, ctx.state.user, routesStored);
+        if (wrongRoute) return ctx.badRequest(wrongRoute);
+      }
+    }
     await applySurchargeSwitch(payload, stored);
     const late = judgesDates ? await applyLateFlags(payload, ctx.state.user, stored) : null;
 
     const incidences = Array.isArray(payload.incidences) ? payload.incidences : null;
     if (incidences) delete payload.incidences;
+    // a new incidence needs its category (issues/431)
+    const noCategory = incidences ? await categoryRefusal(incidences) : null;
+    if (noCategory) return ctx.badRequest(noCategory);
 
     // a new delivery point without its data (the quick edit): copy the
     // point's data onto the order (issues/157)
@@ -1139,6 +1236,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 // A property of the factory: Strapi only calls the factory itself.
 module.exports.orderRules = {
   missingOrderFields,
+  routeRefusal,
   deliveryDateRefusal,
   pickupDateRefusal,
   applyLateFlags,
@@ -1233,138 +1331,27 @@ async function invoiceRun(ctx) {
   }
   log('CONTACTS_MAPPED');
 
-  // Cache project data with phases
-  const projectCache = {};
-  for (const p of [project]) {
-    const projectData = await strapi.db.query('api::project.project').findOne({
-      where: { id: p },
-      populate: {
-        project_phases: { populate: { incomes: { populate: { invoice: true, income: true } } } },
-      },
-    });
-    if (!projectData?.project_phases?.length) {
-      return ctx.send(
-        { done: false, message: `ERROR. No hi ha fases per al projecte ${projectData?.name}` },
-        500,
-      );
-    }
-    const phase = projectData.project_phases[projectData.project_phases.length - 1];
-    if (!phase.incomes) {
-      return ctx.send(
-        { done: false, message: `ERROR. No hi ha incomes per a la fase del projecte ${projectData.name}` },
-        500,
-      );
-    }
-    projectCache[p] = projectData;
-  }
+  const target = await invoicingProject(project);
+  if (target.error) return ctx.send({ done: false, message: target.error }, 500);
   log('PROJECTS_CACHED');
 
-  // Create invoices per owner in parallel
+  // One draft per owner (services/order-invoices, shared with the monthly run, issues/430)
   log('INVOICE_CREATION_START', `Creating ${uniqueOwners.length} invoices`);
-  const invoicesByOwner = await Promise.all(
-    uniqueOwners.map(async (owner) => {
-      const contact = contactsByOwnerId[owner];
-      const contactOrders = invoiceable.filter((o) => o.owner?.id === owner);
-      const documentConcept = invoiceConcept(contactOrders);
-
-      const invoice = await strapi.service('api::emitted-invoice.emitted-invoice').create({
-        data: {
-          emitted: new Date(),
-          serial: serials[0].id,
-          contact: contact.id,
-          verifactu: verifactuEnabled,
-          payment_method: paymentMethod,
-          document_concept: documentConcept,
-          concept: invoicePdfConcept(contactOrders, pdfConceptText),
-          lines: contactOrders.map((o) => ({
-            concept: orderLineConcept(o),
-            // base and discount from the shared formula (issues/145)
-            ...orderInvoiceLine(o),
-            quantity: 1,
-            price: o.price,
-            vat: 21,
-            irpf: 0,
-          })),
-          projects: [project],
-          publishedAt: new Date(),
-        },
-      });
-      return { invoice, contact, contactOrders, owner };
-    }),
-  );
-  log('INVOICES_CREATED', `${invoicesByOwner.length} invoices created`);
-
-  // Bulk update order status via parameterized raw SQL (lifecycle bypass).
-  // `emitted_invoice` was an FK column on `orders` in v3; in v5 the relation
-  // lives in orders_emitted_invoice_lnk and the column no longer exists, so
-  // the link has to be rewritten separately from the scalar columns.
-  for (const { invoice, contactOrders } of invoicesByOwner) {
-    const ids = contactOrders.map((o) => o.id);
-    if (ids.length === 0) continue;
-    const placeholders = ids.map(() => '?').join(',');
-    await rawExecute(
-      strapi,
-      `UPDATE orders SET emitted_invoice_datetime = NOW(), status = 'invoiced', updated_at = NOW() WHERE id IN (${placeholders})`,
-      ids,
-    );
-    await rawExecute(
-      strapi,
-      `DELETE FROM orders_emitted_invoice_lnk WHERE order_id IN (${placeholders})`,
-      ids,
-    );
-    await rawExecute(
-      strapi,
-      `INSERT INTO orders_emitted_invoice_lnk (order_id, emitted_invoice_id) VALUES ${ids
-        .map(() => '(?, ?)')
-        .join(', ')}`,
-      ids.flatMap((id) => [id, invoice.id]),
-    );
-    // the raw UPDATE skips the change log's middleware (issues/119)
-    const invoicedAt = new Date();
-    await changeLog.logChanges(
-      'api::order.order',
-      contactOrders.map((o) => ({
-        row: { id: o.id },
-        changes: [
-          { field: 'status', from: o.status, to: 'invoiced' },
-          { field: 'emitted_invoice', from: o.emitted_invoice, to: invoice },
-          { field: 'emitted_invoice_datetime', from: o.emitted_invoice_datetime, to: invoicedAt },
-        ],
-      })),
-    );
-  }
-
-  // One income line per invoice on the project's last phase. v3 pushed the
-  // lines into the populated phase and saved the project, and its project
-  // lifecycle wrote them out; in v5 phase incomes are their own collection and
-  // that nested update silently wrote nothing, so every draft from this run
-  // reached the project without its income line. Create the rows directly.
-  //
-  // The amount is the invoice's own base, not a recomputation from the
-  // orders: v3 compounded the multidelivery and pickup discounts here while
-  // the invoice lines add them, so the income drifted from what was billed.
-  for (const p of [project]) {
-    const proj = projectCache[p];
-    const phase = proj.project_phases[proj.project_phases.length - 1];
-    for (const { invoice, contact } of invoicesByOwner) {
-      const amount = Number(invoice.total_base) || 0;
-      await strapi.db.query('api::phase-income.phase-income').create({
-        data: {
-          concept: `Factura #${invoice.code}# - ${contact.trade_name || contact.name}`,
-          quantity: 1,
-          amount,
-          total_amount: amount,
-          date: new Date(),
-          income_type: 1,
-          invoice: invoice.id,
-          paid: false, // pending until the invoice is paid (issues/153)
-          date_estimate_document: new Date(),
-          vat_pct: 21,
-          project_phase: phase.id,
-        },
-      });
-    }
-  }
+  const invoicesByOwner = await createOrderInvoices({
+    groups: uniqueOwners.map((owner) => ({
+      owner,
+      contact: contactsByOwnerId[owner],
+      orders: invoiceable.filter((o) => o.owner?.id === owner),
+    })),
+    project: target.project,
+    phase: target.phase,
+    serialId: serials[0].id,
+    verifactuEnabled,
+    paymentMethod,
+    pdfConceptText,
+    emitted: new Date(),
+    log,
+  });
   log('COMPLETE', `Total time: ${Date.now() - startTime}ms`);
 
   return { orders: orderIds, invoices: invoicesByOwner.map((x) => x.invoice), skipped, timings };

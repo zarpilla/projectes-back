@@ -256,6 +256,11 @@ describe('order controller: late flags', () => {
       frontUrlOf: () => '',
     }));
     mockCoreController(base);
+    // the route checks of a delivery point (issues/351) are tested apart
+    jest.doMock(src('services', 'point-routes'), () => ({
+    ...jest.requireActual(src('services', 'point-routes')),
+    pointRouteRefusal: async () => null,
+    }));
     const ctrl = require(src('api', 'order', 'controllers', 'order'));
     return { ctrl, base };
   }
@@ -417,17 +422,17 @@ describe('the routes of a collection point', () => {
         query: (uid) => ({
           findOne: async () => (uid === 'api::contact.contact' ? { id: 8, city: 'Vic' } : null),
           findMany: async () => {
-            if (uid === 'api::city.city') return [{ id: 70 }];
+            if (uid === 'api::city.city') return [{ id: 70, name: 'Vic' }];
             if (uid === 'api::city-route.city-route') {
               return [
-                { id: 1, route: { id: 5 }, time_from: '16:00:00.000' },
-                { id: 2, route: { id: 6 }, time_from: null },
+                { id: 1, city: { id: 70 }, route: { id: 5 }, time_from: '16:00:00.000' },
+                { id: 2, city: { id: 70 }, route: { id: 6 }, time_from: null },
               ];
             }
             if (uid === 'api::route.route') {
               return [
-                { id: 5, time_from: '09:00:00.000' },
-                { id: 6, time_from: '08:00:00.000' },
+                { id: 5, active: true, time_from: '09:00:00.000' },
+                { id: 6, active: true, time_from: '08:00:00.000' },
               ];
             }
             return [];
