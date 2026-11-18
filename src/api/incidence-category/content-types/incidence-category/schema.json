@@ -17,6 +17,11 @@
     },
     "order": {
       "type": "integer"
+    },
+    "system_key": {
+      "type": "string",
+      "unique": true,
+      "private": true
     }
   }
 }

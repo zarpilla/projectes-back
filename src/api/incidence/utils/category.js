@@ -10,6 +10,12 @@
  * are not refused.
  */
 const CATEGORY = 'api::incidence-category.incidence-category';
+const INCIDENCE = 'api::incidence.incidence';
+
+// The category of the incidences the server opens for a late order (issues/363):
+// found by its system_key, so admins can rename it (Diligència, 2026-11-18).
+const LATE_ORDER_KEY = 'late_order';
+const LATE_ORDER_NAME = 'Comanda registrada fora de temps';
 
 // The Diligència's list (ticket 431), loaded once on the entities with orders.
 const DEFAULT_CATEGORIES = [
@@ -23,6 +29,7 @@ const DEFAULT_CATEGORIES = [
   'No dipositat al magatzem / finca',
   'Falta albarà',
   'Comanda no informada',
+  LATE_ORDER_NAME,
   'Altres causes',
 ];
 
@@ -75,4 +82,61 @@ async function seedIncidenceCategories() {
   strapi.log.info(`[incidence categories] ${DEFAULT_CATEGORIES.length} categories created`);
 }
 
-module.exports = { DEFAULT_CATEGORIES, categoryIdOf, categoryRefusal, seedIncidenceCategories };
+/**
+ * The id of the late-order category, or null on an entity without categories
+ * (it doesn't use them: nothing to add). Created when missing (deleted by an
+ * admin, or the entity got its categories by hand); one with its name already
+ * there takes the key.
+ */
+async function lateOrderCategoryId() {
+  const query = strapi.db.query(CATEGORY);
+  const categories = await query.findMany({ select: ['id', 'name', 'order', 'system_key'] });
+  if (!categories.length) return null;
+  const keyed = categories.find((c) => c.system_key === LATE_ORDER_KEY);
+  if (keyed) return keyed.id;
+  const named = categories.find((c) => String(c.name || '').trim().toLowerCase() === LATE_ORDER_NAME.toLowerCase());
+  if (named) {
+    await query.update({ where: { id: named.id }, data: { system_key: LATE_ORDER_KEY } });
+    return named.id;
+  }
+  const order = Math.max(0, ...categories.map((c) => Number(c.order) || 0)) + 1;
+  const created = await query.create({ data: { name: LATE_ORDER_NAME, order, system_key: LATE_ORDER_KEY } });
+  strapi.log.info(`[incidence categories] «${LATE_ORDER_NAME}» created`);
+  return created.id;
+}
+
+// the texts openLateIncidence writes (late-incidence.js)
+const LATE_TEXT = /^(Comanda fora de temps:|Recollida informada tard:)/;
+
+/**
+ * Startup script: the late-order category, and the late incidences opened
+ * before it without a category go into it (no mails).
+ */
+async function categorizeLateIncidences() {
+  const categoryId = await lateOrderCategoryId();
+  if (!categoryId) return;
+  const incidences = await strapi.db.query(INCIDENCE).findMany({
+    select: ['id', 'description'],
+    populate: { category: { select: ['id'] } },
+  });
+  const late = incidences.filter((i) => !i.category && LATE_TEXT.test(String(i.description || '')));
+  // straight into the link table: an update through the query engine runs the
+  // incidence lifecycles, which mail the office and the member every time
+  if (late.length) {
+    await strapi.db
+      .connection('incidences_category_lnk')
+      .insert(late.map((i) => ({ incidence_id: i.id, incidence_category_id: categoryId })));
+  }
+  strapi.log.info(`[incidence categories] ${late.length} late incidences into «${LATE_ORDER_NAME}»`);
+}
+
+module.exports = {
+  DEFAULT_CATEGORIES,
+  LATE_ORDER_KEY,
+  LATE_ORDER_NAME,
+  categoryIdOf,
+  categoryRefusal,
+  seedIncidenceCategories,
+  lateOrderCategoryId,
+  categorizeLateIncidences,
+};

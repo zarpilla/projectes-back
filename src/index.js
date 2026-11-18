@@ -59,7 +59,7 @@ const { initReadCache } = require('./services/read-cache');
 const { ensureProjectTotals } = require('./api/project/services/project-totals');
 const { rederiveAll } = require('./services/estimated-hours-pricing');
 const { rederiveFrom: refreshDedicationCosts } = require('./services/dedication-cost');
-const { seedIncidenceCategories } = require('./api/incidence/utils/category');
+const { seedIncidenceCategories, categorizeLateIncidences } = require('./api/incidence/utils/category');
 
 module.exports = {
   /**
@@ -232,6 +232,8 @@ module.exports = {
       ['refreshEstimatedHoursPricesWeighted', rederiveAll, { runOnce: true }],
       // issues/431: the Diligència's incidence causes, on the entities with orders.
       ['seedIncidenceCategories', seedIncidenceCategories, { runOnce: true }],
+      // 2026-11-18: «Comanda registrada fora de temps», where the late orders' incidences go.
+      ['categorizeLateIncidences', categorizeLateIncidences, { runOnce: true }],
       // issues/438: open pickup orders (-R), and orders whose only other order of
       // the day was a -R, lose the multidelivery discount; invoiced ones stay.
       ['dropPickupOrderMultidelivery', dropPickupOrderMultidelivery, { runOnce: true }],

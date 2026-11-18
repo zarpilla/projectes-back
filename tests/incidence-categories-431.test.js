@@ -104,7 +104,7 @@ describe('the Diligència list (issues/431)', () => {
     setStrapi(db);
     const { seedIncidenceCategories, DEFAULT_CATEGORIES } = require('../src/api/incidence/utils/category');
     await seedIncidenceCategories();
-    expect(DEFAULT_CATEGORIES).toHaveLength(11);
+    expect(DEFAULT_CATEGORIES).toHaveLength(12);
     expect(db.created.map((c) => c.data.name)).toEqual(DEFAULT_CATEGORIES);
     expect(db.created.map((c) => c.data.order)).toEqual(DEFAULT_CATEGORIES.map((_, i) => i + 1));
     expect(DEFAULT_CATEGORIES[DEFAULT_CATEGORIES.length - 1]).toBe('Altres causes');

@@ -12,6 +12,7 @@
 const moment = require('moment');
 const { toQueryDay } = require('../../../services/date-fields');
 const { wallClockOf } = require('../../../services/late-order');
+const { lateOrderCategoryId } = require('../../incidence/utils/category');
 
 const dayText = (value) => moment(toQueryDay(value), 'YYYY-MM-DD').locale('ca').format('dddd D/M');
 const percent = (n) => String(Math.round(Number(n) * 100) / 100).replace('.', ',');
@@ -37,9 +38,15 @@ function lateIncidenceText({ lateOrder, latePickup, payload, rules, now = new Da
 async function openLateIncidence(orderId, late, user) {
   if (!orderId || !late || !(late.lateOrder || late.latePickup)) return null;
   try {
+    // «Comanda registrada fora de temps» on the entities with categories
+    const category = await lateOrderCategoryId().catch((error) => {
+      strapi.log.error(`[late incidence] category: ${error.message}`);
+      return null;
+    });
     return await strapi.db.query('api::incidence.incidence').create({
       data: {
         order: orderId,
+        ...(category ? { category } : {}),
         state: 'open',
         description: lateIncidenceText(late),
         ...(user && user.id ? { created_user: user.id } : {}),

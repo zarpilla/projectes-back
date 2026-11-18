@@ -229,6 +229,8 @@ const HIDDEN_FIELDS = {
   strategy: ['code_name'],
   // the table lists the holidays for everyone, those with no person (issues/310)
   festive: ['users_permissions_user'],
+  // the server's key for «Comanda registrada fora de temps» (late-order incidences)
+  'incidence-category': ['system_key'],
 };
 
 // Fields the admin form asks for although the schema doesn't require them.

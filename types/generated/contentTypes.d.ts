@@ -1417,6 +1417,7 @@ export interface ApiIncidenceCategoryIncidenceCategory extends Struct.Collection
     name: Schema.Attribute.String & Schema.Attribute.Required;
     order: Schema.Attribute.Integer;
     publishedAt: Schema.Attribute.DateTime;
+    system_key: Schema.Attribute.String & Schema.Attribute.Private & Schema.Attribute.Unique;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
   };
