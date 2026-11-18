@@ -850,10 +850,13 @@ export interface ApiDeliveryPointRequestDeliveryPointRequest extends Struct.Coll
   };
   attributes: {
     address: Schema.Attribute.String & Schema.Attribute.Required;
+    answer: Schema.Attribute.Text;
     answered: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     answered_date: Schema.Attribute.DateTime;
     answered_user: Schema.Attribute.Relation<'manyToOne', 'plugin::users-permissions.user'>;
+    archived: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     city: Schema.Attribute.String & Schema.Attribute.Required;
+    contact: Schema.Attribute.Relation<'manyToOne', 'api::contact.contact'>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     estimated_weight: Schema.Attribute.String;
@@ -866,6 +869,7 @@ export interface ApiDeliveryPointRequestDeliveryPointRequest extends Struct.Coll
     notes: Schema.Attribute.Text;
     publishedAt: Schema.Attribute.DateTime;
     schedule: Schema.Attribute.Text & Schema.Attribute.Required;
+    status: Schema.Attribute.Enumeration<['approved', 'rejected']>;
     trade_name: Schema.Attribute.String;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;

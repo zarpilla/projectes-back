@@ -100,13 +100,53 @@ describe('the list (issues/357)', () => {
   });
 });
 
-describe('marking it answered (issues/357)', () => {
-  it('records who and when, and changes nothing else', async () => {
+describe('approving or rejecting it (issues/357, seguiment)', () => {
+  it('records the decision, who and when, and changes nothing the member sent', async () => {
+    const { ctrl } = loadController({ rows: { 1: { id: 1, status: null } } });
+    global.strapi.service = () => ({ sendDecisionEmail: async () => true });
+    const res = await ctrl.update(ctx({ status: 'approved', answer: ' Hi passem els dimarts ', city: 'Manlleu', user: 1, answered: false }, 2, { params: { id: '1' } }));
+    expect(res.data).toEqual({ status: 'approved', answered: true, answered_date: expect.any(Date), answered_user: 2, answer: 'Hi passem els dimarts' });
+    const rejected = await ctrl.update(ctx({ status: 'rejected', answer: '' }, 2, { params: { id: '1' } }));
+    expect(rejected.data).toMatchObject({ status: 'rejected', answered: true, answer: null });
+    const back = await ctrl.update(ctx({ status: null }, 2, { params: { id: '1' } }));
+    expect(back.data).toEqual({ status: null, answered: false, answered_date: null, answered_user: null });
+    const unknown = await ctrl.update(ctx({ status: 'maybe' }, 2, { params: { id: '1' } }));
+    expect(unknown.data).toMatchObject({ status: null, answered: false });
+  });
+
+  it('archiving or linking the point leaves the decision alone', () => {
     const { ctrl } = loadController();
-    const res = await ctrl.update(ctx({ answered: true, city: 'Manlleu', user: 1 }, 2));
-    expect(res.data).toEqual({ answered: true, answered_date: expect.any(Date), answered_user: 2 });
-    const undo = await ctrl.update(ctx({ answered: false }, 2));
-    expect(undo.data).toEqual({ answered: false, answered_date: null, answered_user: null });
+    expect(ctrl.officeChanges({ archived: true }, 2)).toEqual({ archived: true });
+    expect(ctrl.officeChanges({ archived: 'false' }, 2)).toEqual({ archived: false });
+    expect(ctrl.officeChanges({ contact: 77 }, 2)).toEqual({ contact: 77 });
+    expect(ctrl.officeChanges({ contact: { id: '77' } }, 2)).toEqual({ contact: 77 });
+    expect(ctrl.officeChanges({ contact: null }, 2)).toEqual({ contact: null });
+  });
+
+  it('mails the member a new decision only', async () => {
+    const { ctrl } = loadController({ rows: { 1: { id: 1, status: 'approved' }, 2: { id: 2, status: null } } });
+    const sendDecisionEmail = jest.fn(async () => true);
+    global.strapi.service = () => ({ sendDecisionEmail });
+    await ctrl.update(ctx({ status: 'approved' }, 2, { params: { id: '1' } }));
+    await ctrl.update(ctx({ archived: true }, 2, { params: { id: '2' } }));
+    expect(sendDecisionEmail).not.toHaveBeenCalled();
+    await ctrl.update(ctx({ status: 'rejected' }, 2, { params: { id: '1' } }));
+    await ctrl.update(ctx({ status: 'approved' }, 2, { params: { id: '2' } }));
+    expect(sendDecisionEmail.mock.calls).toEqual([[1], [2]]);
+  });
+
+  it('the office lists the archived ones apart; a member sees all hers', async () => {
+    const office = loadController({ permissions: { 2: ['orders_admin'] } });
+    await office.ctrl.find({ ...ctx(undefined, 2), query: { _archived: '0' } });
+    expect(office.base.find.mock.calls[0][0].query.filters).toEqual({
+      $and: [{}, { $or: [{ archived: { $eq: false } }, { archived: { $null: true } }] }],
+    });
+    await office.ctrl.find({ ...ctx(undefined, 2), query: { _archived: '1' } });
+    expect(office.base.find.mock.calls[1][0].query.filters).toEqual({ $and: [{}, { archived: { $eq: true } }] });
+    expect(office.base.find.mock.calls[1][0].query._archived).toBeUndefined();
+    const member = loadController({ permissions: { 5: ['orders'] } });
+    await member.ctrl.find({ ...ctx(undefined, 5), query: { _archived: '0' } });
+    expect(member.base.find.mock.calls[0][0].query.filters).toEqual({ $and: [{}, { user: { id: 5 } }] });
   });
 
   it('only the office: route policy and app rules', () => {
@@ -127,6 +167,45 @@ describe('marking it answered (issues/357)', () => {
     expect(routes).toMatch(/delete: \{ policies: \['global::isAdminOrOffice'\] \}/);
     const matrix = fs.readFileSync(path.join(__dirname, '../src/services/bootstrap-permissions.js'), 'utf8');
     expect(matrix).toContain("'delivery-point-request': ['find', 'findOne', 'create', 'update', 'delete'],");
+  });
+});
+
+describe('the mail of the decision to the member (issues/357, seguiment)', () => {
+  function loadService(request, me = { name: 'La Diligència', contact_form_email: 'gestio@example.org, oficina@example.org' }) {
+    jest.resetModules();
+    const send = jest.fn(async () => {});
+    jest.doMock('../src/services/me-settings', () => ({ getMe: async () => me, getFrontUrl: async () => 'https://app.example.org/' }));
+    jest.doMock('@strapi/strapi', () => ({ factories: { createCoreService: (_uid, cfg) => cfg({ strapi: global.strapi }) } }));
+    global.strapi = {
+      log: { warn: jest.fn(), error: () => {} },
+      config: { get: () => 'noreply@example.org' },
+      plugin: () => ({ service: () => ({ send }) }),
+      db: { query: () => ({ findOne: async () => request }) },
+    };
+    return { service: require('../src/api/delivery-point-request/services/delivery-point-request'), send };
+  }
+
+  it('tells the member, with the office message, and replies go to the office', async () => {
+    const { service, send } = loadService({
+      id: 3, status: 'approved', answer: 'Hi passem <b>dimarts</b>', trade_name: 'Bar Nou', address: 'C/ Major 1', city: 'Vic',
+      user: { id: 5, email: 'serra@example.org' },
+    });
+    expect(await service.sendDecisionEmail(3)).toBe(true);
+    const mail = send.mock.calls[0][0];
+    expect(mail.to).toEqual(['serra@example.org']);
+    expect(mail.replyTo).toBe('gestio@example.org, oficina@example.org');
+    expect(mail.subject).toBe("[La Diligència] Consulta de nou punt d'entrega aprovada - Vic");
+    expect(mail.html).toContain('(Bar Nou, C/ Major 1, Vic)');
+    expect(mail.html).toContain('Hi passem &lt;b&gt;dimarts&lt;/b&gt;');
+  });
+
+  it('a rejection says so; no member e-mail, no mail', async () => {
+    const rejected = loadService({ id: 3, status: 'rejected', city: 'Vic', user: { id: 5, email: 'serra@example.org' } });
+    await rejected.service.sendDecisionEmail(3);
+    expect(rejected.send.mock.calls[0][0].subject).toBe("[La Diligència] Consulta de nou punt d'entrega rebutjada - Vic");
+    const noMail = loadService({ id: 3, status: 'approved', city: 'Vic', user: { id: 5 } });
+    expect(await noMail.service.sendDecisionEmail(3)).toBe(false);
+    expect(noMail.send).not.toHaveBeenCalled();
   });
 });
 

@@ -58,9 +58,9 @@ async function sendRequestEmail(result, data) {
     ${row('Horari', data.schedule)}
     ${row('Pes estimat de la comanda', data.estimated_weight)}
     ${row('Notes', data.notes)}
-    <br>Responeu aquest correu per contestar la sòcia. Un cop resposta, marqueu-la a
+    <br>Aproveu-la o rebutgeu-la a
     <a href="${frontUrl}consulta-punt-entrega" target="_blank">Consulta i autorització nou punt d'entrega</a>
-    (núm. ${result.id || '-'}).<br>
+    (núm. ${result.id || '-'}): la sòcia en rebrà un correu. També podeu respondre aquest correu.<br>
     <br>--<br>
     Missatge automàtic.<br>
     ${text(me.name || 'ESSTRAPIS')}<br>

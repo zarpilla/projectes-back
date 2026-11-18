@@ -48,6 +48,25 @@
       "type": "relation",
       "relation": "manyToOne",
       "target": "plugin::users-permissions.user"
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": [
+        "approved",
+        "rejected"
+      ]
+    },
+    "answer": {
+      "type": "text"
+    },
+    "archived": {
+      "type": "boolean",
+      "default": false
+    },
+    "contact": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::contact.contact"
     }
   }
 }
