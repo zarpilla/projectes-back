@@ -869,31 +869,14 @@ function memberMayDeleteIncidence(incidence, access) {
   return Number.isFinite(created) && Date.now() - created < INCIDENCE_DELETE_HOURS * 3600 * 1000;
 }
 
-/** Invoices addressed to the member's own contact («Factures»). */
+/**
+ * Invoices addressed to the member's own contact («Factures»), drafts
+ * included: she sees what «Facturar» prepared before the office issues it
+ * (issues/450; issues/155 had hidden them).
+ */
 async function scopeInvoiceList(ctx, next, { strapi, userId }) {
   const contactIds = idList(await memberContactIds(strapi, userId));
   narrowQuery(ctx, { 'contact.id_in': contactIds }, { contact: { id: { $in: contactIds } } });
-  return next();
-}
-
-/**
- * Her emitted invoices, without the drafts: «Facturar» creates them and the
- * office checks and issues them before she sees them (issues/155).
- */
-async function scopeEmittedInvoiceList(ctx, next, { strapi, userId }) {
-  const contactIds = idList(await memberContactIds(strapi, userId));
-  // v3 spelling, read by the query adapter like the request's own `_where`
-  const notDraft = { _or: [{ 'state_ne': 'draft' }, { 'state_null': true }] };
-  narrowQuery(
-    ctx,
-    { _and: [{ 'contact.id_in': contactIds }, notDraft] },
-    {
-      $and: [
-        { contact: { id: { $in: contactIds } } },
-        { $or: [{ state: { $ne: 'draft' } }, { state: { $null: true } }] },
-      ],
-    },
-  );
   return next();
 }
 
@@ -1546,7 +1529,7 @@ const MEMBER_SCOPES = {
   [`${INCIDENCE}.findOne`]: scopeIncidenceRow,
   [`${INCIDENCE}.update`]: scopeIncidenceRow,
   [`${INCIDENCE}.delete`]: scopeIncidenceRow,
-  'api::emitted-invoice.emitted-invoice.findBasic': scopeEmittedInvoiceList,
+  'api::emitted-invoice.emitted-invoice.findBasic': scopeInvoiceList,
   'api::received-income.received-income.findBasic': scopeInvoiceList,
   [`${CONTACT}.find`]: scopeContactList,
   [`${CONTACT}.findOne`]: scopeContactRow,
@@ -1596,7 +1579,7 @@ const ownInvoicesUnlessOffice = (scope) => (ctx, next, opts) =>
   opts.permissions.includes('orders_admin') ? next() : scope(ctx, next, opts);
 
 const GENERAL_SCOPES = {
-  'api::emitted-invoice.emitted-invoice.findBasic': ownInvoicesUnlessOffice(scopeEmittedInvoiceList),
+  'api::emitted-invoice.emitted-invoice.findBasic': ownInvoicesUnlessOffice(scopeInvoiceList),
   'api::received-income.received-income.findBasic': ownInvoicesUnlessOffice(scopeInvoiceList),
   'api::phase-income.phase-income.findAssigned': scopeAssignedIncomes,
   [`${PIVOT_VIEW}.find`]: scopePivotViewList,

@@ -479,22 +479,16 @@ describe('app permissions (issues/099)', () => {
       expect(ctx.query._where).toEqual({ _and: [{ 'contact.id_in': [-1] }] });
     });
 
-    // issues/155 (2026-10-18): «Facturar» creates the drafts, and the member saw
-    // them («Esborrany») in her «Factures» right away, before the office
-    // checked and issued them.
-    it('leaves the draft invoices out of her «Factures» (issues/155)', async () => {
+    // issues/450 (2026-11-18): Diligència wants the members to see the drafts
+    // «Facturar» creates, reversing issues/155, which had hidden them.
+    it('shows her the draft invoices too in her «Factures» (issues/450)', async () => {
       const ctx = await expectAllowed('api::emitted-invoice.emitted-invoice.findBasic', {
         query: { _where: { 'emitted_gte': '2026-01-01' } },
       });
       const { adaptQuery } = require('../src/services/query-adapter');
       expect(adaptQuery(ctx.query).filters).toEqual({
         $and: [
-          {
-            $and: [
-              { contact: { id: { $in: [MY_CONTACT] } } },
-              { $or: [{ state: { $ne: 'draft' } }, { state: { $null: true } }] },
-            ],
-          },
+          { contact: { id: { $in: [MY_CONTACT] } } },
           { emitted: { $gte: '2026-01-01' } },
         ],
       });
