@@ -22,15 +22,26 @@ const PROJECTS = [
   {
     id: 1,
     name: 'A',
-    project_state: { id: 1 },
+    project_state: { id: 1, name: 'Actiu' },
     project_type: { id: 4, name: 'Consultoria' },
     project_scope: { id: 9, name: 'Rural' },
     project_phases: [{ incomes: [line(1, 1000, `${Y}-03-01`)], expenses: [line(2, 400, `${Y}-04-01`)] }],
   },
   {
+    id: 3,
+    name: 'C',
+    project_state: { id: 1, name: 'Actiu' },
+    periodification: [
+      { year: Y, incomes: 500, expenses: 0 },
+      { year: Y + 1, incomes: -500, expenses: 0 },
+    ],
+    project_phases: [{ incomes: [line(6, 1000, `${Y}-06-01`)], expenses: [] }],
+  },
+  {
     id: 2,
     name: 'B',
-    project_state: { id: 1 },
+    project_state: { id: 1, name: 'Actiu' },
+    periodification: [{ year: Y, incomes: 0, expenses: 0 }],
     project_phases: [
       { incomes: [line(3, 100, `${Y + 1}-03-01`)], expenses: [line(4, 300, `${Y}-05-01`), line(5, 50, `${Y + 1}-05-01`)] },
     ],
@@ -89,7 +100,7 @@ describe('treasury forecast by project (issues/368)', () => {
   it('gives each project its yearly sums, adding up to the global ones', async () => {
     const body = await forecast({ by_project: '1' });
     expect(populate.project_scope).toBe(true);
-    const [a, b] = body.forecast_by_project;
+    const [a, , b] = body.forecast_by_project;
     expect(a).toMatchObject({ id: 1, name: 'A', project_type: { id: 4, name: 'Consultoria' }, project_scope: { id: 9, name: 'Rural' } });
     expect(b).toMatchObject({ id: 2, name: 'B', project_type: null, project_scope: null });
     expect(a.years[String(Y)]).toEqual({ forecast_incomes: 1000, forecast_expenses: 400, forecast_expenses_vat: 42 });
@@ -101,5 +112,14 @@ describe('treasury forecast by project (issues/368)', () => {
         expect(sum).toBeCloseTo(g[k], 6);
       }
     }
+  });
+
+  it('gives each project its state and whether it is periodified (Raiels, 2026-11-18)', async () => {
+    const body = await forecast({ by_project: '1' });
+    const byId = Object.fromEntries(body.forecast_by_project.map((p) => [p.id, p]));
+    expect(byId[1]).toMatchObject({ project_state: { id: 1, name: 'Actiu' }, periodified: false });
+    // only rows of zeros: not periodified
+    expect(byId[2].periodified).toBe(false);
+    expect(byId[3].periodified).toBe(true);
   });
 });

@@ -37,6 +37,12 @@ const { getReadCache } = require('../../../services/read-cache');
 const { queryTables } = require('../../../services/query-tables');
 const { COLUMNS: PROJECT_TOTALS_COLUMNS } = require('../../project/services/project-totals');
 const { FILTER_RELATIONS, filterProjects, parseIdList, namedRef, forecastProjectOption } = require('../services/project-filter');
+
+// A project with a periodification that holds an amount: what it gives or
+// takes from each year is spread by hand, not by the dates of its lines.
+const PERIODIFICATION_AMOUNTS = ['incomes', 'expenses', 'real_incomes', 'real_expenses'];
+const isPeriodified = (p) =>
+  (p.periodification || []).some((pp) => PERIODIFICATION_AMOUNTS.some((k) => Number(pp && pp[k]) || 0));
 const { payrollNetBankAccountName } = require('../services/payroll-bank');
 const { groupPayrollRows } = require('../services/payroll-groups');
 const { irpfSummary, irpfMovement, quarterPaymentDate } = require('../services/irpf-summary');
@@ -388,6 +394,9 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           name: p.name,
           project_type: namedRef(p.project_type),
           project_scope: namedRef(p.project_scope),
+          // grouped by state, the periodified ones apart (Raiels, 2026-11-18)
+          project_state: namedRef(p.project_state),
+          periodified: isPeriodified(p),
           years: buildEstimatedForecastByYear([p], deductibleVatPctByYear, fallback_deductible_vat_pct, periodification),
         }))
       : undefined;
