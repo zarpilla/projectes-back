@@ -36,6 +36,14 @@
     },
     "is_real_balance": {
       "type": "boolean"
+    },
+    "contact": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::contact.contact"
+    },
+    "capital_contribution_id": {
+      "type": "integer"
     }
   }
 }

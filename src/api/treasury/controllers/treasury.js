@@ -210,7 +210,8 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
     const projectIncomes = [];
 
     const VALIDATION = 'api::treasury-validation.treasury-validation';
-    const TREASURY_POPULATE = { bank_account: true, project: PROJECT_REF };
+    // the contact of a capital contribution's annotation (issues/436)
+    const TREASURY_POPULATE = { bank_account: true, project: PROJECT_REF, contact: { select: ['id', 'name'] } };
     const DOCUMENT_POPULATE = { bank_account: true, project: PROJECT_REF, projects: PROJECT_REF, contact: true };
     const TYPED_DOCUMENT_POPULATE = { ...DOCUMENT_POPULATE, document_type: true };
     // the person's name only: kept in memory, never the whole user (password hash)
@@ -641,13 +642,19 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
           project_name: e.project?.name,
           project_id: e.project?.id,
           treasury_id: e.id,
-          type: e.comment === 'IVA Saldat' ? e.comment : 'Operació de tresoreria',
+          // a capital contribution's annotation is edited from the contact (issues/436)
+          type: e.capital_contribution_id
+            ? 'Aportació de capital'
+            : e.comment === 'IVA Saldat'
+              ? e.comment
+              : 'Operació de tresoreria',
           concept: e.comment,
           total_amount: e.total,
           date: moment(e.date, 'YYYY-MM-DD') || moment(),
           date_error: e.date === null,
           paid: true,
-          contact: '-',
+          contact: e.capital_contribution_id && e.contact ? e.contact.name : '-',
+          contact_id: e.capital_contribution_id && e.contact ? e.contact.id : undefined,
           bank_account: getBankAccountName(e.bank_account, me.bank_account_default),
           validation_key: validationKey,
           is_validated: validationMap[validationKey] || false,

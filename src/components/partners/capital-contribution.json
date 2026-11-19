@@ -16,6 +16,9 @@
     },
     "comment": {
       "type": "text"
+    },
+    "entered_at": {
+      "type": "datetime"
     }
   }
 }

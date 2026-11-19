@@ -48,6 +48,9 @@
       "type": "enumeration",
       "enum": ["project", "hours"],
       "default": "project"
+    },
+    "capital_treasury_from": {
+      "type": "date"
     }
   }
 }

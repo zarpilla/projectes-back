@@ -6,6 +6,10 @@
 const { errors: { ApplicationError, ValidationError } } = require('@strapi/utils');
 const { relationId } = require('../../../../services/relation-input');
 const { refreshContactCapital } = require('../../../../services/capital-contributions');
+const {
+  syncContactCapitalTreasury,
+  deleteContactCapitalTreasury,
+} = require('../../../../services/capital-treasury');
 
 const blank = (value) => value === undefined || value === null || String(value).trim() === '';
 
@@ -46,6 +50,9 @@ async function refreshCapital(event) {
   const data = event.params.data || {};
   const id = event.result && event.result.id;
   if ('capital_contributions' in data && id) await refreshContactCapital(id);
+  // their annotations in Tresoreria, when Configuració asks for it (issues/436);
+  // the name is in their concept
+  if (id && ('capital_contributions' in data || 'name' in data)) await syncContactCapitalTreasury(id);
 }
 
 module.exports = {
@@ -88,5 +95,7 @@ module.exports = {
     }
     // its route settings go with it (issues/351)
     await strapi.db.query('api::point-route.point-route').deleteMany({ where: { contact: id } });
+    // and its capital contributions' annotations in Tresoreria (issues/436)
+    await deleteContactCapitalTreasury(id);
   },
 };

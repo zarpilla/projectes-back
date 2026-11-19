@@ -53,6 +53,7 @@ const { wrapEmailProvider } = require('./services/email-body');
 const { changeLogMiddleware, registerOrderRowWrites, registerSubmissionWrites } = require('./services/change-log');
 const { ensureChangeLogIndex } = require('./services/ensure-change-log-index');
 const { lockIssuedInvoiceComponents } = require('./services/lock-issued-invoices');
+const { stampCapitalContributions, syncOnCutoffChange } = require('./services/capital-treasury');
 const { registerAppPermissions } = require('./services/register-app-permissions');
 const { registerReadCacheRoutes } = require('./services/read-cache/routes');
 const { initReadCache } = require('./services/read-cache');
@@ -71,6 +72,9 @@ module.exports = {
     strapi.documents.use(changeLogMiddleware);
     // Issued invoices keep their lines and client's details (issues/023, issues/035).
     strapi.documents.use(lockIssuedInvoiceComponents);
+    // When each capital contribution was entered, for Tresoreria (issues/436).
+    strapi.documents.use(stampCapitalContributions);
+    strapi.documents.use(syncOnCutoffChange);
     // The app permissions are enforced on every content-API route (issues/099).
     strapi.log.info(`[app-permissions] enforced on ${registerAppPermissions(strapi)} routes`);
     // The master tables' GET routes are answered from the read cache, after the
