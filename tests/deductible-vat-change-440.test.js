@@ -64,17 +64,6 @@ describe('year «% IVA deduïble» (issues/440)', () => {
   });
 });
 
-describe('Configuració «% IVA deduïble» (issues/440)', () => {
-  const meLifecycles = () => require('../src/api/me/content-types/me/lifecycles');
-
-  it('recomputes the projects when it changes', async () => {
-    await run(meLifecycles(), { name: 'Coop', options: { id: 1, deductible_vat_pct: 50 } }, { name: 'Coop' });
-    expect(mockMarkAllDirty).toHaveBeenCalledTimes(1);
-  });
-
-  it('a whole save with the same % does nothing', async () => {
-    await run(meLifecycles(), { name: 'Coop', options: { id: 1, deductible_vat_pct: 67 } }, { name: 'Coop' });
-    await run(meLifecycles(), { name: 'Coop' }, { name: 'Coop' });
-    expect(mockMarkAllDirty).not.toHaveBeenCalled();
-  });
-});
+// Configuració's % is checked by a document-service middleware, not by the
+// `me` lifecycles (they only get the options as { id, __pivot }): see
+// tests/deductible-vat-config-440.test.js.

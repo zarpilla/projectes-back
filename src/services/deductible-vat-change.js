@@ -34,4 +34,21 @@ async function currentMePct() {
   return me && me.options ? me.options.deductible_vat_pct : null;
 }
 
-module.exports = { pctChanged, remarkProjects, newMePct, currentMePct };
+/**
+ * Document-service middleware (src/index.js): Configuració saved with another
+ * «% IVA deduïble» recomputes the projects. Compared before and after the
+ * save: the `me` lifecycles only see the options component as a reference
+ * ({ id, __pivot }), never its % (found 2026-11-19, issues/436), so the
+ * recompute never ran from Configuració.
+ */
+async function remarkOnMePctChange(context, next) {
+  const { uid, action, params } = context;
+  if (uid !== 'api::me.me' || action !== 'update' || newMePct(params && params.data) === undefined) return next();
+  const before = await currentMePct();
+  const result = await next();
+  const after = await currentMePct();
+  if (pctChanged(before, after)) await remarkProjects('«% IVA deduïble» of Configuració');
+  return result;
+}
+
+module.exports = { pctChanged, remarkProjects, newMePct, currentMePct, remarkOnMePctChange };
