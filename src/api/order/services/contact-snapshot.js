@@ -46,11 +46,13 @@ async function loadContact(id) {
  * For a write to order `orderId` that sets `contact` and no contact_* field
  * (the quick edit of the orders list): when the point changes, add the new
  * point's data to `payload`. The order form sends its own contact_* fields,
- * which are kept.
+ * which are kept; the pickup discount alone is the server's, not a copy.
  */
 async function addContactSnapshot(payload, orderId) {
   if (!payload || payload.contact === undefined) return payload;
-  if (Object.keys(payload).some((k) => k.startsWith('contact_'))) return payload;
+  // only the copy's own fields: contact_pickup_discount is put in by the
+  // members' permissions (memberOrderPayload), not by the form (issues/457)
+  if (Object.keys(payload).some((k) => k in SNAPSHOT_FIELDS || k === 'contact_legal_form')) return payload;
   const contactId = relationId(payload.contact);
   if (!contactId || typeof contactId !== 'number') return payload;
 

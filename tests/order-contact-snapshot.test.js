@@ -132,5 +132,16 @@ describe('contact snapshot of orders (issues/157)', () => {
       expect(body.contact_address).toBe('C/ Altre');
       expect(body).not.toHaveProperty('contact_phone');
     });
+
+    // issues/457 (2026-11-18, Diligència order 26936): a member moved her
+    // order to another point from the list's quick edit. The members'
+    // permissions (memberOrderPayload) add the point's contact_pickup_discount
+    // to the payload, which read as "the form sent its own copy": the order
+    // kept the old point's name and address, and the list showed it.
+    it("copies the new point's data when only the server's pickup discount is there", async () => {
+      stub();
+      const body = await put({ contact: 20, units: 2, contact_pickup_discount: 1.5 });
+      expect(body).toMatchObject({ contact: 20, units: 2, ...SNAPSHOT });
+    });
   });
 });
