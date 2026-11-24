@@ -58,6 +58,21 @@ describe('payroll lifecycle', () => {
     expect([data.paid, data.paid_date, data.bank_account]).toEqual([true, '2026-03-31', { id: 2, name: 'Nòmines' }]);
   });
 
+  it('«Paga» of Bestretes on one paid in part adds what is pending as the last payment', async () => {
+    stored.partial_payments = [{ id: 'a', date: '2026-03-31', amount: 500 }];
+    const data = { paid: true, paid_date: '2026-04-30' };
+    await lifecycles().beforeUpdate({ params: { where: { id: 7 }, data } });
+    expect(data.partial_payments.map((p) => [p.date, p.amount])).toEqual([['2026-03-31', 500], ['2026-04-30', 700]]);
+    expect([data.paid, data.paid_date]).toEqual([true, '2026-04-30']);
+  });
+
+  it('with payments stored, «Pagada» follows them, whatever the write says', async () => {
+    stored.partial_payments = [{ id: 'a', date: '2026-03-31', amount: 500 }];
+    const data = { paid: false };
+    await lifecycles().beforeUpdate({ params: { where: { id: 7 }, data } });
+    expect([data.paid, data.paid_date]).toEqual([false, null]);
+  });
+
   it('leaves a write that touches neither the payments nor the net alone', async () => {
     const data = { paid: true, paid_date: '2026-03-31' };
     await lifecycles().beforeUpdate({ params: { where: { id: 7 }, data } });
