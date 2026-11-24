@@ -1113,7 +1113,41 @@ module.exports = createCoreController('api::treasury.treasury', ({ strapi }) => 
         validation_key: validationKey,
         is_validated: validationMap[validationKey] || false,
       };
-      payrollRows.push({ ...expense, payroll_month, payroll_part: 'net' });
+      // paid in several goes (issues/460): one executed movement per payment,
+      // validated on its own, and the rest still expected on the net date
+      const netSplit = splitPayments(e, 'net_base');
+      if (!netSplit) {
+        payrollRows.push({ ...expense, payroll_month, payroll_part: 'net' });
+      } else {
+        for (const payment of netSplit.payments) {
+          const paymentKey = getValidationKey('payrolls', e.id, `payment-${payment.id}`);
+          payrollRows.push({
+            ...expense,
+            type: 'Nòmina pagada (parcial)',
+            total_amount: -1 * payment.amount,
+            date: moment(payment.date, 'YYYY-MM-DD'),
+            date_error: false,
+            paid: true,
+            partial_payment_id: payment.id,
+            validation_key: paymentKey,
+            is_validated: validationMap[paymentKey] || false,
+            payroll_month,
+            payroll_part: 'net',
+          });
+        }
+        if (netSplit.pending) {
+          payrollRows.push({
+            ...expense,
+            type: 'Nòmina esperada (pendent)',
+            total_amount: -1 * netSplit.pending,
+            paid: false,
+            validation_key: null,
+            is_validated: false,
+            payroll_month,
+            payroll_part: 'net',
+          });
+        }
+      }
 
       if (e.irpf_base) {
         const irpfValidationKey = getValidationKey('payrolls', e.id, 'irpf');
