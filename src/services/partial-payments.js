@@ -13,6 +13,10 @@
  * Without entries the document keeps its own `paid` / `paid_date`, as before.
  *
  * The entries can't add up to more than the total (decided on issues/412).
+ *
+ * Payrolls (bestretes, issues/460) too: there what is paid to the person is
+ * the net, so their entries add up to `net_base` (option `totalField`), and
+ * `paid` / `paid_date` follow from them the same way.
  */
 
 const crypto = require('crypto');
@@ -66,20 +70,24 @@ const sumPayments = (list) => round2(list.reduce((s, p) => s + Number(p.amount |
  * `existing` the stored row (null on create). A write that doesn't send the
  * list still checks the stored one when the total changes.
  */
-function applyPartialPayments(data, existing = null) {
+function applyPartialPayments(data, existing = null, { totalField = 'total', totalLabel = 'el total del document' } = {}) {
   const sent = data.partial_payments !== undefined;
   const list = sent ? normalizePayments(data.partial_payments) : storedPayments(existing);
   if (sent) data.partial_payments = list.length ? list : null;
   if (!list.length) return data;
 
-  const total = round2(Number(data.total !== undefined ? data.total : existing && existing.total) || 0);
+  const total = round2(Number(data[totalField] !== undefined ? data[totalField] : existing && existing[totalField]) || 0);
   const sum = sumPayments(list);
   if (!total) {
-    throw new ApplicationError('Un document amb total 0 no pot tenir cobraments/pagaments parcials');
+    throw new ApplicationError(
+      totalField === 'total'
+        ? 'Un document amb total 0 no pot tenir cobraments/pagaments parcials'
+        : `Amb ${totalLabel} a 0 no hi pot haver pagaments parcials`,
+    );
   }
   if (list.some((p) => Math.sign(p.amount) !== Math.sign(total)) || Math.abs(sum) > Math.abs(total) + CENT) {
     throw new ApplicationError(
-      `Els cobraments/pagaments parcials (${sum.toFixed(2)} €) no poden superar el total del document (${total.toFixed(2)} €)`,
+      `Els cobraments/pagaments parcials (${sum.toFixed(2)} €) no poden superar ${totalLabel} (${total.toFixed(2)} €)`,
     );
   }
   const paid = Math.abs(sum) >= Math.abs(total) - CENT;
@@ -92,11 +100,11 @@ function applyPartialPayments(data, existing = null) {
  * How Tresoreria splits a document: its partial payments in date order and
  * what is still pending. null when it has none (one movement, as before).
  */
-function splitPayments(doc) {
+function splitPayments(doc, totalField = 'total') {
   const list = storedPayments(doc);
   if (!list.length) return null;
   const payments = [...list].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const total = round2(Number(doc.total) || 0);
+  const total = round2(Number(doc[totalField]) || 0);
   const pending = round2(total - sumPayments(payments));
   return { payments, pending: Math.abs(pending) > CENT ? pending : 0 };
 }
