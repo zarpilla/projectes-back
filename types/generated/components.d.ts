@@ -284,6 +284,7 @@ export interface OptionsOptions extends Struct.ComponentSchema {
     singularName: 'options';
   };
   attributes: {
+    capital_treasury_from: Schema.Attribute.Date;
     deductible_vat_pct: Schema.Attribute.Decimal & Schema.Attribute.DefaultTo<100>;
     default_billing_mode: Schema.Attribute.Enumeration<['project', 'hours']> &
       Schema.Attribute.DefaultTo<'project'>;
@@ -391,6 +392,7 @@ export interface PartnersCapitalContribution extends Struct.ComponentSchema {
     amount: Schema.Attribute.Decimal;
     comment: Schema.Attribute.Text;
     date: Schema.Attribute.Date;
+    entered_at: Schema.Attribute.DateTime;
   };
 }
 

@@ -1949,6 +1949,7 @@ export interface ApiPayrollPayroll extends Struct.CollectionTypeSchema {
     other_date: Schema.Attribute.Date;
     paid: Schema.Attribute.Boolean;
     paid_date: Schema.Attribute.Date;
+    partial_payments: Schema.Attribute.JSON;
     publishedAt: Schema.Attribute.DateTime;
     ss_base: Schema.Attribute.Decimal;
     ss_date: Schema.Attribute.Date;
@@ -3106,6 +3107,30 @@ export interface ApiTaskTemplateTaskTemplate extends Struct.CollectionTypeSchema
   };
 }
 
+export interface ApiTaskTopicTaskTopic extends Struct.CollectionTypeSchema {
+  collectionName: 'task_topics';
+  info: {
+    displayName: 'TaskTopic';
+    pluralName: 'task-topics';
+    singularName: 'task-topic';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::task-topic.task-topic'> &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String & Schema.Attribute.Required;
+    order: Schema.Attribute.Integer;
+    publishedAt: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
+  };
+}
+
 export interface ApiTaskTask extends Struct.CollectionTypeSchema {
   collectionName: 'tasks';
   info: {
@@ -3138,6 +3163,7 @@ export interface ApiTaskTask extends Struct.CollectionTypeSchema {
     start_date: Schema.Attribute.Date;
     task_comments: Schema.Attribute.Relation<'oneToMany', 'api::task-comment.task-comment'>;
     task_state: Schema.Attribute.Relation<'oneToOne', 'api::task-state.task-state'>;
+    task_topic: Schema.Attribute.Relation<'manyToOne', 'api::task-topic.task-topic'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     users_permissions_users: Schema.Attribute.Relation<'manyToMany', 'plugin::users-permissions.user'>;
@@ -3270,7 +3296,9 @@ export interface ApiTreasuryTreasury extends Struct.CollectionTypeSchema {
   attributes: {
     balance: Schema.Attribute.Decimal;
     bank_account: Schema.Attribute.Relation<'oneToOne', 'api::bank-account.bank-account'>;
+    capital_contribution_id: Schema.Attribute.Integer;
     comment: Schema.Attribute.String;
+    contact: Schema.Attribute.Relation<'manyToOne', 'api::contact.contact'>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> & Schema.Attribute.Private;
     date: Schema.Attribute.Date;
@@ -4033,6 +4061,7 @@ declare module '@strapi/strapi' {
       'api::task-notification.task-notification': ApiTaskNotificationTaskNotification;
       'api::task-state.task-state': ApiTaskStateTaskState;
       'api::task-template.task-template': ApiTaskTemplateTaskTemplate;
+      'api::task-topic.task-topic': ApiTaskTopicTaskTopic;
       'api::task.task': ApiTaskTask;
       'api::ticket.ticket': ApiTicketTicket;
       'api::time-counter.time-counter': ApiTimeCounterTimeCounter;
