@@ -41,6 +41,7 @@ function nextTaskData(task, firstStateId, today) {
     description: task.description,
     project: task.project ? task.project.id : null,
     activity_type: task.activity_type ? task.activity_type.id : null,
+    task_topic: task.task_topic ? task.task_topic.id : null,
     users_permissions_users: ids(task.users_permissions_users),
     priority: task.priority || 'normal',
     estimated_hours: task.estimated_hours,

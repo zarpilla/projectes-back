@@ -28,6 +28,7 @@ const POPULATE_FULL = {
   project: true,
   activity_type: true,
   task_state: true,
+  task_topic: true,
   created: true,
   checklist: { populate: { user: true } },
 };
@@ -37,6 +38,8 @@ const POPULATE_FULL = {
 // emptied them. Reads and writes of tasks populate the checklist's person too.
 const TASK_POPULATE = {
   task_state: true,
+  // «Temes de tasca» (issues/461)
+  task_topic: true,
   users_permissions_users: true,
   project: true,
   activity_type: true,

@@ -25,6 +25,11 @@
       "relation": "oneToOne",
       "target": "api::task-state.task-state"
     },
+    "task_topic": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::task-topic.task-topic"
+    },
     "users_permissions_users": {
       "type": "relation",
       "relation": "manyToMany",

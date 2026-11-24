@@ -71,6 +71,7 @@ for (const name of [
   'project-scope',
   'project-likelihood',
   'task-state',
+  'task-topic',
   'year',
   'month',
   'dedication-type',

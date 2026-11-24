@@ -129,6 +129,7 @@ const FIELD_TRANSLATIONS = {
 // Labels of one table that differ from FIELD_TRANSLATIONS.
 const ENTITY_FIELD_TRANSLATIONS = {
   'incidence-category': { order: 'Ordre' },
+  'task-topic': { order: 'Ordre' },
   pickup: { pickup: 'Recollida a la finca', city: 'Població' },
   'route-pickup-notice': { pickup: 'Recollida (magatzem)', message: 'Avís' },
   'vat-type': { value: '% IVA' },
@@ -152,6 +153,11 @@ const ENUM_LABELS = {
 
 // Help under a field of the admin form.
 const FIELD_HELP = {
+  // issues/461
+  'task-topic': {
+    name: 'Per agrupar les tasques per temes (àrees, línies de feina…), a més del seu estat.',
+    order: 'Posició a la llista i al tauler: els més petits primer.',
+  },
   // issues/431
   'incidence-category': {
     name: 'La causa que es tria en obrir una incidència (obligatòria).',
@@ -250,6 +256,7 @@ const LIST_VIEWS = {
   // the holidays for everyone, newest first; the people's own are not listed (issues/310)
   festive: { query: '_where[users_permissions_user_null]=true', sort: ['date', 'desc'] },
   'incidence-category': { sort: ['order', 'asc'] },
+  'task-topic': { sort: ['order', 'asc'] },
 };
 
 // To-many relations the admin form edits (the others are edited from the other side).
@@ -298,6 +305,8 @@ const ADMIN_ENTITIES = {
   'social-entity': 'social-entities',
   strategy: 'strategies',
   'task-state': 'task-states',
+  // issues/461
+  'task-topic': 'task-topics',
   'user-festive': 'user-festives',
   year: 'years',
   // issues/310: the holidays for everyone
@@ -340,6 +349,7 @@ const DISPLAY_NAMES = {
   'social-entity': { displayName: 'Entitats socials', displayNameSingular: 'Entitat social' },
   strategy: { displayName: 'Estratègies', displayNameSingular: 'Estratègia' },
   'task-state': { displayName: 'Estats de tasca', displayNameSingular: 'Estat de tasca' },
+  'task-topic': { displayName: 'Temes de tasca', displayNameSingular: 'Tema de tasca' },
   'user-festive': { displayName: "Festius d'usuari", displayNameSingular: "Festiu d'usuari" },
   festive: { displayName: 'Festius de totes', displayNameSingular: 'Festiu de totes' },
   year: { displayName: 'Anys', displayNameSingular: 'Any' },

@@ -237,6 +237,8 @@ async function importSeedPermissions() {
     'task-comment': ['create', 'find', 'findOne', 'update', 'delete'],
     'task-template': ['create', 'find', 'findOne', 'update', 'delete'],
     'task-state': ['find', 'findOne', 'create', 'update', 'delete'],
+    // Taules auxiliars › Temes de tasca (issues/461): writes admin-only (isAdmin policy)
+    'task-topic': ['find', 'findOne', 'create', 'update', 'delete'],
     treasury: ['create', 'find', 'forecast', 'invoicingForecast', 'irpf', 'irpfSettle', 'vat', 'vatModels', 'vatModelsClassify', 'vatModelsFile', 'vatModelsUnfile', 'vatModelsReceipt', 'vatModelsFinalProrrata', 'vatModelsAeatFile', 'updateMovementDates', 'findOne', 'update', 'delete'],
     'treasury-validation': ['toggle', 'settle', 'find', 'findByKey', 'delete'],
     'kanban-view': ['create', 'find', 'findOne', 'update', 'delete'],

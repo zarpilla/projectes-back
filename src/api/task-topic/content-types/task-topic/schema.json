@@ -1,0 +1,22 @@
+{
+  "kind": "collectionType",
+  "collectionName": "task_topics",
+  "info": {
+    "singularName": "task-topic",
+    "pluralName": "task-topics",
+    "displayName": "TaskTopic"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "order": {
+      "type": "integer"
+    }
+  }
+}

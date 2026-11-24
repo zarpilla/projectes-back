@@ -45,6 +45,7 @@ const CACHED_ROUTES = {
   'dedication-type': CORE_READS,
   'activity-type': [...CORE_READS, 'getBasic'],
   'task-state': CORE_READS,
+  'task-topic': CORE_READS,
   'bank-account': CORE_READS,
   'payment-method': CORE_READS,
   serie: CORE_READS,
